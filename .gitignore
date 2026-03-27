@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+__pycache__/
+*.pyc
+.vite/
+etl/data/
+etl/*.csv
+etl/*.json
+etl/*.geojson
+etl/*.shp
+etl/*.zip
+etl/*.gz
