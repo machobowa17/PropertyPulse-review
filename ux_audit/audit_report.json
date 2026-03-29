@@ -1,0 +1,76 @@
+{
+  "london_sw1a_desktop": {
+    "search": "SW1A 1AA",
+    "viewport": "desktop",
+    "console_errors": [
+      "PAGE_ERROR: Could not compile fragment shader: "
+    ],
+    "error_count": 1
+  },
+  "manchester_m1_desktop": {
+    "search": "M1 1AE",
+    "viewport": "desktop",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "cornwall_tr1_desktop": {
+    "search": "TR1 1AA",
+    "viewport": "desktop",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "oxford_city_desktop": {
+    "search": "Oxford",
+    "viewport": "desktop",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "bristol_city_desktop": {
+    "search": "Bristol",
+    "viewport": "desktop",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "invalid_postcode_desktop": {
+    "search": "ZZ99 9ZZ",
+    "viewport": "desktop",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "london_sw1a_mobile": {
+    "search": "SW1A 1AA",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "manchester_m1_mobile": {
+    "search": "M1 1AE",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "cornwall_tr1_mobile": {
+    "search": "TR1 1AA",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "oxford_city_mobile": {
+    "search": "Oxford",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "bristol_city_mobile": {
+    "search": "Bristol",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  },
+  "invalid_postcode_mobile": {
+    "search": "ZZ99 9ZZ",
+    "viewport": "mobile",
+    "console_errors": [],
+    "error_count": 0
+  }
+}

@@ -1,20 +1,20 @@
-"""ETL: IMD 2019 (all domains) → core_imd_lsoa. Bible: MHCLG Index of Multiple Deprivation."""
+"""ETL: IMD 2025 (all domains, 2021 LSOAs) → core_imd_lsoa. Bible: MHCLG Index of Multiple Deprivation."""
 import os, pandas as pd, psycopg2
 from psycopg2.extras import execute_values
 
 DB = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty")
-SRC = os.path.expanduser("~/Desktop/geodepth/etl/data/iod2019_all_domains.csv")
+SRC = os.path.expanduser("~/Desktop/Manus Take 2/etl/data/iod2025_all_domains.csv")
 
 def ingest():
     df = pd.read_csv(SRC)
-    df = df[df["LSOA code (2011)"].str.startswith("E")]
+    df = df[df["LSOA code (2021)"].str.startswith("E")]
     conn = psycopg2.connect(DB)
     cur = conn.cursor()
     cur.execute("TRUNCATE TABLE core_imd_lsoa CASCADE")
     rows = []
     for _, r in df.iterrows():
         rows.append((
-            r["LSOA code (2011)"],
+            r["LSOA code (2021)"],
             r["Index of Multiple Deprivation (IMD) Score"],
             r["Index of Multiple Deprivation (IMD) Rank (where 1 is most deprived)"],
             r["Index of Multiple Deprivation (IMD) Decile (where 1 is most deprived 10% of LSOAs)"],

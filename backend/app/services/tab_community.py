@@ -1,27 +1,35 @@
 """Tab 4: Community & Education — Bible Part 4, Tab 4.
 Queries: core_census_demographics_lsoa, core_census_housing_lsoa, core_schools,
-         core_imd_lsoa, core_nhs_facilities."""
+         core_imd_lsoa, core_nhs_facilities.
+Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
-from app.services.helpers import metric, get_lsoa_centroid
+from app.services.helpers import metric, get_parent_lad_codes
 
 
-async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
+async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
     metrics = []
-    lat, lon = await get_lsoa_centroid(db, lsoa_code)
+    lat, lon = centroid_lat, centroid_lon
+    parent_lads = await get_parent_lad_codes(db, lad_code)
 
     # --- Demographics ---
     demo_local = await db.execute(
         text("""
-            SELECT total_population, population_density, median_age,
-                   pct_age_0_15, pct_age_16_64, pct_age_65_plus,
-                   pct_families, pct_singles, pct_sharers
-            FROM core_census_demographics_lsoa WHERE lsoa_code = :lsoa
+            SELECT SUM(total_population) as total_population,
+                   AVG(population_density) as population_density,
+                   AVG(median_age) as median_age,
+                   AVG(pct_age_0_15) as pct_age_0_15,
+                   AVG(pct_age_16_64) as pct_age_16_64,
+                   AVG(pct_age_65_plus) as pct_age_65_plus,
+                   AVG(pct_families) as pct_families,
+                   AVG(pct_singles) as pct_singles,
+                   AVG(pct_sharers) as pct_sharers
+            FROM core_census_demographics_lsoa WHERE lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     demo_row = demo_local.mappings().first()
 
-    # Parent averages (LAD-wide)
+    # Parent averages (parent comparison group — e.g. all London boroughs)
     demo_parent = await db.execute(
         text("""
             SELECT AVG(population_density) as avg_density, AVG(median_age) as avg_age,
@@ -31,9 +39,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
                    AVG(pct_age_65_plus) as avg_65plus
             FROM core_census_demographics_lsoa d
             JOIN core_lsoa_boundaries l ON l.lsoa_code = d.lsoa_code
-            WHERE l.lad_code = :lad
+            WHERE l.lad_code = ANY(:parent_lads)
         """),
-        {"lad": lad_code},
+        {"parent_lads": parent_lads},
     )
     demo_parent_row = demo_parent.mappings().first()
 
@@ -72,14 +80,162 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
             },
         ))
 
+    # --- Census Extra (LSOA-level): degree, health, economic activity, car ownership, born abroad ---
+    extra_result = await db.execute(
+        text("""
+            SELECT AVG(pct_good_health) as pct_good_health,
+                   AVG(pct_economically_active) as pct_economically_active,
+                   AVG(pct_degree) as pct_degree,
+                   AVG(pct_no_car) as pct_no_car,
+                   AVG(pct_born_abroad) as pct_born_abroad
+            FROM core_census_extra_lsoa WHERE lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    extra_row = extra_result.mappings().first()
+
+    extra_parent = await db.execute(
+        text("""
+            SELECT AVG(e.pct_good_health) as pct_good_health,
+                   AVG(e.pct_economically_active) as pct_economically_active,
+                   AVG(e.pct_degree) as pct_degree,
+                   AVG(e.pct_no_car) as pct_no_car,
+                   AVG(e.pct_born_abroad) as pct_born_abroad
+            FROM core_census_extra_lsoa e
+            JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
+            WHERE l.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    extra_parent_row = extra_parent.mappings().first()
+
+    if extra_row and extra_row["pct_good_health"] is not None:
+        metrics.append(metric(
+            "good_health", "Good Health",
+            _r(extra_row["pct_good_health"]),
+            _r(extra_parent_row["pct_good_health"]) if extra_parent_row else None,
+            "%",
+        ))
+    if extra_row and extra_row["pct_economically_active"] is not None:
+        metrics.append(metric(
+            "economically_active", "Economically Active",
+            _r(extra_row["pct_economically_active"]),
+            _r(extra_parent_row["pct_economically_active"]) if extra_parent_row else None,
+            "%",
+        ))
+    if extra_row and extra_row["pct_degree"] is not None:
+        metrics.append(metric(
+            "degree_educated", "Degree Educated",
+            _r(extra_row["pct_degree"]),
+            _r(extra_parent_row["pct_degree"]) if extra_parent_row else None,
+            "%",
+        ))
+    if extra_row and extra_row["pct_no_car"] is not None:
+        metrics.append(metric(
+            "no_car", "No Car Household",
+            _r(extra_row["pct_no_car"]),
+            _r(extra_parent_row["pct_no_car"]) if extra_parent_row else None,
+            "%",
+        ))
+    if extra_row and extra_row["pct_born_abroad"] is not None:
+        metrics.append(metric(
+            "born_abroad", "Born Abroad",
+            _r(extra_row["pct_born_abroad"]),
+            _r(extra_parent_row["pct_born_abroad"]) if extra_parent_row else None,
+            "%",
+        ))
+
+    # --- WFH ---
+    wfh_result = await db.execute(
+        text("""
+            SELECT AVG(pct_wfh) as pct_wfh
+            FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    wfh_row = wfh_result.mappings().first()
+
+    wfh_parent = await db.execute(
+        text("""
+            SELECT AVG(c.pct_wfh) as avg_wfh
+            FROM core_cycling_lsoa c
+            JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+            WHERE l.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    wfh_parent_row = wfh_parent.mappings().first()
+
+    if wfh_row and wfh_row["pct_wfh"] is not None:
+        metrics.append(metric(
+            "wfh", "Works From Home",
+            _r(wfh_row["pct_wfh"]),
+            _r(wfh_parent_row["avg_wfh"]) if wfh_parent_row else None,
+            "%",
+        ))
+
+    # --- Demographics Overview (grouped 8-card panel) ---
+    demo_cards: dict = {}
+    if demo_row:
+        demo_cards["population_density"] = {
+            "label": "Population Density", "value": _r(demo_row["population_density"]),
+            "unit": "ppl/ha", "parent": _r(demo_parent_row["avg_density"]) if demo_parent_row else None,
+        }
+        demo_cards["median_age"] = {
+            "label": "Median Age", "value": _r(demo_row["median_age"]),
+            "unit": "yrs", "parent": _r(demo_parent_row["avg_age"]) if demo_parent_row else None,
+        }
+        demo_cards["pct_families"] = {
+            "label": "Families", "value": _r(demo_row["pct_families"]),
+            "unit": "%", "parent": _r(demo_parent_row["avg_families"]) if demo_parent_row else None,
+        }
+    if extra_row and extra_row["pct_good_health"] is not None:
+        demo_cards["good_health"] = {
+            "label": "Good Health", "value": _r(extra_row["pct_good_health"]),
+            "unit": "%", "parent": _r(extra_parent_row["pct_good_health"]) if extra_parent_row else None,
+        }
+    if extra_row and extra_row["pct_economically_active"] is not None:
+        demo_cards["employed"] = {
+            "label": "Economically Active", "value": _r(extra_row["pct_economically_active"]),
+            "unit": "%", "parent": _r(extra_parent_row["pct_economically_active"]) if extra_parent_row else None,
+        }
+    if extra_row and extra_row["pct_degree"] is not None:
+        demo_cards["degree"] = {
+            "label": "Degree Educated", "value": _r(extra_row["pct_degree"]),
+            "unit": "%", "parent": _r(extra_parent_row["pct_degree"]) if extra_parent_row else None,
+        }
+    if wfh_row and wfh_row["pct_wfh"] is not None:
+        demo_cards["wfh"] = {
+            "label": "Works From Home", "value": _r(wfh_row["pct_wfh"]),
+            "unit": "%", "parent": _r(wfh_parent_row["avg_wfh"]) if wfh_parent_row else None,
+        }
+    if extra_row and extra_row["pct_no_car"] is not None:
+        demo_cards["no_car"] = {
+            "label": "No Car", "value": _r(extra_row["pct_no_car"]),
+            "unit": "%", "parent": _r(extra_parent_row["pct_no_car"]) if extra_parent_row else None,
+        }
+    if demo_cards:
+        metrics.insert(0, metric(
+            "demographics_overview", "Demographics Overview",
+            _r(demo_row["total_population"]) if demo_row and demo_row["total_population"] else None,
+            None, "people",
+            details={"cards": demo_cards},
+        ))
+
     # --- Housing Tenure & Type ---
     housing_local = await db.execute(
         text("""
-            SELECT total_households, pct_owned, pct_social_rent, pct_private_rent,
-                   pct_detached, pct_semi, pct_terraced, pct_flat
-            FROM core_census_housing_lsoa WHERE lsoa_code = :lsoa
+            SELECT SUM(total_households) as total_households,
+                   AVG(pct_owned) as pct_owned,
+                   AVG(pct_social_rent) as pct_social_rent,
+                   AVG(pct_private_rent) as pct_private_rent,
+                   AVG(pct_detached) as pct_detached,
+                   AVG(pct_semi) as pct_semi,
+                   AVG(pct_terraced) as pct_terraced,
+                   AVG(pct_flat) as pct_flat
+            FROM core_census_housing_lsoa WHERE lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     housing_row = housing_local.mappings().first()
 
@@ -90,9 +246,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
                    AVG(pct_terraced) as avg_terr, AVG(pct_flat) as avg_flat
             FROM core_census_housing_lsoa h
             JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
-            WHERE l.lad_code = :lad
+            WHERE l.lad_code = ANY(:parent_lads)
         """),
-        {"lad": lad_code},
+        {"parent_lads": parent_lads},
     )
     housing_parent_row = housing_parent.mappings().first()
 
@@ -119,6 +275,83 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
                 "pct_semi": _r(housing_row["pct_semi"]),
                 "pct_terraced": _r(housing_row["pct_terraced"]),
                 "pct_flat": _r(housing_row["pct_flat"]),
+            },
+        ))
+
+    # --- Household Size (TS017) ---
+    hh_size_local = await db.execute(
+        text("""
+            SELECT AVG(pct_1person) as pct_1person, AVG(pct_2person) as pct_2person,
+                   AVG(pct_3_4person) as pct_3_4person, AVG(pct_5plus) as pct_5plus
+            FROM core_census_hh_size_lsoa WHERE lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    hh_size_row = hh_size_local.mappings().first()
+
+    hh_size_parent = await db.execute(
+        text("""
+            SELECT AVG(h.pct_1person) as pct_1person, AVG(h.pct_2person) as pct_2person,
+                   AVG(h.pct_3_4person) as pct_3_4person, AVG(h.pct_5plus) as pct_5plus
+            FROM core_census_hh_size_lsoa h
+            JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
+            WHERE l.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    hh_size_parent_row = hh_size_parent.mappings().first()
+
+    if hh_size_row and hh_size_row["pct_1person"] is not None:
+        metrics.append(metric(
+            "household_size", "Household Size",
+            _r(hh_size_row["pct_1person"]),
+            _r(hh_size_parent_row["pct_1person"]) if hh_size_parent_row else None,
+            "% single-person",
+            details={
+                "pct_1person": _r(hh_size_row["pct_1person"]),
+                "pct_2person": _r(hh_size_row["pct_2person"]),
+                "pct_3_4person": _r(hh_size_row["pct_3_4person"]),
+                "pct_5plus": _r(hh_size_row["pct_5plus"]),
+            },
+        ))
+
+    # --- Ethnicity (TS022, ward-level) ---
+    ethnicity_local = await db.execute(
+        text("""
+            SELECT AVG(pct_white) as pct_white, AVG(pct_asian) as pct_asian,
+                   AVG(pct_black) as pct_black, AVG(pct_mixed) as pct_mixed,
+                   AVG(pct_other) as pct_other
+            FROM core_census_ethnicity_ward WHERE ward_code = :ward
+        """),
+        {"ward": ward_code},
+    )
+    eth_row = ethnicity_local.mappings().first()
+
+    ethnicity_parent = await db.execute(
+        text("""
+            SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
+                   AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
+                   AVG(e.pct_other) as pct_other
+            FROM core_census_ethnicity_ward e
+            JOIN core_ward_boundaries wb ON wb.ward_code = e.ward_code
+            WHERE wb.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    eth_parent_row = ethnicity_parent.mappings().first()
+
+    if eth_row and eth_row["pct_white"] is not None:
+        metrics.append(metric(
+            "ethnicity", "Ethnicity",
+            _r(eth_row["pct_white"]),
+            _r(eth_parent_row["pct_white"]) if eth_parent_row else None,
+            "% White",
+            details={
+                "pct_white": _r(eth_row["pct_white"]),
+                "pct_asian": _r(eth_row["pct_asian"]),
+                "pct_black": _r(eth_row["pct_black"]),
+                "pct_mixed": _r(eth_row["pct_mixed"]),
+                "pct_other": _r(eth_row["pct_other"]),
             },
         ))
 
@@ -212,11 +445,19 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
     # --- IMD Deprivation ---
     imd_local = await db.execute(
         text("""
-            SELECT imd_score, imd_rank, imd_decile, income_score, employment_score,
-                   education_score, health_score, crime_score, barriers_score, living_env_score
-            FROM core_imd_lsoa WHERE lsoa_code = :lsoa
+            SELECT AVG(imd_score) as imd_score,
+                   AVG(imd_rank) as imd_rank,
+                   ROUND(AVG(imd_decile)) as imd_decile,
+                   AVG(income_score) as income_score,
+                   AVG(employment_score) as employment_score,
+                   AVG(education_score) as education_score,
+                   AVG(health_score) as health_score,
+                   AVG(crime_score) as crime_score,
+                   AVG(barriers_score) as barriers_score,
+                   AVG(living_env_score) as living_env_score
+            FROM core_imd_lsoa WHERE lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     imd_row = imd_local.mappings().first()
 
@@ -226,9 +467,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
                    AVG(crime_score) as avg_crime
             FROM core_imd_lsoa i
             JOIN core_lsoa_boundaries l ON l.lsoa_code = i.lsoa_code
-            WHERE l.lad_code = :lad
+            WHERE l.lad_code = ANY(:parent_lads)
         """),
-        {"lad": lad_code},
+        {"parent_lads": parent_lads},
     )
     imd_parent_row = imd_parent.mappings().first()
 
@@ -241,6 +482,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
             details={
                 "rank": int(imd_row["imd_rank"]) if imd_row["imd_rank"] else None,
                 "decile": int(imd_row["imd_decile"]) if imd_row["imd_decile"] else None,
+                "parent_avg_decile": round(float(imd_parent_row["avg_decile"]), 1) if imd_parent_row and imd_parent_row["avg_decile"] else None,
                 "income": _r(imd_row["income_score"]),
                 "employment": _r(imd_row["employment_score"]),
                 "education": _r(imd_row["education_score"]),
@@ -253,7 +495,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
 
     # --- NHS Facilities nearby ---
     if lat is not None:
-        nhs_result = await db.execute(
+        # Counts by type within 2km
+        nhs_counts_result = await db.execute(
             text("""
                 SELECT facility_type, COUNT(*) as cnt
                 FROM core_nhs_facilities
@@ -262,27 +505,81 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_code):
             """),
             {"lat": lat, "lon": lon},
         )
-        nhs_counts = {r["facility_type"]: int(r["cnt"]) for r in nhs_result.mappings().all()}
+        nhs_counts = {r["facility_type"]: int(r["cnt"]) for r in nhs_counts_result.mappings().all()}
         total_nhs = sum(nhs_counts.values())
+
+        # Parent comparison: precomputed counts per LSOA (no spatial work at query time)
+        nhs_parent_result = await db.execute(
+            text("""
+                SELECT AVG(n.nhs_count_2km) as avg_count
+                FROM core_nhs_lsoa n
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = n.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        nhs_parent_row = nhs_parent_result.mappings().first()
+        nhs_parent_avg = _r(nhs_parent_row["avg_count"]) if nhs_parent_row and nhs_parent_row["avg_count"] else None
+
+        # Nearest facilities list (all types, up to 10)
+        nhs_list_result = await db.execute(
+            text("""
+                SELECT name, facility_type,
+                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::int as distance_m
+                FROM core_nhs_facilities
+                WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
+                ORDER BY distance_m
+                LIMIT 10
+            """),
+            {"lat": lat, "lon": lon},
+        )
+        nhs_list = [
+            {"name": r["name"], "type": r["facility_type"], "distance_m": int(r["distance_m"])}
+            for r in nhs_list_result.mappings().all()
+        ]
+
+        # Per-type nearest distance
+        nearest_by_type: dict = {}
+        for item in nhs_list:
+            t = item["type"]
+            if t not in nearest_by_type:
+                nearest_by_type[t] = item["distance_m"]
+
+        # Build type_summary: {type: {count, nearest_m}}
+        type_summary = {
+            t: {"count": nhs_counts.get(t, 0), "nearest_m": nearest_by_type.get(t)}
+            for t in nhs_counts
+        }
 
         metrics.append(metric(
             "nhs_facilities", "NHS Facilities (2km)",
-            total_nhs, None, "count",
-            details=nhs_counts or None,
+            total_nhs, nhs_parent_avg, "count",
+            details={
+                "type_summary": type_summary,
+                "facilities": nhs_list,
+            } if (nhs_counts or nhs_list) else None,
         ))
 
     # --- Area Persona / Top Match ---
     # Bible: classify area based on demographics, housing, density
     demo = await db.execute(
         text("""
-            SELECT d.population_density, d.median_age, d.pct_families, d.pct_singles,
-                   d.pct_age_0_15, d.pct_age_16_64, d.pct_age_65_plus,
-                   h.pct_owned, h.pct_private_rent, h.pct_detached, h.pct_flat
+            SELECT AVG(d.population_density) as population_density,
+                   AVG(d.median_age) as median_age,
+                   AVG(d.pct_families) as pct_families,
+                   AVG(d.pct_singles) as pct_singles,
+                   AVG(d.pct_age_0_15) as pct_age_0_15,
+                   AVG(d.pct_age_16_64) as pct_age_16_64,
+                   AVG(d.pct_age_65_plus) as pct_age_65_plus,
+                   AVG(h.pct_owned) as pct_owned,
+                   AVG(h.pct_private_rent) as pct_private_rent,
+                   AVG(h.pct_detached) as pct_detached,
+                   AVG(h.pct_flat) as pct_flat
             FROM core_census_demographics_lsoa d
             JOIN core_census_housing_lsoa h ON h.lsoa_code = d.lsoa_code
-            WHERE d.lsoa_code = :lsoa
+            WHERE d.lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     demo_row = demo.mappings().first()
     if demo_row:

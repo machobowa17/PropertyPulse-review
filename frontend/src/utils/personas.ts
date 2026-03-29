@@ -258,6 +258,19 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     if (isLower) return { soWhat: 'Low cycling uptake', watchOut: 'Less infrastructure', colour: 'neutral' };
   }
 
+  // --- Work From Home Rate ---
+  if (id === 'commute_distance') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'WFH-friendly area', watchOut: 'None', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Flexible working common', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'High WFH rate', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Commuter area', watchOut: 'None', colour: 'neutral' };
+      return { soWhat: 'Lower WFH rate', watchOut: 'None', colour: 'neutral' };
+    }
+  }
+
   // --- Broadband ---
   if (id === 'broadband') {
     if (isHigher) {
@@ -366,6 +379,34 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'investor') return { soWhat: 'EPC upgrade needed', watchOut: 'MEES compliance', colour: 'red' };
       if (persona === 'family') return { soWhat: 'Higher energy bills', watchOut: 'Insulation costs', colour: 'amber' };
       return { soWhat: 'Low efficiency', watchOut: 'Energy costs', colour: 'amber' };
+    }
+  }
+
+  // --- EPC Energy Score ---
+  if (id === 'epc_energy_score') {
+    if (isHigher) {
+      if (persona === 'investor') return { soWhat: 'Efficient stock', watchOut: 'None', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Lower energy bills', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Above-avg efficiency', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'investor') return { soWhat: 'Upgrade costs likely', watchOut: 'MEES compliance', colour: 'red' };
+      if (persona === 'family') return { soWhat: 'Higher energy bills', watchOut: 'Insulation costs', colour: 'amber' };
+      return { soWhat: 'Below-avg efficiency', watchOut: 'Energy costs', colour: 'amber' };
+    }
+  }
+
+  // --- EPC Rated C or Above ---
+  if (id === 'epc_rating_c_plus') {
+    if (isHigher) {
+      if (persona === 'investor') return { soWhat: 'MEES-ready stock', watchOut: 'None', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Well-insulated homes', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Good EPC ratings', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'investor') return { soWhat: 'EPC upgrade needed', watchOut: '2028 MEES deadline', colour: 'red' };
+      if (persona === 'family') return { soWhat: 'Older housing stock', watchOut: 'Higher bills', colour: 'amber' };
+      return { soWhat: 'Fewer efficient homes', watchOut: 'Energy costs', colour: 'amber' };
     }
   }
 

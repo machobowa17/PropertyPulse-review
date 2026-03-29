@@ -33,6 +33,7 @@ export function formatValue(value: number | string | null, unit: string): string
   }
   if (unit === 'GBP/sqft') return '£' + Math.round(value).toLocaleString('en-GB') + '/sqft';
   if (unit === '% of income') return value.toFixed(1) + '% of income';
+  if (unit === '% of workers') return value.toFixed(1) + '%';
   if (unit === 'grade') return String(value);
   if (unit === 'score /100') return Math.round(value) + '/100';
   if (unit === '% commuters') return value.toFixed(1) + '%';
@@ -69,6 +70,7 @@ export const METRIC_ICONS: Record<string, string> = {
   ev_chargers: 'Zap',
   fifteen_min_score: 'Timer',
   ptal: 'TrainFront',
+  ptal_score: 'TrainFront',
   cycling: 'Bike',
   mobile_coverage: 'Smartphone',
   broadband: 'Wifi',
@@ -77,7 +79,10 @@ export const METRIC_ICONS: Record<string, string> = {
   air_quality_pm25: 'Cloud',
   noise: 'Volume2',
   nearest_park: 'TreePine',
+  green_cover: 'TreePine',
+  parks_1km: 'MapPin',
   epc_rating: 'Flame',
+  demographics_overview: 'Users',
   population_density: 'Users',
   median_age: 'Clock',
   household_composition: 'Heart',
@@ -93,4 +98,14 @@ export const METRIC_ICONS: Record<string, string> = {
   controlling_party: 'Vote',
   water_company: 'Droplet',
   financial_health: 'ShieldCheck',
+  median_earnings: 'Banknote',
+  wfh: 'Home',
+  commute_distance: 'Home',
+  good_health: 'Heart',
+  economically_active: 'Briefcase',
+  degree_educated: 'GraduationCap',
+  no_car: 'Car',
+  born_abroad: 'Globe',
+  epc_energy_score: 'Flame',
+  epc_rating_c_plus: 'Flame',
 };

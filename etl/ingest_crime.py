@@ -1,6 +1,5 @@
 """ETL: Police.uk Bulk Data → core_crime_lsoa. Bible: Tab 3 Environment.
-Extracts latest month + same month prior year from bulk ZIP, aggregates by LSOA + crime type.
-Two months loaded to enable YoY crime trend calculation."""
+Loads ALL months from the bulk ZIP for full coverage across all forces."""
 import os, csv, io, zipfile, psycopg2
 from collections import defaultdict
 from psycopg2.extras import execute_values
@@ -14,16 +13,8 @@ def ingest():
     with zipfile.ZipFile(ZIP_PATH, "r") as zf:
         all_street = [n for n in zf.namelist() if n.endswith("-street.csv")]
         months = sorted(set(n.split("/")[0] for n in all_street))
-        latest_month = months[-1]  # e.g., "2026-01"
-
-        # Find same month prior year
-        year, mon = latest_month.split("-")
-        prior_month = f"{int(year)-1}-{mon}"  # e.g., "2025-01"
-
-        target_months = [latest_month]
-        if prior_month in months:
-            target_months.append(prior_month)
-        print(f"  Loading months: {target_months}")
+        target_months = months  # Load ALL months
+        print(f"  Loading {len(target_months)} months: {target_months[0]} → {target_months[-1]}")
 
         all_rows = []
         for target in target_months:

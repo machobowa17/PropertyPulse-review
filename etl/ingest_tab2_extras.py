@@ -46,8 +46,8 @@ def ingest_ptal():
 
 
 def ingest_cycling():
-    """Census 2021 TS061 — % cycling to work by LSOA."""
-    print("Ingesting cycling (Census TS061)...")
+    """Census 2021 TS061 — % cycling and % WFH by LSOA."""
+    print("Ingesting cycling + WFH (Census TS061)...")
     path = os.path.join(DATA_DIR, "census2021-ts061-lsoa.csv")
     rows = []
     with open(path, "r", encoding="utf-8") as f:
@@ -58,15 +58,18 @@ def ingest_cycling():
                 continue
             total_col = "Method of travel to workplace: Total: All usual residents aged 16 years and over in employment the week before the census"
             cycle_col = "Method of travel to workplace: Bicycle"
+            wfh_col = "Method of travel to workplace: Work mainly at or from home"
             try:
                 total = int(r.get(total_col, "0"))
                 cycling = int(r.get(cycle_col, "0"))
+                wfh = int(r.get(wfh_col, "0"))
             except (ValueError, TypeError):
                 continue
             if total == 0:
                 continue
             pct_cycling = round(cycling / total * 100, 2)
-            rows.append((lsoa, total, cycling, pct_cycling))
+            pct_wfh = round(wfh / total * 100, 2)
+            rows.append((lsoa, total, cycling, pct_cycling, wfh, pct_wfh))
 
     conn = psycopg2.connect(DB)
     cur = conn.cursor()
@@ -75,11 +78,16 @@ def ingest_cycling():
             lsoa_code TEXT PRIMARY KEY,
             total_workers INTEGER,
             cycling_count INTEGER,
-            pct_cycling NUMERIC(5,2)
+            pct_cycling NUMERIC(5,2),
+            wfh_count INTEGER,
+            pct_wfh NUMERIC(5,2)
         )
     """)
     cur.execute("TRUNCATE TABLE core_cycling_lsoa")
-    execute_values(cur, "INSERT INTO core_cycling_lsoa (lsoa_code, total_workers, cycling_count, pct_cycling) VALUES %s", rows)
+    execute_values(cur, """
+        INSERT INTO core_cycling_lsoa (lsoa_code, total_workers, cycling_count, pct_cycling, wfh_count, pct_wfh)
+        VALUES %s
+    """, rows)
     conn.commit()
     cur.execute("SELECT COUNT(*) FROM core_cycling_lsoa")
     print(f"  core_cycling_lsoa: {cur.fetchone()[0]:,} rows")

@@ -1,12 +1,14 @@
 """Tab 3: Environment & Safety — Bible Part 4, Tab 3.
-Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa."""
+Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa.
+Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
-from app.services.helpers import metric, get_lsoa_centroid
+from app.services.helpers import metric, get_parent_lad_codes
 
 
-async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
+async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
     metrics = []
-    lat, lon = await get_lsoa_centroid(db, lsoa_code)
+    lat, lon = centroid_lat, centroid_lon
+    parent_lads = await get_parent_lad_codes(db, lad_code)
 
     # --- Crime & Safety ---
     # Bible: Overall crime rate per 1,000 population vs national average, breakdown by type
@@ -19,91 +21,229 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
     crime_local = await db.execute(
         text("""
             SELECT crime_type, SUM(crime_count) as cnt
-            FROM core_crime_lsoa WHERE lsoa_code = :lsoa AND month = :month
+            FROM core_crime_lsoa WHERE lsoa_code = ANY(:codes) AND month = :month
             GROUP BY crime_type ORDER BY cnt DESC
         """),
-        {"lsoa": lsoa_code, "month": latest_month},
+        {"codes": lsoa_codes, "month": latest_month},
     )
     crime_rows = crime_local.mappings().all()
     local_total = sum(int(r["cnt"]) for r in crime_rows)
     crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows}
 
-    # Get local population for rate calculation
+    # Forces with known data gaps (GMP excluded from national bulk ZIP since 2019)
+    GMP_LAD_CODES = {'E08000001','E08000002','E08000003','E08000004','E08000005',
+                     'E08000006','E08000007','E08000008','E08000009','E08000010'}
+    crime_data_unavailable = False
+
+    # MSOA-level fallback: LSOAs absent or sparse in crime dataset (incl. GMP partial coverage)
+    if local_total == 0:
+        crime_msoa = await db.execute(
+            text("""
+                SELECT c.crime_type, SUM(c.crime_count) as cnt
+                FROM core_crime_lsoa c
+                JOIN core_postcodes p ON p.lsoa_code = c.lsoa_code
+                WHERE p.msoa_code IN (
+                    SELECT DISTINCT msoa_code FROM core_postcodes
+                    WHERE lsoa_code = ANY(:codes) AND msoa_code IS NOT NULL
+                ) AND c.month = :month
+                GROUP BY c.crime_type ORDER BY cnt DESC
+            """),
+            {"codes": lsoa_codes, "month": latest_month},
+        )
+        crime_rows_msoa = crime_msoa.mappings().all()
+        if crime_rows_msoa:
+            local_total = sum(int(r["cnt"]) for r in crime_rows_msoa)
+            crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows_msoa}
+        elif lad_code in GMP_LAD_CODES:
+            crime_data_unavailable = True
+
+    # Get local population — try direct LSOA first, then MSOA fallback (deduped)
     pop_result = await db.execute(
-        text("SELECT total_population FROM core_census_demographics_lsoa WHERE lsoa_code = :lsoa"),
-        {"lsoa": lsoa_code},
+        text("SELECT SUM(total_population) as total_population FROM core_census_demographics_lsoa WHERE lsoa_code = ANY(:codes)"),
+        {"codes": lsoa_codes},
     )
     pop_row = pop_result.mappings().first()
     local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
 
-    # Parent average crime rate (LAD level, per 1000 pop)
-    crime_parent = await db.execute(
+    if not local_pop:
+        pop_result = await db.execute(
+            text("""
+                SELECT SUM(d.total_population) as total_population
+                FROM core_census_demographics_lsoa d
+                WHERE d.lsoa_code IN (
+                    SELECT DISTINCT p2.lsoa_code FROM core_postcodes p2
+                    WHERE p2.msoa_code IN (
+                        SELECT DISTINCT msoa_code FROM core_postcodes
+                        WHERE lsoa_code = ANY(:codes) AND msoa_code IS NOT NULL
+                    )
+                )
+            """),
+            {"codes": lsoa_codes},
+        )
+        pop_row = pop_result.mappings().first()
+        local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
+
+    # Parent average crime rate (parent comparison group, per 1000 pop)
+    # Use 12-month rolling window to smooth out single-month coverage gaps (e.g. GMP API ingest)
+    parent_result = await db.execute(
         text("""
+            WITH parent_lsoas AS (
+                SELECT DISTINCT c.lsoa_code
+                FROM core_crime_lsoa c
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+                  AND c.month > :window_start AND c.month <= :window_end
+            )
             SELECT SUM(c.crime_count) as total_crimes,
-                   SUM(d.total_population) as total_pop
+                   COUNT(DISTINCT c.month) as months_count,
+                   (SELECT SUM(d.total_population) FROM core_census_demographics_lsoa d
+                    WHERE d.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)) as total_pop
             FROM core_crime_lsoa c
-            JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
-            JOIN core_census_demographics_lsoa d ON d.lsoa_code = c.lsoa_code
-            WHERE l.lad_code = :lad AND c.month = :month
+            WHERE c.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)
+              AND c.month > :window_start AND c.month <= :window_end
         """),
-        {"lad": lad_code, "month": latest_month},
+        {"parent_lads": parent_lads,
+         "window_start": latest_month.replace(year=latest_month.year - 1),
+         "window_end": latest_month},
     )
-    cp_row = crime_parent.mappings().first()
+    pr_row = parent_result.mappings().first()
+    parent_crimes = int(pr_row["total_crimes"]) if pr_row and pr_row["total_crimes"] else 0
+    parent_pop = int(pr_row["total_pop"]) if pr_row and pr_row["total_pop"] else 0
+    parent_months = int(pr_row["months_count"]) if pr_row and pr_row["months_count"] else 0
 
-    local_rate = round(local_total / local_pop * 1000, 1) if local_pop and local_pop > 0 else None
+    # Annualise local: monthly snapshot × 12
+    local_rate = round(local_total / local_pop * 1000 * 12, 1) if local_pop and local_pop > 0 else None
     parent_rate = None
-    if cp_row and cp_row["total_pop"] and int(cp_row["total_pop"]) > 0:
-        parent_rate = round(int(cp_row["total_crimes"]) / int(cp_row["total_pop"]) * 1000, 1)
+    # GMP parent areas: crime data is too incomplete for a meaningful parent comparison
+    gmp_parent = lad_code in GMP_LAD_CODES
+    # Annualise parent: total over window / months_in_window * 12, per 1000 pop
+    if parent_pop > 0 and parent_months > 0 and not gmp_parent:
+        parent_rate = round(parent_crimes / parent_months / parent_pop * 1000 * 12, 1)
 
-    if local_rate is not None:
+    if crime_data_unavailable:
         metrics.append(metric(
-            "crime_rate", "Crime Rate (per 1,000 pop)",
-            local_rate, parent_rate, "per 1,000",
-            details=crime_breakdown or None,
+            "crime_rate", "Crime Rate (per 1,000 pop/yr)",
+            None, None, "per 1,000/yr",
+            details={"data_unavailable_note": "Greater Manchester Police do not publish crime data to the national open data platform. Data not available for this area."},
+        ))
+    elif local_rate is not None:
+        crime_details = dict(crime_breakdown) if crime_breakdown else {}
+        crime_details["monthly_crimes"] = local_total
+        crime_details["resident_population"] = local_pop
+        # Flag high-footfall areas where resident pop << daytime footfall inflates rate
+        if local_rate > 500:
+            crime_details["high_footfall_note"] = "High rate reflects low resident population vs crime volume (city centre / commercial LSOA)"
+        metrics.append(metric(
+            "crime_rate", "Crime Rate (per 1,000 pop/yr)",
+            local_rate, parent_rate, "per 1,000/yr",
+            details=crime_details,
         ))
 
-    # Bible: Crime Trend — year-on-year change
+    # Bible: Crime Trend — year-on-year change using rolling 12-month windows
+    # Single-month comparisons are too noisy for small LSOAs (e.g. 8 vs 4 = +100%).
     if latest_month:
-        from datetime import timedelta
-        prior_month = latest_month.replace(year=latest_month.year - 1)
-        prior_local = await db.execute(
-            text("SELECT SUM(crime_count) as cnt FROM core_crime_lsoa WHERE lsoa_code = :lsoa AND month = :month"),
-            {"lsoa": lsoa_code, "month": prior_month},
+        rolling_current = await db.execute(
+            text("""
+                SELECT SUM(crime_count) as cnt
+                FROM core_crime_lsoa
+                WHERE lsoa_code = ANY(:codes)
+                  AND month > :month_start AND month <= :month_end
+            """),
+            {"codes": lsoa_codes,
+             "month_start": latest_month.replace(year=latest_month.year - 1),
+             "month_end": latest_month},
         )
-        prior_row = prior_local.mappings().first()
-        prior_total = int(prior_row["cnt"]) if prior_row and prior_row["cnt"] else None
+        rolling_prior = await db.execute(
+            text("""
+                SELECT SUM(crime_count) as cnt
+                FROM core_crime_lsoa
+                WHERE lsoa_code = ANY(:codes)
+                  AND month > :month_start AND month <= :month_end
+            """),
+            {"codes": lsoa_codes,
+             "month_start": latest_month.replace(year=latest_month.year - 2),
+             "month_end": latest_month.replace(year=latest_month.year - 1)},
+        )
+        current_row = rolling_current.mappings().first()
+        prior_row = rolling_prior.mappings().first()
+        rolling_current_total = int(current_row["cnt"]) if current_row and current_row["cnt"] else None
+        rolling_prior_total = int(prior_row["cnt"]) if prior_row and prior_row["cnt"] else None
 
-        if prior_total and prior_total > 0 and local_total > 0:
-            yoy_change = round((local_total - prior_total) / prior_total * 100, 1)
+        if rolling_prior_total and rolling_prior_total > 0 and rolling_current_total:
+            yoy_change = round((rolling_current_total - rolling_prior_total) / rolling_prior_total * 100, 1)
             metrics.append(metric(
                 "crime_trend", "Crime Trend (YoY)",
                 yoy_change, None, "%",
-                details={"latest_month_crimes": local_total, "prior_year_crimes": prior_total},
+                details={"current_12m_crimes": rolling_current_total, "prior_12m_crimes": rolling_prior_total},
             ))
 
     # --- Flood Risk ---
-    # Bible: Flood Risk level (High/Medium/Low/Very Low)
-    # Zone 3 = High, Zone 2 = Medium, neither = Low/Very Low
-    if lat is not None:
-        flood_result = await db.execute(
-            text("""
-                SELECT flood_zone
-                FROM core_flood_zones
-                WHERE ST_Intersects(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-                ORDER BY flood_zone DESC LIMIT 1
-            """),
-            {"lat": lat, "lon": lon},
-        )
-        flood_row = flood_result.mappings().first()
-        if flood_row:
-            zone = flood_row["flood_zone"]
-            flood_level = "High" if zone == "3" else "Medium"
+    # Zone 3 = High risk (>1% annual), Zone 2 = Medium (0.1–1%), neither = Low/Very Low
+    flood_local = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) as total_lsoas,
+                SUM(in_zone_3::int) as zone3_count,
+                SUM(in_zone_2::int) as zone2_count
+            FROM core_flood_lsoa
+            WHERE lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    flood_row = flood_local.mappings().first()
+
+    flood_parent = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) as total_lsoas,
+                SUM(f.in_zone_3::int) as zone3_count,
+                SUM(f.in_zone_2::int) as zone2_count
+            FROM core_flood_lsoa f
+            JOIN core_lsoa_boundaries l ON l.lsoa_code = f.lsoa_code
+            WHERE l.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    flood_parent_row = flood_parent.mappings().first()
+
+    if flood_row and flood_row["total_lsoas"]:
+        total = int(flood_row["total_lsoas"])
+        z3 = int(flood_row["zone3_count"] or 0)
+        z2 = int(flood_row["zone2_count"] or 0)
+        pct_high = round(z3 / total * 100, 1)
+        pct_medium = round(z2 / total * 100, 1)
+
+        # Overall risk level: based on highest zone present
+        if z3 > 0:
+            flood_level = "High" if pct_high >= 10 else "Low-Medium"
+        elif z2 > 0:
+            flood_level = "Medium" if pct_medium >= 10 else "Low"
         else:
             flood_level = "Very Low"
+
+        # Parent percentages
+        if flood_parent_row and flood_parent_row["total_lsoas"]:
+            pt = int(flood_parent_row["total_lsoas"])
+            parent_pct_high = round(int(flood_parent_row["zone3_count"] or 0) / pt * 100, 1)
+        else:
+            parent_pct_high = None
+
+        # risk_score: 0=Very Low … 100=High (drives gauge needle)
+        risk_score = {"Very Low": 5, "Low": 20, "Low-Medium": 40, "Medium": 60, "High": 90}.get(flood_level, 5)
 
         metrics.append(metric(
             "flood_risk", "Flood Risk",
             flood_level, None, "level",
+            details={
+                "risk_score": risk_score,
+                "flood_level": flood_level,
+                "zone_3_pct": pct_high,
+                "zone_2_pct": pct_medium,
+                "high_risk_lsoa_count": z3,
+                "medium_risk_lsoa_count": z2,
+                "total_lsoas": total,
+                "parent_zone_3_pct": parent_pct_high,
+            },
         ))
 
     # --- Air Quality ---
@@ -122,15 +262,15 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
         )
         aq_row = aq_result.mappings().first()
 
-        # Parent average across LAD
+        # Parent average across parent comparison group
         aq_parent = await db.execute(
             text("""
                 SELECT AVG(a.no2_ugm3) as avg_no2, AVG(a.pm25_ugm3) as avg_pm25
                 FROM core_air_quality a
                 JOIN core_lsoa_boundaries l ON ST_Intersects(l.geom, a.geom)
-                WHERE l.lad_code = :lad
+                WHERE l.lad_code = ANY(:parent_lads)
             """),
-            {"lad": lad_code},
+            {"parent_lads": parent_lads},
         )
         aq_parent_row = aq_parent.mappings().first()
 
@@ -162,19 +302,21 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
 
     # --- Noise ---
     # Bible: average decibel level (road/rail/air)
-    # Query nearest postcode in LSOA for noise data
+    # Query postcodes in LSOA(s) for noise data, average across all
     noise_result = await db.execute(
         text("""
-            SELECT n.road_noise_db, n.rail_noise_db, n.air_noise_db, n.noise_band
+            SELECT AVG(n.road_noise_db) as road_noise_db,
+                   AVG(n.rail_noise_db) as rail_noise_db,
+                   AVG(n.air_noise_db) as air_noise_db,
+                   MODE() WITHIN GROUP (ORDER BY n.noise_band) as noise_band
             FROM core_noise n
             JOIN core_postcodes p ON p.postcode = n.postcode
-            WHERE p.lsoa_code = :lsoa
-            LIMIT 1
+            WHERE p.lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     noise_row = noise_result.mappings().first()
-    if noise_row:
+    if noise_row and any(noise_row[k] is not None for k in ("road_noise_db", "rail_noise_db", "air_noise_db")):
         metrics.append(metric(
             "noise", "Noise Level",
             float(noise_row["road_noise_db"]) if noise_row["road_noise_db"] else None,
@@ -188,12 +330,14 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
         ))
 
     # --- Green Space ---
-    # Bible: distance to nearest park, total green space area within 1km
+    # Bible: % green cover, parks within 1km, nearest park, woodland/park hectares
     if lat is not None:
+        # Nearest park/garden
         park_result = await db.execute(
             text("""
-                SELECT site_name, area_hectares,
-                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m
+                SELECT site_name, site_type,
+                       ST_Area(geom::geography) / 10000 as area_ha,
+                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::int as distance_m
                 FROM core_green_space
                 WHERE geom IS NOT NULL
                 ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
@@ -203,50 +347,96 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
         )
         park_row = park_result.mappings().first()
 
-        # Total green space within 1km
-        gs_total = await db.execute(
+        # All green spaces within 1km — totals by type + list of parks
+        gs_within = await db.execute(
             text("""
-                SELECT SUM(area_hectares) as total_ha, COUNT(*) as cnt
+                SELECT site_name, site_type,
+                       ST_Area(geom::geography) / 10000 as area_ha,
+                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::int as distance_m
                 FROM core_green_space
                 WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
+                  AND geom IS NOT NULL
+                ORDER BY distance_m
             """),
             {"lat": lat, "lon": lon},
         )
-        gs_row = gs_total.mappings().first()
+        gs_rows = gs_within.mappings().all()
 
-        nearest_dist = round(float(park_row["distance_m"])) if park_row else None
+        total_ha = sum(float(r["area_ha"]) for r in gs_rows if r["area_ha"])
+        park_count = len(gs_rows)
+        # % green cover: total green ha / area of 1km-radius circle (π×1² km² ≈ 314.16 ha)
+        green_cover_pct = round(total_ha / 314.16 * 100, 1) if total_ha else 0.0
+
+        # Hectares breakdown by site type
+        type_ha = {}
+        for r in gs_rows:
+            st = r["site_type"] or "Other"
+            type_ha[st] = round(type_ha.get(st, 0) + float(r["area_ha"] or 0), 2)
+
+        # Top parks list (up to 8)
+        parks_list = [
+            {"name": r["site_name"] or "Unnamed", "type": r["site_type"], "distance_m": int(r["distance_m"]), "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] else None}
+            for r in gs_rows[:8]
+        ]
+
+        nearest_dist = int(park_row["distance_m"]) if park_row else None
+
+        metrics.append(metric(
+            "green_cover", "Green Space Cover (1km)",
+            green_cover_pct, None, "%",
+            details={
+                "total_hectares": round(total_ha, 1),
+                "parks_within_1km": park_count,
+                **{k.lower().replace(" ", "_") + "_ha": v for k, v in type_ha.items()},
+            },
+        ))
+
         metrics.append(metric(
             "nearest_park", "Nearest Park",
             nearest_dist, None, "metres",
             details={
                 "park_name": park_row["site_name"] if park_row else None,
-                "park_area_ha": round(float(park_row["area_hectares"]), 1) if park_row and park_row["area_hectares"] else None,
-                "green_space_1km_ha": round(float(gs_row["total_ha"]), 1) if gs_row and gs_row["total_ha"] else None,
-                "green_space_1km_count": int(gs_row["cnt"]) if gs_row else 0,
+                "park_type": park_row["site_type"] if park_row else None,
+                "park_area_ha": round(float(park_row["area_ha"]), 1) if park_row and park_row["area_ha"] else None,
             },
+        ))
+
+        metrics.append(metric(
+            "parks_1km", "Parks Within 1km",
+            park_count, None, "count",
+            details={"parks": parks_list} if parks_list else None,
         ))
 
     # --- EPC Energy Performance ---
     # Bible: Average EPC rating, % below Band C
     epc_result = await db.execute(
         text("""
-            SELECT avg_energy_score, pct_rating_a_b, pct_rating_c, pct_rating_d,
-                   pct_rating_e_g, avg_co2_emissions, total_certs
-            FROM core_epc_lsoa WHERE lsoa_code = :lsoa
+            SELECT AVG(avg_energy_score) as avg_energy_score,
+                   AVG(pct_rating_a_b) as pct_rating_a_b,
+                   AVG(pct_rating_c) as pct_rating_c,
+                   AVG(pct_rating_d) as pct_rating_d,
+                   AVG(pct_rating_e_g) as pct_rating_e_g,
+                   AVG(avg_co2_emissions) as avg_co2_emissions,
+                   SUM(total_certs) as total_certs,
+                   AVG(heat_gas_pct) as heat_gas_pct,
+                   AVG(heat_electric_pct) as heat_electric_pct,
+                   AVG(heat_oil_pct) as heat_oil_pct,
+                   AVG(heat_district_pct) as heat_district_pct
+            FROM core_epc_lsoa WHERE lsoa_code = ANY(:codes)
         """),
-        {"lsoa": lsoa_code},
+        {"codes": lsoa_codes},
     )
     epc_row = epc_result.mappings().first()
 
-    # Parent EPC average
+    # Parent EPC average (parent comparison group)
     epc_parent = await db.execute(
         text("""
             SELECT AVG(avg_energy_score) as avg_score, AVG(pct_rating_a_b) as avg_ab
             FROM core_epc_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
-            WHERE l.lad_code = :lad
+            WHERE l.lad_code = ANY(:parent_lads)
         """),
-        {"lad": lad_code},
+        {"parent_lads": parent_lads},
     )
     epc_parent_row = epc_parent.mappings().first()
 
@@ -254,15 +444,26 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_code):
         local_score = round(float(epc_row["avg_energy_score"]), 1)
         parent_score = round(float(epc_parent_row["avg_score"]), 1) if epc_parent_row and epc_parent_row["avg_score"] else None
 
+        epc_details = {
+            "pct_a_b": round(float(epc_row["pct_rating_a_b"]), 1) if epc_row["pct_rating_a_b"] else None,
+            "pct_c": round(float(epc_row["pct_rating_c"]), 1) if epc_row["pct_rating_c"] else None,
+            "pct_d": round(float(epc_row["pct_rating_d"]), 1) if epc_row["pct_rating_d"] else None,
+            "pct_e_g": round(float(epc_row["pct_rating_e_g"]), 1) if epc_row["pct_rating_e_g"] else None,
+        }
+        # Heating type breakdown (from extended EPC data)
+        if epc_row["heat_gas_pct"] is not None:
+            epc_details["heating_gas_pct"] = round(float(epc_row["heat_gas_pct"]), 1)
+        if epc_row["heat_electric_pct"] is not None:
+            epc_details["heating_electric_pct"] = round(float(epc_row["heat_electric_pct"]), 1)
+        if epc_row["heat_oil_pct"] is not None:
+            epc_details["heating_oil_pct"] = round(float(epc_row["heat_oil_pct"]), 1)
+        if epc_row["heat_district_pct"] is not None:
+            epc_details["heating_district_pct"] = round(float(epc_row["heat_district_pct"]), 1)
+
         metrics.append(metric(
             "epc_rating", "Average EPC Score",
             local_score, parent_score, "score",
-            details={
-                "pct_a_b": round(float(epc_row["pct_rating_a_b"]), 1) if epc_row["pct_rating_a_b"] else None,
-                "pct_c": round(float(epc_row["pct_rating_c"]), 1) if epc_row["pct_rating_c"] else None,
-                "pct_d": round(float(epc_row["pct_rating_d"]), 1) if epc_row["pct_rating_d"] else None,
-                "pct_e_g": round(float(epc_row["pct_rating_e_g"]), 1) if epc_row["pct_rating_e_g"] else None,
-            },
+            details=epc_details,
         ))
 
     # --- ESG Score (Composite 0-100) ---

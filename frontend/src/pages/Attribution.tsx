@@ -15,8 +15,8 @@ const SOURCES = [
     note: 'Private rental market statistics.' },
   { name: 'Census 2021 (Demographics & Housing)', licence: 'OGL v3', org: 'Office for National Statistics',
     note: 'Census 2021 data \u00a9 Crown copyright.' },
-  { name: 'Index of Multiple Deprivation (IMD) 2019', licence: 'OGL v3', org: 'MHCLG',
-    note: 'English indices of deprivation.' },
+  { name: 'Index of Multiple Deprivation (IMD) 2025', licence: 'OGL v3', org: 'MHCLG',
+    note: 'English indices of deprivation. Uses 2021 LSOA boundaries.' },
   { name: 'DfE Get Information About Schools (GIAS)', licence: 'OGL v3', org: 'Department for Education',
     note: 'School information and performance data.' },
   { name: 'NHS Organisation Data Service (ODS)', licence: 'OGL v3', org: 'NHS Digital',
@@ -55,6 +55,14 @@ const SOURCES = [
     note: 'Local council political control and councillor data.' },
   { name: 'Ofwat Water Company Boundaries', licence: 'CC BY 4.0', org: 'Ofwat / Stream Water Data Portal',
     note: 'Water company service area boundaries.' },
+  { name: 'Census 2021 TS017 — Household Size', licence: 'OGL v3', org: 'Office for National Statistics',
+    note: 'Number of people per household by LSOA.' },
+  { name: 'Census 2021 TS022 — Ethnic Group', licence: 'OGL v3', org: 'Office for National Statistics',
+    note: 'Detailed ethnic group breakdown by ward.' },
+  { name: 'Census 2021 TS058 — Distance Travelled to Work', licence: 'OGL v3', org: 'Office for National Statistics',
+    note: 'Distance bands and work-from-home rates by LSOA.' },
+  { name: 'MHCLG EPC Register (Energy Performance Certificates)', licence: 'OGL v3', org: 'MHCLG',
+    note: 'Energy efficiency ratings and heating type data by LSOA.' },
 ];
 
 export default function Attribution() {

@@ -4,7 +4,7 @@ from sqlalchemy import text
 from app.services.helpers import metric, get_parent_lad_codes
 
 
-async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_code):
+async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
     metrics = []
 
     # --- Council Tax ---
@@ -22,7 +22,10 @@ async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_code):
     parent_lads = await get_parent_lad_codes(db, lad_code)
     ct_parent = await db.execute(
         text("""
-            SELECT AVG(band_d) as avg_band_d
+            SELECT AVG(band_a) as avg_a, AVG(band_b) as avg_b, AVG(band_c) as avg_c,
+                   AVG(band_d) as avg_d, AVG(band_e) as avg_e, AVG(band_f) as avg_f,
+                   AVG(band_g) as avg_g, AVG(band_h) as avg_h,
+                   AVG(band_d) as avg_band_d
             FROM core_council_tax_lad
             WHERE lad_code = ANY(:lads)
         """),
@@ -46,6 +49,14 @@ async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_code):
                 "band_f": _r(ct_row["band_f"]),
                 "band_g": _r(ct_row["band_g"]),
                 "band_h": _r(ct_row["band_h"]),
+                "parent_a": _r(ct_parent_row["avg_a"]) if ct_parent_row else None,
+                "parent_b": _r(ct_parent_row["avg_b"]) if ct_parent_row else None,
+                "parent_c": _r(ct_parent_row["avg_c"]) if ct_parent_row else None,
+                "parent_d": _r(ct_parent_row["avg_d"]) if ct_parent_row else None,
+                "parent_e": _r(ct_parent_row["avg_e"]) if ct_parent_row else None,
+                "parent_f": _r(ct_parent_row["avg_f"]) if ct_parent_row else None,
+                "parent_g": _r(ct_parent_row["avg_g"]) if ct_parent_row else None,
+                "parent_h": _r(ct_parent_row["avg_h"]) if ct_parent_row else None,
             },
         ))
 

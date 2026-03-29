@@ -7,3 +7,7 @@ geoalchemy2==0.15.2
 redis[hiredis]==5.1.1
 pydantic==2.9.2
 pydantic-settings==2.5.2
+slowapi==0.1.9
+limits==3.13.0
+weasyprint==62.3
+aiofiles==24.1.0

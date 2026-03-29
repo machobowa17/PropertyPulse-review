@@ -56,3 +56,16 @@ body {
 
 /* Smooth scroll */
 html { scroll-behavior: smooth; }
+
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  100% { transform: translateX(200%); }
+}
+
+/* Hide scrollbar but keep functionality (used in TabBar, horizontal scroll areas) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+

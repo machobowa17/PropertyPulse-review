@@ -6,7 +6,7 @@ from psycopg2.extras import execute_values
 DB = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty")
 # Already extracted
 BROADBAND_DIR = os.path.expanduser(
-    "~/Desktop/Manus Take 2/etl/data/broadband/202407_fixed_postcode_coverage_r01/postcode_files"
+    "~/Desktop/Manus Take 2/etl/data/broadband/postcode_files/postcode_files"
 )
 
 def ingest():
@@ -35,12 +35,12 @@ def ingest():
                     sfbb = float(r.get("SFBB availability (% premises)", "") or 0)
                     ufbb = float(r.get("UFBB availability (% premises)", "") or 0)
                     gigabit = float(r.get("Gigabit availability (% premises)", "") or 0)
-                    # No direct avg speed in coverage data — use 0 as placeholder
-                    # Coverage data has availability percentages, not speeds
+                    # UFBB (≥300Mbit/s) = Ofcom ultrafast broadband, virtually all full fibre
+                    fttp = ufbb
                 except (ValueError, TypeError):
                     continue
 
-                rows.append((pc, None, None, sfbb, ufbb, gigabit, None))
+                rows.append((pc, None, None, sfbb, ufbb, gigabit, fttp))
 
         if rows:
             execute_values(cur, """INSERT INTO core_broadband_postcode

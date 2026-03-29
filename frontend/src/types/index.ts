@@ -15,6 +15,7 @@ export interface ResolveResponse {
     lon: number | null;
   };
   error?: string;
+  suggestions?: Array<{ label: string; type: string; area: string | null }>;
 }
 
 export interface Metric {

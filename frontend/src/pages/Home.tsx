@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, TrendingUp, Shield, Users, Building2 } from 'lucide-react';
+import { MapPin, TrendingUp, Shield, Users, Building2 } from 'lucide-react';
+import SearchBox from '../components/SearchBox';
 
 const FEATURES = [
   { icon: TrendingUp, title: 'Property & Market', desc: 'Prices, rents, yields, trends' },
@@ -11,13 +11,7 @@ const FEATURES = [
 ];
 
 export default function Home() {
-  const [query, setQuery] = useState('');
   const navigate = useNavigate();
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (query.trim()) navigate(`/results?q=${encodeURIComponent(query.trim())}`);
-  };
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -29,7 +23,7 @@ export default function Home() {
           </div>
           <span className="font-bold text-lg tracking-tight text-ink">PropertyPulse</span>
         </div>
-        <a href="/data-attribution" className="text-sm text-ink-muted hover:text-brand-600 transition-colors">
+        <a href="/data-attribution" className="text-sm text-ink-muted hover:text-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 rounded transition-colors">
           Data Sources
         </a>
       </nav>
@@ -53,40 +47,60 @@ export default function Home() {
           </p>
 
           {/* Search */}
-          <form onSubmit={handleSearch} className="relative max-w-xl mx-auto">
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-faint group-focus-within:text-brand-600 transition-colors" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Try CR5 1RA or Coulsdon..."
-                className="w-full h-14 pl-12 pr-32 rounded-2xl border-2 border-divider bg-white text-ink text-lg
-                           placeholder:text-ink-faint focus:outline-none focus:border-brand-500 focus:ring-4
-                           focus:ring-brand-100 transition-all shadow-sm hover:shadow-md"
-              />
-              <button
-                type="submit"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-10 px-6 rounded-xl bg-brand-600 text-white
-                           font-semibold text-sm hover:bg-brand-700 active:scale-95 transition-all"
-              >
-                Analyse
-              </button>
-            </div>
-          </form>
+          <div className="max-w-xl mx-auto">
+            <SearchBox size="lg" placeholder="Try CR5 1RA or Coulsdon..." />
+          </div>
 
           {/* Quick examples */}
-          <div className="flex flex-wrap justify-center gap-2 mt-4">
-            {['CR5 1RA', 'Coulsdon', 'Manchester', 'SW1A 1AA'].map((ex) => (
-              <button
-                key={ex}
-                onClick={() => { setQuery(ex); navigate(`/results?q=${encodeURIComponent(ex)}`); }}
-                className="px-3 py-1.5 rounded-lg text-sm text-ink-muted bg-white border border-divider
-                           hover:border-brand-300 hover:text-brand-600 transition-all cursor-pointer"
-              >
-                {ex}
-              </button>
-            ))}
+          <div className="mt-5 space-y-2.5">
+            <div className="flex flex-wrap justify-center gap-2 items-center">
+              <span className="text-[11px] text-ink-faint uppercase tracking-wide font-medium w-full text-center mb-0.5">
+                Try a postcode
+              </span>
+              {[
+                { q: 'SW1A 1AA', label: 'SW1A 1AA', hint: 'Westminster' },
+                { q: 'M1 1AE',   label: 'M1 1AE',   hint: 'Manchester' },
+                { q: 'E1 6RF',   label: 'E1 6RF',   hint: 'Whitechapel' },
+                { q: 'BS1 4DJ',  label: 'BS1 4DJ',  hint: 'Bristol' },
+                { q: 'LS1 1BA',  label: 'LS1 1BA',  hint: 'Leeds' },
+                { q: 'CR5 1RA',  label: 'CR5 1RA',  hint: 'Coulsdon' },
+              ].map(({ q, label, hint }) => (
+                <button
+                  key={q}
+                  onClick={() => navigate(`/results?q=${encodeURIComponent(q)}`)}
+                  className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-white border border-divider
+                             hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 transition-all cursor-pointer"
+                >
+                  <MapPin className="w-3 h-3 text-ink-faint group-hover:text-brand-500 shrink-0" />
+                  <span className="font-semibold text-ink group-hover:text-brand-700">{label}</span>
+                  <span className="text-ink-faint text-xs group-hover:text-brand-500">{hint}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 items-center">
+              <span className="text-[11px] text-ink-faint uppercase tracking-wide font-medium w-full text-center mb-0.5">
+                Or a place name
+              </span>
+              {[
+                { q: 'Manchester',  hint: 'North West' },
+                { q: 'Birmingham',  hint: 'West Midlands' },
+                { q: 'Edinburgh',   hint: 'Scotland' },
+                { q: 'Bristol',     hint: 'South West' },
+                { q: 'Leeds',       hint: 'Yorkshire' },
+                { q: 'Hackney',     hint: 'East London' },
+              ].map(({ q, hint }) => (
+                <button
+                  key={q}
+                  onClick={() => navigate(`/results?q=${encodeURIComponent(q)}`)}
+                  className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface border border-divider
+                             hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 transition-all cursor-pointer"
+                >
+                  <MapPin className="w-3 h-3 text-ink-faint group-hover:text-brand-500 shrink-0" />
+                  <span className="font-semibold text-ink group-hover:text-brand-700">{q}</span>
+                  <span className="text-ink-faint text-xs group-hover:text-brand-500">{hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

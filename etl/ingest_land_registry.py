@@ -24,7 +24,7 @@ from psycopg2.extras import execute_values
 
 DB_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://ukproperty:ukproperty_dev@localhost:5433/ukproperty",
+    "postgresql://postgres@localhost:5432/ukproperty",
 )
 
 DATA_DIR = os.path.expanduser("~/Desktop/Manus Take 2/etl/data")
@@ -79,7 +79,8 @@ def parse_and_aggregate(files, pc_lookup):
     """
     # LSOA aggregation: key → list of prices + counters
     lsoa_data = defaultdict(lambda: {
-        "prices": [], "new_build": 0, "freehold": 0, "leasehold": 0,
+        "prices": [], "freehold_prices": [], "leasehold_prices": [],
+        "new_build": 0, "freehold": 0, "leasehold": 0,
     })
     # LAD aggregation
     lad_data = defaultdict(lambda: {"prices": []})
@@ -132,8 +133,10 @@ def parse_and_aggregate(files, pc_lookup):
                     lsoa_data[lsoa_key]["new_build"] += 1
                 if duration == "F":
                     lsoa_data[lsoa_key]["freehold"] += 1
+                    lsoa_data[lsoa_key]["freehold_prices"].append(price)
                 elif duration == "L":
                     lsoa_data[lsoa_key]["leasehold"] += 1
+                    lsoa_data[lsoa_key]["leasehold_prices"].append(price)
 
                 # LAD aggregation
                 lad_key = (lad_code, year_month, prop_type)
@@ -146,6 +149,7 @@ def parse_and_aggregate(files, pc_lookup):
 
 
 def ingest():
+    sys.stdout.reconfigure(line_buffering=True)
     print("=== Land Registry Price Paid Ingestion ===")
 
     # Download
@@ -173,6 +177,8 @@ def ingest():
         prices = d["prices"]
         if not prices:
             continue
+        fh_prices = d["freehold_prices"]
+        lh_prices = d["leasehold_prices"]
         lsoa_rows.append((
             lsoa_code, year_month, prop_type,
             round(sum(prices) / len(prices), 2),                # avg_price
@@ -183,19 +189,24 @@ def ingest():
             d["new_build"],                                       # new_build_count
             d["freehold"],                                        # freehold_count
             d["leasehold"],                                       # leasehold_count
+            round(sum(fh_prices) / len(fh_prices), 2) if fh_prices else None,  # avg_freehold_price
+            round(sum(lh_prices) / len(lh_prices), 2) if lh_prices else None,  # avg_leasehold_price
         ))
 
     if lsoa_rows:
-        sql = """
-            INSERT INTO core_property_prices_lsoa (
-                lsoa_code, year_month, property_type,
-                avg_price, median_price, min_price, max_price,
-                transaction_count, new_build_count, freehold_count, leasehold_count
-            ) VALUES %s
-            ON CONFLICT (lsoa_code, year_month, property_type) DO NOTHING
-        """
-        execute_values(cur, sql, lsoa_rows, page_size=5000)
+        import io
+        print(f"  Writing {len(lsoa_rows):,} rows via COPY...")
+        buf = io.StringIO()
+        for row in lsoa_rows:
+            buf.write('\t'.join('' if v is None else str(v) for v in row) + '\n')
+        buf.seek(0)
+        cur.copy_from(buf, 'core_property_prices_lsoa', sep='\t', null='',
+                       columns=('lsoa_code', 'year_month', 'property_type',
+                                'avg_price', 'median_price', 'min_price', 'max_price',
+                                'transaction_count', 'new_build_count', 'freehold_count', 'leasehold_count',
+                                'avg_freehold_price', 'avg_leasehold_price'))
         conn.commit()
+        print("  LSOA COPY committed.")
 
     # Insert LAD-level data
     print(f"Inserting {len(lad_data):,} LAD-level aggregations...")
@@ -215,15 +226,15 @@ def ingest():
         ))
 
     if lad_rows:
-        sql = """
-            INSERT INTO core_property_prices_lad (
-                lad_code, year_month, property_type,
-                avg_price, median_price, transaction_count
-            ) VALUES %s
-            ON CONFLICT (lad_code, year_month, property_type) DO NOTHING
-        """
-        execute_values(cur, sql, lad_rows, page_size=5000)
+        buf = io.StringIO()
+        for row in lad_rows:
+            buf.write('\t'.join('' if v is None else str(v) for v in row) + '\n')
+        buf.seek(0)
+        cur.copy_from(buf, 'core_property_prices_lad', sep='\t', null='',
+                       columns=('lad_code', 'year_month', 'property_type',
+                                'avg_price', 'median_price', 'transaction_count'))
         conn.commit()
+        print("  LAD COPY committed.")
 
     cur.execute("SELECT COUNT(*) FROM core_property_prices_lsoa")
     lsoa_count = cur.fetchone()[0]
