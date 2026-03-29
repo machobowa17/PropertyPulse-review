@@ -102,10 +102,10 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
 };
 
 export const COLOUR_STYLES = {
-  green: { bg: 'bg-signal-green-bg', text: 'text-signal-green', border: 'border-signal-green/20' },
-  amber: { bg: 'bg-signal-amber-bg', text: 'text-signal-amber', border: 'border-signal-amber/20' },
-  red: { bg: 'bg-signal-red-bg', text: 'text-signal-red', border: 'border-signal-red/20' },
-  neutral: { bg: 'bg-surface', text: 'text-ink-muted', border: 'border-divider' },
+  green: { bg: 'bg-signal-green-bg', text: 'text-signal-green', border: 'border-signal-green/20', accent: 'border-l-emerald-500' },
+  amber: { bg: 'bg-signal-amber-bg', text: 'text-signal-amber', border: 'border-signal-amber/20', accent: 'border-l-amber-500' },
+  red: { bg: 'bg-signal-red-bg', text: 'text-signal-red', border: 'border-signal-red/20', accent: 'border-l-red-500' },
+  neutral: { bg: 'bg-surface', text: 'text-ink-muted', border: 'border-divider', accent: 'border-l-zinc-300' },
 };
 
 interface Props {
@@ -131,8 +131,9 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
   return (
     <div
       className={`
-        rounded-2xl bg-white border transition-all duration-200
-        ${expanded ? 'shadow-md border-brand-200' : 'shadow-sm border-divider hover:shadow-md'}
+        rounded-2xl bg-white border-l-[3px] transition-all duration-200
+        ${colours.accent}
+        ${expanded ? 'shadow-md ring-1 ring-brand-200/50' : 'shadow-sm hover:shadow-md hover:-translate-y-px'}
       `}
     >
       {/* ═══ DESKTOP: Table Row (Bible 6.2.1: Metric | Local | Parent | So What | Watch Out) ═══ */}
@@ -151,7 +152,7 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
         </div>
 
         {/* Local */}
-        <div className="text-base font-bold text-ink tracking-tight">
+        <div className="text-lg font-bold font-mono text-ink tracking-tight">
           {formatValue(metric.local_value, metric.unit)}
         </div>
 
@@ -211,7 +212,7 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
           <div className="flex items-baseline gap-2 mt-0.5">
-            <span className="text-xl font-bold text-ink tracking-tight">
+            <span className="text-xl font-bold font-mono text-ink tracking-tight">
               {formatValue(metric.local_value, metric.unit)}
             </span>
             {metric.parent_value !== null && (
@@ -255,7 +256,7 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 lg:px-5 pb-4 pt-1 border-t border-divider">
+            <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
               <DetailsRenderer details={metric.details} unit={metric.unit} />
               {METRIC_SOURCES[metric.id] && (
                 <div className="mt-3 flex items-center gap-1.5">

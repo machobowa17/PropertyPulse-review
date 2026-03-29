@@ -14,18 +14,23 @@ interface Props {
 
 export default function TabBar({ active, onChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+  const [pillStyle, setPillStyle] = useState({ left: 0, width: 0 });
 
   useEffect(() => {
     const el = ref.current?.querySelector(`[data-tab="${active}"]`) as HTMLElement | null;
     if (el) {
-      setIndicatorStyle({ left: el.offsetLeft, width: el.offsetWidth });
+      setPillStyle({ left: el.offsetLeft, width: el.offsetWidth });
     }
   }, [active]);
 
   return (
     <div className="relative" ref={ref}>
-      <div className="flex overflow-x-auto gap-1 py-2 scrollbar-none -mx-1 px-1">
+      <div className="flex overflow-x-auto gap-1 py-2 scrollbar-none -mx-1 px-1 relative">
+        {/* Sliding pill background */}
+        <div
+          className="absolute top-2 h-[calc(100%-16px)] bg-brand-50 rounded-xl transition-all duration-300 ease-out"
+          style={{ left: pillStyle.left, width: pillStyle.width }}
+        />
         {TABS.map((tab) => {
           const Icon = ICONS[tab.icon] || TrendingUp;
           const isActive = active === tab.name;
@@ -35,26 +40,21 @@ export default function TabBar({ active, onChange }: Props) {
               data-tab={tab.name}
               onClick={() => onChange(tab.name)}
               className={`
-                flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap
-                transition-all duration-200 cursor-pointer shrink-0
+                relative z-10 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap
+                transition-colors duration-200 cursor-pointer shrink-0
                 ${isActive
-                  ? 'text-brand-700 bg-brand-50'
-                  : 'text-ink-muted hover:text-ink hover:bg-surface'
+                  ? 'text-brand-700'
+                  : 'text-ink-muted hover:text-ink'
                 }
               `}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className={`w-4 h-4 ${isActive ? 'text-brand-600' : ''}`} />
               <span className="hidden sm:inline">{tab.name}</span>
               <span className="sm:hidden">{tab.shortName}</span>
             </button>
           );
         })}
       </div>
-      {/* Active indicator line */}
-      <div
-        className="absolute bottom-0 h-0.5 bg-brand-600 rounded-full transition-all duration-300"
-        style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
-      />
     </div>
   );
 }

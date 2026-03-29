@@ -26,8 +26,8 @@ export default function PersonaSelector({ current, onChange }: Props) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-divider bg-white
-                   hover:border-brand-300 transition-all text-sm cursor-pointer"
+        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface
+                   hover:bg-brand-50 transition-all text-sm cursor-pointer"
         title="Select your persona for tailored insights"
       >
         <span className="text-base">{currentPersona.icon}</span>
@@ -42,8 +42,8 @@ export default function PersonaSelector({ current, onChange }: Props) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-divider
-                       overflow-hidden z-50"
+            className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl
+                       overflow-hidden z-50 ring-1 ring-black/5"
           >
             <div className="p-2 border-b border-divider">
               <p className="text-xs text-ink-muted font-medium px-2 py-1">I am a...</p>

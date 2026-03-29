@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, ArrowLeft, ChevronDown, SearchX, FileDown } from 'lucide-react';
+import { MapPin, ArrowLeft, ChevronDown, SearchX, FileDown, Leaf, Map } from 'lucide-react';
 import { resolveSearch, fetchAreaTab, fetchBoundary, fetchLsoaBoundary, fetchPriceHistory, fetchAqHistory, fetchComparable, fetchMapPois, fetchDistrictPriceHistory } from '../api/client';
 import type { TabName, PersonaId } from '../types';
 import PersonaSelector from '../components/PersonaSelector';
@@ -114,18 +114,19 @@ export default function Results() {
       >
         Skip to main content
       </a>
+
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-divider">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link to="/" className="p-2 rounded-xl hover:bg-surface focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors" aria-label="Back to home">
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-divider/60">
+        <div className="max-w-[1400px] mx-auto px-4 lg:px-6 py-2.5 flex items-center gap-3">
+          <Link to="/" className="p-2 rounded-xl hover:bg-surface transition-colors" aria-label="Back to home">
             <ArrowLeft className="w-5 h-5 text-ink-muted" aria-hidden="true" />
           </Link>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center">
-              <MapPin className="w-3.5 h-3.5 text-white" />
+          <Link to="/" className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center">
+              <Leaf className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-bold text-sm tracking-tight text-ink hidden sm:block">PropertyPulse</span>
-          </div>
+          </Link>
           <div className="flex-1 max-w-md">
             <SearchBox size="sm" initialValue={q} />
           </div>
@@ -144,11 +145,11 @@ export default function Results() {
 
       {resolved?.error && (
         <div className="max-w-xl mx-auto mt-16 px-4">
-          <div className="rounded-2xl border border-divider bg-white p-6 text-center shadow-sm">
+          <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
             <div className="w-12 h-12 rounded-2xl bg-surface flex items-center justify-center mx-auto mb-4">
               <SearchX className="w-6 h-6 text-ink-faint" />
             </div>
-            <h2 className="text-base font-bold text-ink mb-1">No results for &ldquo;{q}&rdquo;</h2>
+            <h2 className="text-lg font-bold text-ink mb-1">No results for &ldquo;{q}&rdquo;</h2>
             <p className="text-sm text-ink-muted mb-5">
               Check the spelling, or try a full postcode (e.g. SW1A 1AA) or a city name.
             </p>
@@ -160,7 +161,7 @@ export default function Results() {
                     <button
                       key={s.label}
                       onClick={() => window.location.href = `/results?q=${encodeURIComponent(s.label)}`}
-                      className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface border border-divider hover:border-brand-400 hover:bg-brand-50 transition-all cursor-pointer"
+                      className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface hover:bg-brand-50 hover:text-brand-700 transition-all cursor-pointer"
                     >
                       <MapPin className="w-3 h-3 text-ink-faint group-hover:text-brand-500 shrink-0" />
                       <span className="font-semibold text-ink group-hover:text-brand-700">{s.label}</span>
@@ -176,181 +177,196 @@ export default function Results() {
 
       {codes && (
         <>
-          {/* Area banner */}
-          <div className="max-w-7xl mx-auto w-full px-4 pt-5 pb-2">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-ink">{areaName}</h1>
-              <span className="text-sm text-ink-faint font-medium">
-                vs {parentName}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-ink-muted">
-              {codes.lad && <span className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-mono">LAD: {codes.lad}</span>}
-              {codes.ward && <span className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-mono">Ward: {codes.ward}</span>}
-              {codes.lsoa && <span className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-mono">LSOA: {codes.lsoa}</span>}
-              <a
-                href={`/api/v1/report/${lad}/${ward}/${lsoa}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Download PDF report for ${areaName}`}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 active:scale-95 transition-all"
-              >
-                <FileDown className="w-3.5 h-3.5" aria-hidden="true" />
-                Download Report
-              </a>
-            </div>
-          </div>
-
-          {/* Map toggle (mobile) */}
-          <div className="max-w-7xl mx-auto w-full px-4 lg:hidden">
-            <button
-              onClick={() => setShowMap(!showMap)}
-              aria-label={showMap ? 'Hide map' : 'Show map'}
-              aria-expanded={showMap}
-              className="flex items-center gap-2 text-sm text-brand-600 font-medium py-2"
-            >
-              <MapPin className="w-4 h-4" aria-hidden="true" />
-              {showMap ? 'Hide Map' : 'View Map'}
-              <ChevronDown className={`w-4 h-4 transition-transform ${showMap ? 'rotate-180' : ''}`} aria-hidden="true" />
-            </button>
-          </div>
-
-          {/* Map */}
-          <AnimatePresence>
-            {showMap && resolved?.coordinates?.lat && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 280, opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="max-w-7xl mx-auto w-full px-4 overflow-hidden"
-              >
-                <div className="rounded-2xl overflow-hidden border border-divider shadow-sm h-[280px]">
-                  <MapView lat={resolved.coordinates.lat} lon={resolved.coordinates.lon!} boundary={boundary} lsoaBoundary={lsoaBoundary} pois={mapPois} activeTab={activeTab} />
+          {/* Area banner — hero strip */}
+          <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-brand-800 border-b border-brand-800/50">
+            <div className="max-w-[1400px] mx-auto px-4 lg:px-6 py-5 lg:py-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white">{areaName}</h1>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <span className="text-sm text-white/50 font-medium">vs {parentName}</span>
+                    <div className="flex items-center gap-1.5 text-[11px] text-white/30 font-mono">
+                      {codes.lad && <span className="px-1.5 py-0.5 rounded bg-white/[0.06]">{codes.lad}</span>}
+                      {codes.ward && <span className="px-1.5 py-0.5 rounded bg-white/[0.06]">{codes.ward}</span>}
+                    </div>
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <a
+                  href={`/api/v1/report/${lad}/${ward}/${lsoa}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Download PDF report for ${areaName}`}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/10 text-white hover:bg-white/15 active:scale-95 transition-all backdrop-blur-sm border border-white/10 self-start"
+                >
+                  <FileDown className="w-4 h-4" aria-hidden="true" />
+                  Download Report
+                </a>
+              </div>
+            </div>
+          </div>
 
-          {/* Tabs */}
-          <div className="sticky top-[61px] z-40 bg-white/90 backdrop-blur-md border-b border-divider mt-4">
-            <div className="max-w-7xl mx-auto px-4">
+          {/* Tabs — sticky below header */}
+          <div className="sticky top-[53px] z-40 bg-white/95 backdrop-blur-md border-b border-divider/60">
+            <div className="max-w-[1400px] mx-auto px-4 lg:px-6">
               <TabBar active={activeTab} onChange={setActiveTab} />
             </div>
           </div>
 
-          {/* Metrics */}
-          <main id="main-content" className="max-w-7xl mx-auto w-full px-4 py-6 flex-1">
-            {tabLoading ? (
-              <SkeletonCard count={8} />
-            ) : (
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="grid gap-3"
-              >
-                {/* Persona score card */}
-                {tabData?.metrics && tabData.metrics.length > 0 && (
-                  <PersonaScoreCard metrics={tabData.metrics} persona={persona} />
+          {/* Main layout: content + map side panel */}
+          <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col lg:flex-row">
+            {/* Left: metrics */}
+            <main id="main-content" className="flex-1 min-w-0 px-4 lg:px-6 py-6">
+              {/* Map toggle (mobile only) */}
+              <div className="lg:hidden mb-4">
+                <button
+                  onClick={() => setShowMap(!showMap)}
+                  aria-label={showMap ? 'Hide map' : 'Show map'}
+                  aria-expanded={showMap}
+                  className="flex items-center gap-2 text-sm text-brand-600 font-medium"
+                >
+                  <Map className="w-4 h-4" aria-hidden="true" />
+                  {showMap ? 'Hide Map' : 'View Map'}
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showMap ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+              </div>
+
+              {/* Mobile map */}
+              <AnimatePresence>
+                {showMap && resolved?.coordinates?.lat && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 280, opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="lg:hidden overflow-hidden mb-4"
+                  >
+                    <div className="rounded-2xl overflow-hidden shadow-sm h-[280px]">
+                      <MapView lat={resolved.coordinates.lat} lon={resolved.coordinates.lon!} boundary={boundary} lsoaBoundary={lsoaBoundary} pois={mapPois} activeTab={activeTab} />
+                    </div>
+                  </motion.div>
                 )}
-                {/* Desktop table header — Bible 6.2.1: Metric | Local | Parent | So What | Watch Out */}
-                {tabData?.metrics && tabData.metrics.length > 0 && (
-                  <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
-                    <span>Metric</span>
-                    <span>Local</span>
-                    <span>{parentName}</span>
-                    <span>So What</span>
-                    <span>Watch Out</span>
-                    <span />
-                  </div>
-                )}
-                {tabData?.metrics.map((m) => (
-                  <MetricCard key={m.id} metric={m} persona={persona} parentName={parentName} />
-                ))}
-                {/* Interactive tools for Property tab */}
-                {activeTab === 'Property & Market' && tabData?.metrics && tabData.metrics.length > 0 && (() => {
-                  const medianPrice = tabData.metrics.find(m => m.id === 'median_price')?.local_value as number | undefined;
-                  const medianEarnings = tabData.metrics.find(m => m.id === 'median_earnings')?.local_value as number | undefined;
-                  const medianRent = tabData.metrics.find(m => m.id === 'median_rent')?.local_value as number | undefined;
-                  const avgPrice = tabData.metrics.find(m => m.id === 'avg_price')?.local_value as number | undefined;
-                  return (
-                    <CollapsibleSection title="Property Calculators">
-                      <div className="grid gap-3 sm:grid-cols-2 mt-3">
-                        <MortgageCalculator
-                          defaultPrice={medianPrice ? Math.round(medianPrice) : undefined}
-                          medianEarnings={medianEarnings ? Math.round(medianEarnings) : undefined}
-                        />
-                        <RentalYieldCalculator
-                          defaultPrice={avgPrice ? Math.round(avgPrice) : undefined}
-                          defaultRent={medianRent ? Math.round(medianRent) : undefined}
-                        />
-                      </div>
+              </AnimatePresence>
+
+              {tabLoading ? (
+                <SkeletonCard count={8} />
+              ) : (
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="grid gap-2.5"
+                >
+                  {/* Persona score card */}
+                  {tabData?.metrics && tabData.metrics.length > 0 && (
+                    <PersonaScoreCard metrics={tabData.metrics} persona={persona} />
+                  )}
+                  {/* Desktop table header */}
+                  {tabData?.metrics && tabData.metrics.length > 0 && (
+                    <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
+                      <span>Metric</span>
+                      <span>Local</span>
+                      <span>{parentName}</span>
+                      <span>So What</span>
+                      <span>Watch Out</span>
+                      <span />
+                    </div>
+                  )}
+                  {tabData?.metrics.map((m) => (
+                    <MetricCard key={m.id} metric={m} persona={persona} parentName={parentName} />
+                  ))}
+                  {/* Interactive tools for Property tab */}
+                  {activeTab === 'Property & Market' && tabData?.metrics && tabData.metrics.length > 0 && (() => {
+                    const medianPrice = tabData.metrics.find(m => m.id === 'median_price')?.local_value as number | undefined;
+                    const medianEarnings = tabData.metrics.find(m => m.id === 'median_earnings')?.local_value as number | undefined;
+                    const medianRent = tabData.metrics.find(m => m.id === 'median_rent')?.local_value as number | undefined;
+                    const avgPrice = tabData.metrics.find(m => m.id === 'avg_price')?.local_value as number | undefined;
+                    return (
+                      <CollapsibleSection title="Property Calculators">
+                        <div className="grid gap-3 sm:grid-cols-2 mt-3">
+                          <MortgageCalculator
+                            defaultPrice={medianPrice ? Math.round(medianPrice) : undefined}
+                            medianEarnings={medianEarnings ? Math.round(medianEarnings) : undefined}
+                          />
+                          <RentalYieldCalculator
+                            defaultPrice={avgPrice ? Math.round(avgPrice) : undefined}
+                            defaultRent={medianRent ? Math.round(medianRent) : undefined}
+                          />
+                        </div>
+                      </CollapsibleSection>
+                    );
+                  })()}
+                  {/* Price history chart */}
+                  {activeTab === 'Property & Market' && priceHistory && priceHistory.local.length > 1 && (
+                    <CollapsibleSection title="Price History">
+                      <PriceHistoryChart
+                        local={priceHistory.local}
+                        regional={priceHistory.regional}
+                        regionalName={priceHistory.regional_name}
+                      />
                     </CollapsibleSection>
-                  );
-                })()}
-                {/* Price history chart */}
-                {activeTab === 'Property & Market' && priceHistory && priceHistory.local.length > 1 && (
-                  <CollapsibleSection title="Price History">
-                    <PriceHistoryChart
-                      local={priceHistory.local}
-                      regional={priceHistory.regional}
-                      regionalName={priceHistory.regional_name}
-                    />
-                  </CollapsibleSection>
-                )}
-                {/* District price history by property type */}
-                {activeTab === 'Property & Market' && districtPrices && Object.keys(districtPrices.by_type).length > 0 && (
-                  <CollapsibleSection title={`${districtPrices.district} — Price by Property Type`}>
-                    <DistrictPriceHistoryChart data={districtPrices} />
-                  </CollapsibleSection>
-                )}
-                {/* Comparable areas */}
-                {activeTab === 'Property & Market' && comparable && comparable.comparable.length > 0 && (
-                  <CollapsibleSection title="Comparable Areas">
-                    <ComparableAreas target={comparable.target} comparable={comparable.comparable} />
-                  </CollapsibleSection>
-                )}
-                {/* Commute estimator (Lifestyle tab) */}
-                {activeTab === 'Lifestyle & Connectivity' && resolved?.coordinates?.lat && (
-                  <CollapsibleSection title="Commute Estimator">
-                    <CommuteEstimator
-                      originLat={resolved.coordinates.lat}
-                      originLon={resolved.coordinates.lon!}
-                      originLabel={areaName}
-                    />
-                  </CollapsibleSection>
-                )}
-                {/* Air quality trend chart */}
-                {activeTab === 'Environment & Safety' && aqHistory && aqHistory.local.length > 1 && (
-                  <CollapsibleSection title="Air Quality Trend">
-                    <AirQualityChart
-                      local={aqHistory.local}
-                      national={aqHistory.national}
-                      ladName={aqHistory.lad_name}
-                    />
-                  </CollapsibleSection>
-                )}
+                  )}
+                  {/* District price history by property type */}
+                  {activeTab === 'Property & Market' && districtPrices && Object.keys(districtPrices.by_type).length > 0 && (
+                    <CollapsibleSection title={`${districtPrices.district} — Price by Property Type`}>
+                      <DistrictPriceHistoryChart data={districtPrices} />
+                    </CollapsibleSection>
+                  )}
+                  {/* Comparable areas */}
+                  {activeTab === 'Property & Market' && comparable && comparable.comparable.length > 0 && (
+                    <CollapsibleSection title="Comparable Areas">
+                      <ComparableAreas target={comparable.target} comparable={comparable.comparable} />
+                    </CollapsibleSection>
+                  )}
+                  {/* Commute estimator (Lifestyle tab) */}
+                  {activeTab === 'Lifestyle & Connectivity' && resolved?.coordinates?.lat && (
+                    <CollapsibleSection title="Commute Estimator">
+                      <CommuteEstimator
+                        originLat={resolved.coordinates.lat}
+                        originLon={resolved.coordinates.lon!}
+                        originLabel={areaName}
+                      />
+                    </CollapsibleSection>
+                  )}
+                  {/* Air quality trend chart */}
+                  {activeTab === 'Environment & Safety' && aqHistory && aqHistory.local.length > 1 && (
+                    <CollapsibleSection title="Air Quality Trend">
+                      <AirQualityChart
+                        local={aqHistory.local}
+                        national={aqHistory.national}
+                        ladName={aqHistory.lad_name}
+                      />
+                    </CollapsibleSection>
+                  )}
 
-                {/* Useful resources — always shown when data is resolved */}
-                {tabData?.metrics && (
-                  <CollapsibleSection title="Useful Resources" defaultOpen={false}>
-                    <UsefulResourcesPanel
-                      postcode={resolved?.type === 'postcode' ? q : null}
-                      ladCode={codes?.lad}
-                    />
-                  </CollapsibleSection>
-                )}
+                  {/* Useful resources — always shown when data is resolved */}
+                  {tabData?.metrics && (
+                    <CollapsibleSection title="Useful Resources" defaultOpen={false}>
+                      <UsefulResourcesPanel
+                        postcode={resolved?.type === 'postcode' ? q : null}
+                        ladCode={codes?.lad}
+                      />
+                    </CollapsibleSection>
+                  )}
 
-                {tabData?.metrics.length === 0 && (
-                  <div className="py-12 text-center text-ink-muted">
-                    No data available for this tab and area.
-                  </div>
-                )}
-              </motion.div>
+                  {tabData?.metrics.length === 0 && (
+                    <div className="py-12 text-center text-ink-muted">
+                      No data available for this tab and area.
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </main>
+
+            {/* Right: persistent map panel (desktop only) */}
+            {resolved?.coordinates?.lat && (
+              <aside className="hidden lg:block w-[420px] shrink-0 sticky top-[105px] h-[calc(100vh-105px)] p-4 pl-0">
+                <div className="rounded-2xl overflow-hidden shadow-sm h-full">
+                  <MapView lat={resolved.coordinates.lat} lon={resolved.coordinates.lon!} boundary={boundary} lsoaBoundary={lsoaBoundary} pois={mapPois} activeTab={activeTab} />
+                </div>
+              </aside>
             )}
-          </main>
+          </div>
         </>
       )}
 

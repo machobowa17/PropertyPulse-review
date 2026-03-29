@@ -43,6 +43,45 @@ const COLOUR_SCORE: Record<string, number> = {
   neutral: 50,
 };
 
+function CircularDial({ score, size = 80 }: { score: number; size?: number }) {
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+  const colour = score >= 70 ? '#059669' : score >= 45 ? '#d97706' : '#dc2626';
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-divider"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={colour}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all duration-700 ease-out"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="font-mono font-bold text-xl text-ink">{score}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function PersonaScoreCard({ metrics, persona }: Props) {
   const { score, breakdown } = useMemo(() => {
     let totalWeight = 0;
@@ -69,43 +108,45 @@ export default function PersonaScoreCard({ metrics, persona }: Props) {
 
   const personaLabel = PERSONAS.find((p) => p.id === persona)?.label || persona;
 
-  const scoreColour =
-    score >= 70 ? 'text-signal-green' : score >= 45 ? 'text-signal-amber' : 'text-signal-red';
-  const scoreBg =
-    score >= 70 ? 'bg-signal-green-bg' : score >= 45 ? 'bg-signal-amber-bg' : 'bg-signal-red-bg';
+  const greenCount = breakdown.filter(b => b.colour === 'green').length;
+  const amberCount = breakdown.filter(b => b.colour === 'amber').length;
+  const redCount = breakdown.filter(b => b.colour === 'red').length;
+
+  const verdict = score >= 70 ? 'Strong fit' : score >= 45 ? 'Mixed signals' : 'Significant concerns';
 
   return (
-    <div className={`rounded-2xl p-4 border border-divider shadow-sm ${scoreBg} space-y-2`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-ink">Persona Verdict</h4>
-          <p className="text-xs text-ink-muted">{personaLabel} suitability</p>
+    <div className="rounded-2xl bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-5">
+        <CircularDial score={score} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="text-base font-bold text-ink">{verdict}</h4>
+          </div>
+          <p className="text-sm text-ink-muted leading-relaxed">
+            For a <span className="font-semibold text-ink">{personaLabel.toLowerCase()}</span>,
+            this area scores {score}/100 based on {breakdown.length} weighted metrics.
+          </p>
+          <div className="flex items-center gap-3 mt-2 text-xs font-medium">
+            {greenCount > 0 && (
+              <span className="flex items-center gap-1 text-signal-green">
+                <span className="w-2 h-2 rounded-full bg-signal-green" />
+                {greenCount} positive
+              </span>
+            )}
+            {amberCount > 0 && (
+              <span className="flex items-center gap-1 text-signal-amber">
+                <span className="w-2 h-2 rounded-full bg-signal-amber" />
+                {amberCount} mixed
+              </span>
+            )}
+            {redCount > 0 && (
+              <span className="flex items-center gap-1 text-signal-red">
+                <span className="w-2 h-2 rounded-full bg-signal-red" />
+                {redCount} concern{redCount !== 1 && 's'}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="text-right">
-          <div className={`text-3xl font-extrabold ${scoreColour}`}>{score}</div>
-          <div className="text-[10px] text-ink-faint">/ 100</div>
-        </div>
-      </div>
-      <div className="flex gap-0.5 h-2 rounded-full overflow-hidden bg-white/50">
-        {breakdown.map((b, i) => (
-          <div
-            key={i}
-            className={`h-full ${
-              b.colour === 'green'
-                ? 'bg-signal-green'
-                : b.colour === 'amber'
-                ? 'bg-signal-amber'
-                : b.colour === 'red'
-                ? 'bg-signal-red'
-                : 'bg-ink-faint'
-            }`}
-            style={{ flex: b.weight }}
-            title={`${b.name}: ${b.colour}`}
-          />
-        ))}
-      </div>
-      <div className="text-[10px] text-ink-muted">
-        Based on {breakdown.length} metrics weighted for {personaLabel.toLowerCase()}
       </div>
     </div>
   );

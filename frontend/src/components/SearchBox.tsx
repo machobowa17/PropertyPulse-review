@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Building2, Loader2 } from 'lucide-react';
+import { Search, MapPin, Building2, Loader2, ArrowRight } from 'lucide-react';
 import { fetchSuggestions, type Suggestion } from '../api/client';
 
 interface Props {
   initialValue?: string;
   size?: 'lg' | 'sm';
   placeholder?: string;
+  variant?: 'light' | 'dark';
 }
 
-export default function SearchBox({ initialValue = '', size = 'lg', placeholder }: Props) {
+export default function SearchBox({ initialValue = '', size = 'lg', placeholder, variant = 'light' }: Props) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialValue);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -90,17 +91,24 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder 
   }, []);
 
   const isLg = size === 'lg';
+  const isDark = variant === 'dark';
   const typeIcon = (type: string) => {
-    if (type === 'postcode' || type === 'postcode_district') return <MapPin className="w-3.5 h-3.5 text-brand-500" />;
-    if (type === 'City' || type === 'Town') return <Building2 className="w-3.5 h-3.5 text-brand-500" />;
+    if (type === 'postcode' || type === 'postcode_district') return <MapPin className="w-3.5 h-3.5 text-brand-400" />;
+    if (type === 'City' || type === 'Town') return <Building2 className="w-3.5 h-3.5 text-brand-400" />;
     return <MapPin className="w-3.5 h-3.5 text-ink-faint" />;
   };
 
   return (
     <div ref={containerRef} className="relative w-full">
       <form onSubmit={(e) => { e.preventDefault(); doSearch(query); }} className="relative group">
-        <Search className={`absolute left-4 top-1/2 -translate-y-1/2 text-ink-faint group-focus-within:text-brand-600 transition-colors ${isLg ? 'w-5 h-5' : 'w-4 h-4'}`} />
-        {loading && <Loader2 className={`absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-ink-faint ${isLg ? 'w-4 h-4' : 'w-3.5 h-3.5'}`} />}
+        <Search className={`absolute left-5 top-1/2 -translate-y-1/2 transition-colors ${isLg ? 'w-5 h-5' : 'w-4 h-4'} ${
+          isDark
+            ? 'text-white/40 group-focus-within:text-white/70'
+            : 'text-ink-faint group-focus-within:text-brand-600'
+        }`} />
+        {loading && <Loader2 className={`absolute top-1/2 -translate-y-1/2 animate-spin ${isLg ? 'w-4 h-4 right-5' : 'w-3.5 h-3.5 right-4'} ${
+          isDark ? 'text-white/40' : 'text-ink-faint'
+        }`} />}
         <input
           type="text"
           value={query}
@@ -108,36 +116,52 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder 
           onKeyDown={handleKeyDown}
           onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
           placeholder={placeholder || 'Search postcode or place...'}
-          className={`w-full bg-white text-ink placeholder:text-ink-faint focus:outline-none focus:border-brand-500 transition-all
-            ${isLg
-              ? 'h-14 pl-12 pr-32 rounded-2xl border-2 border-divider text-lg focus:ring-4 focus:ring-brand-100 shadow-sm hover:shadow-md'
-              : 'h-10 pl-9 pr-4 rounded-xl border border-divider text-sm focus:ring-2 focus:ring-brand-100'
-            }`}
+          className={`w-full focus:outline-none transition-all ${
+            isDark
+              ? isLg
+                ? 'h-16 pl-14 pr-36 rounded-2xl bg-white/[0.08] border border-white/[0.12] text-white placeholder:text-white/30 text-lg backdrop-blur-sm focus:border-white/25 focus:ring-2 focus:ring-white/10 hover:bg-white/[0.1]'
+                : 'h-10 pl-9 pr-4 rounded-xl bg-white/[0.08] border border-white/[0.12] text-white placeholder:text-white/30 text-sm focus:ring-2 focus:ring-white/10'
+              : isLg
+                ? 'h-14 pl-12 pr-32 rounded-2xl border-2 border-divider bg-white text-ink placeholder:text-ink-faint text-lg focus:border-brand-500 focus:ring-4 focus:ring-brand-100 shadow-sm hover:shadow-md'
+                : 'h-10 pl-9 pr-4 rounded-xl border border-divider bg-white text-ink placeholder:text-ink-faint text-sm focus:ring-2 focus:ring-brand-100 focus:border-brand-500'
+          }`}
         />
         {isLg && (
           <button
             type="submit"
-            className="absolute right-2 top-1/2 -translate-y-1/2 h-10 px-6 rounded-xl bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 active:scale-95 transition-all"
+            className={`absolute right-2.5 top-1/2 -translate-y-1/2 font-semibold text-sm active:scale-95 transition-all flex items-center gap-2 ${
+              isDark
+                ? 'h-11 px-6 rounded-xl bg-white text-[#0c0c0e] hover:bg-white/90'
+                : 'h-10 px-6 rounded-xl bg-brand-600 text-white hover:bg-brand-700'
+            }`}
           >
             Analyse
+            {isDark && <ArrowRight className="w-4 h-4" />}
           </button>
         )}
       </form>
 
       {/* Dropdown */}
       {showDropdown && (
-        <div className="absolute z-50 mt-1 w-full bg-white rounded-xl border border-divider shadow-lg overflow-hidden">
+        <div className={`absolute z-50 mt-2 w-full rounded-2xl shadow-2xl overflow-hidden ${
+          isDark
+            ? 'bg-[#1a1a1e] border border-white/10'
+            : 'bg-white border border-divider'
+        }`}>
           {suggestions.map((s, i) => (
             <button
               key={`${s.label}-${i}`}
               onMouseDown={() => doSearch(s.label)}
               onMouseEnter={() => setActiveIdx(i)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors
-                ${i === activeIdx ? 'bg-brand-50' : 'hover:bg-surface'}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                isDark
+                  ? i === activeIdx ? 'bg-white/10' : 'hover:bg-white/[0.06]'
+                  : i === activeIdx ? 'bg-brand-50' : 'hover:bg-surface'
+              }`}
             >
               {typeIcon(s.type)}
-              <span className="font-medium text-ink">{s.label}</span>
-              {s.area && <span className="text-ink-faint text-xs ml-auto">{s.area}</span>}
+              <span className={`font-medium ${isDark ? 'text-white' : 'text-ink'}`}>{s.label}</span>
+              {s.area && <span className={`text-xs ml-auto ${isDark ? 'text-white/40' : 'text-ink-faint'}`}>{s.area}</span>}
             </button>
           ))}
         </div>

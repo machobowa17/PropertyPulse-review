@@ -12,7 +12,7 @@ export default function CollapsibleSection({ title, defaultOpen = true, children
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="rounded-2xl bg-white border border-divider shadow-sm overflow-hidden">
+    <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -36,7 +36,7 @@ export default function CollapsibleSection({ title, defaultOpen = true, children
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-1 border-t border-divider">
+            <div className="px-4 pb-4 pt-1 border-t border-divider/50">
               {children}
             </div>
           </motion.div>
