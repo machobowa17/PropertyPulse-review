@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.geo_resolver import resolve_search
+from app.services.helpers import make_lsoa_session
 from app.cache import cache_get, cache_set
 
 router = APIRouter()
@@ -25,10 +26,68 @@ async def resolve(
     cache_key = f"resolve:{q.strip().lower()}"
     cached = await cache_get(cache_key)
     if cached:
+        # Re-populate the session in Redis in case it expired (TTL refresh).
+        # Session is mandatory for all downstream endpoints, so this must succeed.
+        if cached.get("session_key") and cached.get("resolved_codes"):
+            codes = cached["resolved_codes"]
+            await _build_and_store_session(db, cached, codes)  # TTL refresh only
         return cached
     result = await resolve_search(db, q)
+    # Compute the LSOA set and store under a session key so every subsequent
+    # data endpoint uses the exact same LSOA set, parent comparison, and
+    # boundary info without re-deriving them.
+    if result.get("resolved_codes"):
+        session_key, lsoa_codes = await _build_and_store_session(db, result, result["resolved_codes"])
+        lsoa_count = len(lsoa_codes)
+        result = {
+            **result,
+            "session_key": session_key,
+            "lsoa_count": lsoa_count,
+            "lsoa_codes": lsoa_codes if lsoa_count <= 8 else [],
+        }
     await cache_set(cache_key, result, ttl=86400)
     return result
+
+
+async def _build_and_store_session(db, result: dict, codes: dict) -> str:
+    """Derive all session fields from a resolve result and call make_lsoa_session."""
+    lad  = codes.get("lad")  or "_"
+    ward = codes.get("ward") or "_"
+    lsoa = codes.get("lsoa") or "_"
+    coords = result.get("coordinates") or {}
+
+    # expand_lsoa_codes kwargs
+    expand_kwargs: dict = {}
+    lat = coords.get("lat")
+    lon = coords.get("lon")
+    if lat is not None:
+        expand_kwargs["postcode_lat"] = lat
+    if lon is not None:
+        expand_kwargs["postcode_lon"] = lon
+    if result.get("boundary_source") == "county":
+        expand_kwargs["county_name"] = result.get("boundary_id")
+
+    # Derive postcode district: "SW1A 1AA" → "SW1A"
+    postcode_district = None
+    if result.get("type") == "postcode":
+        raw_q = (result.get("query") or "").strip().upper()
+        parts = raw_q.split()
+        if parts:
+            postcode_district = parts[0]  # outward code = district
+    elif result.get("type") == "postcode_district":
+        postcode_district = (result.get("query") or "").strip().upper().replace(" ", "")
+
+    lsoa_codes, _, _, _, _, session_key = await make_lsoa_session(
+        db, lad, ward, lsoa,
+        boundary_source=result.get("boundary_source", "lad"),
+        boundary_id=result.get("boundary_id", ""),
+        postcode_district=postcode_district,
+        place_name=result.get("place_name"),
+        place_lad_code=result.get("place_lad_code"),
+        place_type=result.get("place_type"),
+        **expand_kwargs,
+    )
+    return session_key, lsoa_codes
 
 
 @router.get("/search/suggest")
@@ -128,40 +187,146 @@ async def suggest(
 
     AREA_TYPES = ['Town','City','Suburban Area','Village','Other Settlement','Hamlet']
 
-    # 2. Prefix match on place names (fast, catches partial typing)
+    # 2. LAD/Borough names (prefix match)
     if len(results) < 8:
         res = await db.execute(
             sa_text("""
-                SELECT pn.place_name AS label, pn.place_type AS type,
+                SELECT lb.lad_name AS label,
+                       CASE WHEN cl.is_london_borough THEN 'borough' ELSE 'district' END AS type,
+                       cl.parent_comparison AS area
+                FROM core_lad_boundaries lb
+                JOIN core_lad_county_lookup cl ON lb.lad_code = cl.lad_code
+                WHERE LOWER(lb.lad_name) LIKE :prefix ESCAPE '\'
+                ORDER BY
+                    CASE WHEN LOWER(lb.lad_name) = :exact THEN 0 ELSE 1 END,
+                    LENGTH(lb.lad_name) ASC
+                LIMIT :lim
+            """),
+            {"prefix": q_like + "%", "exact": q_lower, "lim": 8 - len(results)},
+        )
+        results += [dict(r) for r in res.mappings().all()]
+
+    # 3. County names (prefix match) — before places to ensure counties rank higher
+    if len(results) < 8:
+        res = await db.execute(
+            sa_text("""
+                SELECT county_name AS label, 'county' AS type,
+                       NULL AS area
+                FROM core_county_boundaries
+                WHERE LOWER(county_name) LIKE :prefix ESCAPE '\'
+                ORDER BY LENGTH(county_name) ASC
+                LIMIT :lim
+            """),
+            {"prefix": q_like + "%", "lim": 8 - len(results)},
+        )
+        results += [dict(r) for r in res.mappings().all()]
+
+    # 4. Place names from core_place_names (prefix match — places with Voronoi mapping)
+    if len(results) < 8:
+        res = await db.execute(
+            sa_text("""
+                SELECT DISTINCT ON (pn.place_name, pn.lad_code)
+                       pn.place_name AS label, 'place' AS type,
                        COALESCE(lb.lad_name, pn.lad_code) AS area
                 FROM core_place_names pn
                 LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
                 WHERE pn.place_name_lower LIKE :prefix ESCAPE '\'
                   AND pn.place_type = ANY(:types)
-                ORDER BY
-                    -- Exact name match wins, but only for City/Town/Suburban Area/Other Settlement.
-                    -- Village/Hamlet exact matches must NOT outrank a City/Town prefix match.
-                    CASE WHEN pn.place_name_lower = :exact
-                              AND pn.place_type IN ('City','Town','Suburban Area','Other Settlement')
-                         THEN 0 ELSE 1 END,
+                  AND pn.lad_code IS NOT NULL
+                ORDER BY pn.place_name, pn.lad_code,
+                    CASE WHEN pn.place_name_lower = :exact THEN 0 ELSE 1 END,
                     CASE pn.place_type
                         WHEN 'City' THEN 1 WHEN 'Town' THEN 2
                         WHEN 'Suburban Area' THEN 3 WHEN 'Other Settlement' THEN 4
                         WHEN 'Village' THEN 5 ELSE 6
-                    END,
-                    LENGTH(pn.place_name) ASC
+                    END
                 LIMIT :lim
             """),
             {"prefix": q_like + "%", "exact": q_lower, "lim": 8 - len(results), "types": AREA_TYPES},
         )
         results += [dict(r) for r in res.mappings().all()]
 
-    # 3. Trigram fuzzy match (catches typos) — skip if we already have an exact name match
+    # 5. Ward names (prefix match)
+    if len(results) < 8:
+        res = await db.execute(
+            sa_text("""
+                SELECT wb.ward_name AS label, 'ward' AS type,
+                       lb.lad_name AS area
+                FROM core_ward_boundaries wb
+                JOIN core_lad_boundaries lb ON wb.lad_code = lb.lad_code
+                WHERE LOWER(wb.ward_name) LIKE :prefix ESCAPE '\'
+                ORDER BY
+                    CASE WHEN LOWER(wb.ward_name) = :exact THEN 0 ELSE 1 END,
+                    LENGTH(wb.ward_name) ASC
+                LIMIT :lim
+            """),
+            {"prefix": q_like + "%", "exact": q_lower, "lim": 8 - len(results)},
+        )
+        results += [dict(r) for r in res.mappings().all()]
+
+    # 6b. Substring/contains match across wards, places, and ONS places
+    # Catches "Old Coulsdon" when user types "Coulsdon" (query appears mid-name)
+    if len(results) < 8 and len(q_lower) >= 3:
+        contains_pat = "%" + q_like + "%"
+        prefix_pat = q_like + "%"
+        existing_contains = {(r["label"].lower(), (r.get("area") or "").lower()) for r in results}
+        res = await db.execute(
+            sa_text("""
+                SELECT label, type, area FROM (
+                    (
+                        SELECT lb2.lad_name AS label,
+                               CASE WHEN cl2.is_london_borough THEN 'borough' ELSE 'district' END AS type,
+                               cl2.parent_comparison AS area, 0 AS src_rank
+                        FROM core_lad_boundaries lb2
+                        JOIN core_lad_county_lookup cl2 ON lb2.lad_code = cl2.lad_code
+                        WHERE LOWER(lb2.lad_name) LIKE :contains ESCAPE '\\'
+                          AND LOWER(lb2.lad_name) NOT LIKE :prefix ESCAPE '\\'
+                    )
+                    UNION ALL
+                    (
+                        SELECT DISTINCT ON (pn.place_name, pn.lad_code)
+                               pn.place_name AS label, 'place' AS type,
+                               COALESCE(lb.lad_name, pn.lad_code) AS area, 1 AS src_rank
+                        FROM core_place_names pn
+                        LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
+                        WHERE pn.place_name_lower LIKE :contains ESCAPE '\\'
+                          AND pn.place_name_lower NOT LIKE :prefix ESCAPE '\\'
+                          AND pn.place_type = ANY(:types)
+                          AND pn.lad_code IS NOT NULL
+                        ORDER BY pn.place_name, pn.lad_code,
+                            CASE pn.place_type
+                                WHEN 'City' THEN 1 WHEN 'Town' THEN 2
+                                WHEN 'Suburban Area' THEN 3 WHEN 'Other Settlement' THEN 4
+                                WHEN 'Village' THEN 5 ELSE 6
+                            END
+                    )
+                    UNION ALL
+                    (
+                        SELECT wb.ward_name AS label, 'ward' AS type,
+                               lb.lad_name AS area, 2 AS src_rank
+                        FROM core_ward_boundaries wb
+                        JOIN core_lad_boundaries lb ON wb.lad_code = lb.lad_code
+                        WHERE LOWER(wb.ward_name) LIKE :contains ESCAPE '\\'
+                          AND LOWER(wb.ward_name) NOT LIKE :prefix ESCAPE '\\'
+                    )
+                ) sub
+                ORDER BY src_rank, LENGTH(label) ASC
+                LIMIT :lim
+            """),
+            {"contains": contains_pat, "prefix": prefix_pat, "lim": 8 - len(results), "types": AREA_TYPES},
+        )
+        for r in res.mappings().all():
+            key = (r["label"].lower(), (r.get("area") or "").lower())
+            if key not in existing_contains:
+                existing_contains.add(key)
+                results.append({"label": r["label"], "type": r["type"], "area": r["area"], "_contains": True})
+
+    # 7. Trigram fuzzy match (catches typos) — skip if we already have an exact name match
     has_exact = any(r["label"].lower() == q_lower for r in results)
     if len(results) < 4 and not has_exact:
         res = await db.execute(
             sa_text("""
-                SELECT pn.place_name AS label, pn.place_type AS type,
+                SELECT pn.place_name AS label, 'place' AS type,
                        COALESCE(lb.lad_name, pn.lad_code) AS area
                 FROM core_place_names pn
                 LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
@@ -181,22 +346,27 @@ async def suggest(
         )
         results += [dict(r) for r in res.mappings().all()]
 
-    # Re-sort place-name results (prefix + fuzzy combined) by type priority so that
-    # a City from fuzzy is not buried below a Hamlet from prefix.
-    # Postcode results (step 1) always stay first.
-    TYPE_RANK = {'City': 1, 'Town': 2, 'Suburban Area': 3, 'Other Settlement': 4, 'Village': 5}
-    postcode_results = [r for r in results if r.get("type") in ("postcode", "postcode_district")]
-    place_results = [r for r in results if r.get("type") not in ("postcode", "postcode_district")]
-    place_results.sort(key=lambda r: (TYPE_RANK.get(r["type"], 6), len(r["label"])))
-    results = postcode_results + place_results
+    # Re-sort: postcodes first, then counties/LADs, then places/wards
+    TYPE_RANK = {
+        'postcode': 0, 'postcode_district': 0,
+        'county': 1,
+        'borough': 2, 'district': 2,
+        'place': 3,
+        'ward': 4,
+    }
+    # Prefix matches (no _contains flag) sort before substring matches within the same type
+    results.sort(key=lambda r: (TYPE_RANK.get(r["type"], 10), 1 if r.get("_contains") else 0, len(r["label"])))
 
-    # Deduplicate by label
+    # Deduplicate by (label_lower, area_lower) — prevents same place appearing from
+    # multiple sources (step 3 place + step 7 fuzzy, or place + ward same name).
     seen = set()
     unique = []
     for r in results:
-        if r["label"] not in seen:
-            seen.add(r["label"])
-            unique.append(r)
+        key = (r["label"].lower(), (r.get("area") or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append({k: v for k, v in r.items() if k != "_contains"})
 
     response = {"suggestions": unique[:8]}
     await cache_set(cache_key, response, ttl=3600)

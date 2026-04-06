@@ -1,19 +1,19 @@
 """
-GET /api/v1/report/{lad_code}/{ward_code}/{lsoa_code}
+GET /api/v1/report?session_key=
 Generates a comprehensive PDF area report covering all 5 tabs.
 Uses ReportLab (pure Python, no system dependencies).
 """
-import re
 import asyncio
 import io
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
-from app.services.helpers import expand_lsoa_codes
+from app.errors import http_error
+from app.services.helpers import get_lsoa_session
 from app.services.tab_property import fetch_property_market
 from app.services.tab_lifestyle import fetch_lifestyle_connectivity
 from app.services.tab_environment import fetch_environment_safety
@@ -21,8 +21,6 @@ from app.services.tab_community import fetch_community_education
 from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
-
-_CODE_RE = re.compile(r"^([EWSN]\d{8}|_)$")
 
 # Brand colours
 BRAND_BLUE  = (0.231, 0.357, 0.859)   # #3b5bdb
@@ -55,14 +53,13 @@ def _fmt(value, unit="") -> str:
 def _build_pdf(area_name: str, lad_code: str, all_tabs: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
-    from reportlab.pdfgen import canvas
     from reportlab.lib.colors import Color, HexColor
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         PageBreak, HRFlowable, KeepTogether,
     )
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -283,22 +280,23 @@ def _build_pdf(area_name: str, lad_code: str, all_tabs: dict) -> bytes:
     return buf.getvalue()
 
 
-@router.get("/report/{lad_code}/{ward_code}/{lsoa_code}")
+@router.get("/report")
 async def generate_report(
-    lad_code: str,
-    ward_code: str,
-    lsoa_code: str,
+    session_key: str = Query(..., description="LSOA session key from /resolve"),
     db: AsyncSession = Depends(get_db),
 ):
-    # Validate codes
-    for code, name in [(lad_code, "lad_code"), (ward_code, "ward_code"), (lsoa_code, "lsoa_code")]:
-        if not _CODE_RE.match(code):
-            raise HTTPException(status_code=400, detail=f"Invalid {name}")
+    sess = await get_lsoa_session(session_key)
+    if not sess:
+        raise http_error(410, "SESSION_EXPIRED", "Session expired — please search again")
 
-    # Expand LSOAs
-    lsoa_codes, centroid_lat, centroid_lon = await expand_lsoa_codes(
-        db, lad_code, ward_code, lsoa_code
-    )
+    lad_code = sess.get("lad_code", "_")
+    ward_code = sess.get("ward_code", "_")
+    lsoa_codes = sess.get("lsoa_codes", [])
+    centroid_lat = sess.get("lat")
+    centroid_lon = sess.get("lon")
+    effective_mode = sess.get("search_mode", "postcode")
+    local_lads = sess.get("local_lads", [])
+    parent_lads = sess.get("parent_lad_codes", [])
 
     # Fetch area name
     lad_row = await db.execute(
@@ -312,6 +310,9 @@ async def generate_report(
     kwargs = dict(
         db=db, lad_code=lad_code, ward_code=ward_code,
         lsoa_codes=lsoa_codes, centroid_lat=centroid_lat, centroid_lon=centroid_lon,
+        search_mode=effective_mode, local_lads=local_lads,
+        parent_lads=parent_lads,
+        boundary_source=sess.get("boundary_source", "lad"),
     )
     results = await asyncio.gather(
         fetch_property_market(**kwargs),
@@ -336,7 +337,7 @@ async def generate_report(
     try:
         pdf_bytes = _build_pdf(area_name, lad_code, all_tabs)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+        raise http_error(500, "PDF_GENERATION_FAILED", f"PDF generation failed: {e}")
 
     filename = f"PropertyPulse_{area_name.replace(' ', '_')}_{lad_code}.pdf"
     return Response(

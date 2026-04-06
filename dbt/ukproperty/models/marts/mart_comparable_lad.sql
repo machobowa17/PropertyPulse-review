@@ -4,8 +4,8 @@
 
 WITH price_data AS (
     SELECT lad_code,
-           AVG(avg_price) FILTER (WHERE year_month >= NOW() - INTERVAL '12 months') AS avg_price
-    FROM core_property_prices_lad WHERE property_type IN ('D','S','T','F') GROUP BY lad_code
+           AVG(price) FILTER (WHERE date_of_transfer >= NOW() - INTERVAL '12 months') AS avg_price
+    FROM core_property_transactions WHERE property_type IN ('D','S','T','F') AND lad_code IS NOT NULL GROUP BY lad_code
 ),
 rent_data AS (
     SELECT lad_code, median_annual_rent / 12.0 AS median_rent FROM core_voa_rents_lad

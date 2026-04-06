@@ -19,7 +19,7 @@ from airflow.operators.python import PythonOperator
 POSTGRES_CONN = os.environ.get(
     "DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty"
 )
-API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8008/api/v1")
+API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000/api/v1")
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "")
 
 default_args = {
@@ -32,13 +32,13 @@ default_args = {
 
 FRESHNESS_CHECKS = [
     ("core_crime_lsoa", "month", 35, "SELECT MAX(month) FROM core_crime_lsoa"),
-    ("core_property_prices_lsoa", "year_month", 35, "SELECT MAX(year_month) FROM core_property_prices_lsoa"),
+    ("core_property_transactions", "date_of_transfer", 35, "SELECT MAX(date_of_transfer) FROM core_property_transactions"),
     ("core_hpi_lad", "year_month", 120, "SELECT MAX(year_month) FROM core_hpi_lad"),
 ]
 
 ROW_COUNT_CHECKS = [
     ("core_crime_lsoa", 5_000_000),
-    ("core_property_prices_lsoa", 5_000_000),
+    ("core_property_transactions", 20_000_000),
     ("core_schools", 20_000),
     ("core_lsoa_boundaries", 30_000),
     ("core_broadband_postcode", 1_500_000),

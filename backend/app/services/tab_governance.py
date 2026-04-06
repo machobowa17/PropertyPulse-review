@@ -1,11 +1,13 @@
 """Tab 5: Local Governance — Bible Part 4, Tab 5.
 Queries: core_council_tax_lad."""
 from sqlalchemy import text
-from app.services.helpers import metric, get_parent_lad_codes
+from app.services.helpers import metric
 
 
-async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
+async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon, search_mode="postcode", local_lads=None, parent_lads=None, parent_name="England", boundary_source="lad"):
     metrics = []
+    if parent_lads is None:
+        parent_lads = []
 
     # --- Council Tax ---
     # Bible: Band D default, expandable shows all bands
@@ -19,7 +21,6 @@ async def fetch_local_governance(db, *, lad_code, ward_code, lsoa_codes, centroi
     ct_row = ct_local.mappings().first()
 
     # Parent average (all LADs sharing same parent_comparison)
-    parent_lads = await get_parent_lad_codes(db, lad_code)
     ct_parent = await db.execute(
         text("""
             SELECT AVG(band_a) as avg_a, AVG(band_b) as avg_b, AVG(band_c) as avg_c,

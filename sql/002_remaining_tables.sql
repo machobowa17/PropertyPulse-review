@@ -149,32 +149,9 @@ CREATE TABLE IF NOT EXISTS core_epc_lsoa (
 -- TAB 4: COMMUNITY & EDUCATION
 -- ============================================================
 
--- Census 2021 Demographics (LSOA level)
-CREATE TABLE IF NOT EXISTS core_census_demographics_lsoa (
-    lsoa_code           TEXT PRIMARY KEY,
-    total_population    INTEGER,
-    population_density  NUMERIC(8,2),
-    median_age          NUMERIC(4,1),
-    pct_age_0_15        NUMERIC(5,2),
-    pct_age_16_64       NUMERIC(5,2),
-    pct_age_65_plus     NUMERIC(5,2),
-    pct_families        NUMERIC(5,2),
-    pct_singles         NUMERIC(5,2),
-    pct_sharers         NUMERIC(5,2)
-);
-
--- Census 2021 Housing (LSOA level)
-CREATE TABLE IF NOT EXISTS core_census_housing_lsoa (
-    lsoa_code           TEXT PRIMARY KEY,
-    total_households    INTEGER,
-    pct_owned           NUMERIC(5,2),
-    pct_social_rent     NUMERIC(5,2),
-    pct_private_rent    NUMERIC(5,2),
-    pct_detached        NUMERIC(5,2),
-    pct_semi            NUMERIC(5,2),
-    pct_terraced        NUMERIC(5,2),
-    pct_flat            NUMERIC(5,2)
-);
+-- DROPPED: core_census_demographics_lsoa and core_census_housing_lsoa
+-- Replaced by consolidated core_census_lsoa wide table (migration 007).
+-- See etl/migrations/007_census_lsoa_wide.sql for the replacement.
 
 -- DfE Schools + Ofsted (per Bible Section 4, Tab 4)
 CREATE TABLE IF NOT EXISTS core_schools (

@@ -2,13 +2,15 @@
 Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
-from app.services.helpers import metric, get_parent_lad_codes
+from app.services.helpers import metric
 
 
-async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
+async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon, search_mode="postcode", local_lads=None, parent_lads=None, parent_name="England", boundary_source="lad"):
     metrics = []
     lat, lon = centroid_lat, centroid_lon
-    parent_lads = await get_parent_lad_codes(db, lad_code)
+    if parent_lads is None:
+        parent_lads = []
+    is_area = search_mode == "area"
 
     # --- Crime & Safety ---
     # Bible: Overall crime rate per 1,000 population vs national average, breakdown by type
@@ -59,7 +61,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
     # Get local population — try direct LSOA first, then MSOA fallback (deduped)
     pop_result = await db.execute(
-        text("SELECT SUM(total_population) as total_population FROM core_census_demographics_lsoa WHERE lsoa_code = ANY(:codes)"),
+        text("SELECT SUM(total_population) as total_population FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)"),
         {"codes": lsoa_codes},
     )
     pop_row = pop_result.mappings().first()
@@ -69,7 +71,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         pop_result = await db.execute(
             text("""
                 SELECT SUM(d.total_population) as total_population
-                FROM core_census_demographics_lsoa d
+                FROM core_census_lsoa d
                 WHERE d.lsoa_code IN (
                     SELECT DISTINCT p2.lsoa_code FROM core_postcodes p2
                     WHERE p2.msoa_code IN (
@@ -96,7 +98,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             )
             SELECT SUM(c.crime_count) as total_crimes,
                    COUNT(DISTINCT c.month) as months_count,
-                   (SELECT SUM(d.total_population) FROM core_census_demographics_lsoa d
+                   (SELECT SUM(d.total_population) FROM core_census_lsoa d
                     WHERE d.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)) as total_pop
             FROM core_crime_lsoa c
             WHERE c.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)
@@ -171,9 +173,43 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
         if rolling_prior_total and rolling_prior_total > 0 and rolling_current_total:
             yoy_change = round((rolling_current_total - rolling_prior_total) / rolling_prior_total * 100, 1)
+            # Parent crime trend (same YoY window)
+            parent_crime_yoy = None
+            if parent_lads and not gmp_parent:
+                parent_current_res = await db.execute(
+                    text("""
+                        SELECT SUM(c.crime_count) as cnt
+                        FROM core_crime_lsoa c
+                        JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+                        WHERE l.lad_code = ANY(:parent_lads)
+                          AND c.month > :month_start AND c.month <= :month_end
+                    """),
+                    {"parent_lads": parent_lads,
+                     "month_start": latest_month.replace(year=latest_month.year - 1),
+                     "month_end": latest_month},
+                )
+                parent_prior_res = await db.execute(
+                    text("""
+                        SELECT SUM(c.crime_count) as cnt
+                        FROM core_crime_lsoa c
+                        JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+                        WHERE l.lad_code = ANY(:parent_lads)
+                          AND c.month > :month_start AND c.month <= :month_end
+                    """),
+                    {"parent_lads": parent_lads,
+                     "month_start": latest_month.replace(year=latest_month.year - 2),
+                     "month_end": latest_month.replace(year=latest_month.year - 1)},
+                )
+                pc = parent_current_res.mappings().first()
+                pp = parent_prior_res.mappings().first()
+                pc_total = int(pc["cnt"]) if pc and pc["cnt"] else 0
+                pp_total = int(pp["cnt"]) if pp and pp["cnt"] else 0
+                if pp_total > 0 and pc_total > 0:
+                    parent_crime_yoy = round((pc_total - pp_total) / pp_total * 100, 1)
+
             metrics.append(metric(
                 "crime_trend", "Crime Trend (YoY)",
-                yoy_change, None, "%",
+                yoy_change, parent_crime_yoy, "%",
                 details={"current_12m_crimes": rolling_current_total, "prior_12m_crimes": rolling_prior_total},
             ))
 
@@ -247,9 +283,21 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         ))
 
     # --- Air Quality ---
-    # Bible: NO2 and PM2.5 levels vs WHO limits
     # WHO limits: NO2 = 10 µg/m³ (annual), PM2.5 = 5 µg/m³ (annual)
-    if lat is not None:
+    if is_area:
+        # Area mode: average AQ across grid cells intersecting LSOA boundaries
+        aq_result = await db.execute(
+            text("""
+                SELECT AVG(a.no2_ugm3) as no2_ugm3, AVG(a.pm25_ugm3) as pm25_ugm3,
+                       AVG(a.pm10_ugm3) as pm10_ugm3
+                FROM core_air_quality a
+                JOIN core_lsoa_boundaries lb ON ST_Intersects(a.geom, lb.geom)
+                WHERE lb.lsoa_code = ANY(:codes)
+            """),
+            {"codes": lsoa_codes},
+        )
+        aq_row = aq_result.mappings().first()
+    elif lat is not None:
         aq_result = await db.execute(
             text("""
                 SELECT no2_ugm3, pm25_ugm3, pm10_ugm3
@@ -261,8 +309,11 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             {"lat": lat, "lon": lon},
         )
         aq_row = aq_result.mappings().first()
+    else:
+        aq_row = None
 
-        # Parent average across parent comparison group
+    # Parent average across parent comparison group
+    if aq_row:
         aq_parent = await db.execute(
             text("""
                 SELECT AVG(a.no2_ugm3) as avg_no2, AVG(a.pm25_ugm3) as avg_pm25
@@ -273,32 +324,34 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             {"parent_lads": parent_lads},
         )
         aq_parent_row = aq_parent.mappings().first()
+    else:
+        aq_parent_row = None
 
-        if aq_row and aq_row["no2_ugm3"]:
-            local_no2 = round(float(aq_row["no2_ugm3"]), 1)
-            parent_no2 = round(float(aq_parent_row["avg_no2"]), 1) if aq_parent_row and aq_parent_row["avg_no2"] else None
+    if aq_row and aq_row["no2_ugm3"]:
+        local_no2 = round(float(aq_row["no2_ugm3"]), 1)
+        parent_no2 = round(float(aq_parent_row["avg_no2"]), 1) if aq_parent_row and aq_parent_row["avg_no2"] else None
 
-            metrics.append(metric(
-                "air_quality_no2", "Air Quality (NO2)",
-                local_no2, parent_no2, "µg/m³",
-                details={
-                    "who_limit": 10.0,
-                    "exceeds_who": local_no2 > 10.0,
-                },
-            ))
+        metrics.append(metric(
+            "air_quality_no2", "Air Quality (NO2)",
+            local_no2, parent_no2, "µg/m³",
+            details={
+                "who_limit": 10.0,
+                "exceeds_who": local_no2 > 10.0,
+            },
+        ))
 
-        if aq_row and aq_row["pm25_ugm3"]:
-            local_pm25 = round(float(aq_row["pm25_ugm3"]), 1)
-            parent_pm25 = round(float(aq_parent_row["avg_pm25"]), 1) if aq_parent_row and aq_parent_row["avg_pm25"] else None
+    if aq_row and aq_row["pm25_ugm3"]:
+        local_pm25 = round(float(aq_row["pm25_ugm3"]), 1)
+        parent_pm25 = round(float(aq_parent_row["avg_pm25"]), 1) if aq_parent_row and aq_parent_row["avg_pm25"] else None
 
-            metrics.append(metric(
-                "air_quality_pm25", "Air Quality (PM2.5)",
-                local_pm25, parent_pm25, "µg/m³",
-                details={
-                    "who_limit": 5.0,
-                    "exceeds_who": local_pm25 > 5.0,
-                },
-            ))
+        metrics.append(metric(
+            "air_quality_pm25", "Air Quality (PM2.5)",
+            local_pm25, parent_pm25, "µg/m³",
+            details={
+                "who_limit": 5.0,
+                "exceeds_who": local_pm25 > 5.0,
+            },
+        ))
 
     # --- Noise ---
     # Bible: average decibel level (road/rail/air)
@@ -316,11 +369,27 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         {"codes": lsoa_codes},
     )
     noise_row = noise_result.mappings().first()
+    # Parent noise average
+    parent_noise = None
+    if noise_row and noise_row["road_noise_db"] and parent_lads:
+        noise_parent_res = await db.execute(
+            text("""
+                SELECT AVG(n.road_noise_db) as avg_road
+                FROM core_noise n
+                JOIN core_postcodes p ON p.postcode = n.postcode
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = p.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        noise_parent_row = noise_parent_res.mappings().first()
+        parent_noise = round(float(noise_parent_row["avg_road"]), 1) if noise_parent_row and noise_parent_row["avg_road"] else None
+
     if noise_row and any(noise_row[k] is not None for k in ("road_noise_db", "rail_noise_db", "air_noise_db")):
         metrics.append(metric(
             "noise", "Noise Level",
             float(noise_row["road_noise_db"]) if noise_row["road_noise_db"] else None,
-            None, "dB",
+            parent_noise, "dB",
             details={
                 "road_db": float(noise_row["road_noise_db"]) if noise_row["road_noise_db"] else None,
                 "rail_db": float(noise_row["rail_noise_db"]) if noise_row["rail_noise_db"] else None,
@@ -329,10 +398,66 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             },
         ))
 
-    # --- Green Space ---
-    # Bible: % green cover, parks within 1km, nearest park, woodland/park hectares
-    if lat is not None:
-        # Nearest park/garden
+    # --- Green Space & Sports/Recreation ---
+    # Parks = "Public Park Or Garden" only
+    # Sports = Golf Course, Tennis Court, Bowling Green, Other Sports Facility, Play Space, Playing Field
+    # Excluded entirely: Allotments, Cemetery, Religious Grounds
+    PARK_TYPES = ('Public Park Or Garden',)
+    SPORT_TYPES = ('Golf Course', 'Tennis Court', 'Bowling Green', 'Other Sports Facility', 'Play Space', 'Playing Field')
+
+    if is_area:
+        # Area mode: parks + sports within LSOA boundaries
+        gs_within = await db.execute(
+            text("""
+                SELECT gs.site_name, gs.site_type,
+                       ST_Area(gs.geom::geography) / 10000 as area_ha
+                FROM core_green_space gs
+                JOIN core_lsoa_boundaries lb ON ST_Intersects(gs.geom, lb.geom)
+                WHERE lb.lsoa_code = ANY(:codes)
+                  AND gs.geom IS NOT NULL
+                  AND gs.site_type = ANY(:types)
+                ORDER BY ST_Area(gs.geom::geography) DESC
+            """),
+            {"codes": lsoa_codes, "types": list(PARK_TYPES + SPORT_TYPES)},
+        )
+        gs_rows = gs_within.mappings().all()
+
+        park_rows = [r for r in gs_rows if r["site_type"] in PARK_TYPES]
+        sport_rows = [r for r in gs_rows if r["site_type"] in SPORT_TYPES]
+
+        # Parks metric
+        park_ha = sum(float(r["area_ha"]) for r in park_rows if r["area_ha"])
+        parks_list = [
+            {"name": r["site_name"] or "Unnamed", "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] else None}
+            for r in park_rows[:8]
+        ]
+        metrics.append(metric(
+            "green_spaces", "Parks & Gardens in Area",
+            len(park_rows), None, "count",
+            details={
+                "total_hectares": round(park_ha, 1),
+                "parks": parks_list,
+            } if park_rows else None,
+        ))
+
+        # Sports & Recreation metric
+        sport_ha = sum(float(r["area_ha"]) for r in sport_rows if r["area_ha"])
+        sport_type_counts: dict[str, int] = {}
+        for r in sport_rows:
+            st = r["site_type"] or "Other"
+            sport_type_counts[st] = sport_type_counts.get(st, 0) + 1
+        metrics.append(metric(
+            "sports_recreation", "Sports & Recreation in Area",
+            len(sport_rows), None, "count",
+            details={
+                "total_hectares": round(sport_ha, 1),
+                **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
+            } if sport_rows else None,
+        ))
+
+    elif lat is not None:
+        # Postcode mode: distance-based queries
+        # Nearest park (Public Park Or Garden only)
         park_result = await db.execute(
             text("""
                 SELECT site_name, site_type,
@@ -340,15 +465,16 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                        ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::int as distance_m
                 FROM core_green_space
                 WHERE geom IS NOT NULL
+                  AND site_type = ANY(:park_types)
                 ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
                 LIMIT 1
             """),
-            {"lat": lat, "lon": lon},
+            {"lat": lat, "lon": lon, "park_types": list(PARK_TYPES)},
         )
         park_row = park_result.mappings().first()
 
-        # All green spaces within 1km — totals by type + list of parks
-        gs_within = await db.execute(
+        # Parks within 1km
+        gs_parks = await db.execute(
             text("""
                 SELECT site_name, site_type,
                        ST_Area(geom::geography) / 10000 as area_ha,
@@ -356,38 +482,30 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                 FROM core_green_space
                 WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
                   AND geom IS NOT NULL
+                  AND site_type = ANY(:park_types)
                 ORDER BY distance_m
             """),
-            {"lat": lat, "lon": lon},
+            {"lat": lat, "lon": lon, "park_types": list(PARK_TYPES)},
         )
-        gs_rows = gs_within.mappings().all()
+        park_rows = gs_parks.mappings().all()
 
-        total_ha = sum(float(r["area_ha"]) for r in gs_rows if r["area_ha"])
-        park_count = len(gs_rows)
-        # % green cover: total green ha / area of 1km-radius circle (π×1² km² ≈ 314.16 ha)
-        green_cover_pct = round(total_ha / 314.16 * 100, 1) if total_ha else 0.0
+        park_ha = sum(float(r["area_ha"]) for r in park_rows if r["area_ha"])
+        park_count = len(park_rows)
+        green_cover_pct = round(park_ha / 314.16 * 100, 1) if park_ha else 0.0
 
-        # Hectares breakdown by site type
-        type_ha = {}
-        for r in gs_rows:
-            st = r["site_type"] or "Other"
-            type_ha[st] = round(type_ha.get(st, 0) + float(r["area_ha"] or 0), 2)
-
-        # Top parks list (up to 8)
         parks_list = [
-            {"name": r["site_name"] or "Unnamed", "type": r["site_type"], "distance_m": int(r["distance_m"]), "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] else None}
-            for r in gs_rows[:8]
+            {"name": r["site_name"] or "Unnamed", "distance_m": int(r["distance_m"]), "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] else None}
+            for r in park_rows[:8]
         ]
 
         nearest_dist = int(park_row["distance_m"]) if park_row else None
 
         metrics.append(metric(
-            "green_cover", "Green Space Cover (1km)",
+            "green_cover", "Park Cover (1km)",
             green_cover_pct, None, "%",
             details={
-                "total_hectares": round(total_ha, 1),
+                "total_hectares": round(park_ha, 1),
                 "parks_within_1km": park_count,
-                **{k.lower().replace(" ", "_") + "_ha": v for k, v in type_ha.items()},
             },
         ))
 
@@ -396,7 +514,6 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             nearest_dist, None, "metres",
             details={
                 "park_name": park_row["site_name"] if park_row else None,
-                "park_type": park_row["site_type"] if park_row else None,
                 "park_area_ha": round(float(park_row["area_ha"]), 1) if park_row and park_row["area_ha"] else None,
             },
         ))
@@ -405,6 +522,39 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             "parks_1km", "Parks Within 1km",
             park_count, None, "count",
             details={"parks": parks_list} if parks_list else None,
+        ))
+
+        # Sports & Recreation within 1km
+        gs_sports = await db.execute(
+            text("""
+                SELECT site_name, site_type,
+                       ST_Area(geom::geography) / 10000 as area_ha,
+                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography)::int as distance_m
+                FROM core_green_space
+                WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
+                  AND geom IS NOT NULL
+                  AND site_type = ANY(:sport_types)
+                ORDER BY distance_m
+            """),
+            {"lat": lat, "lon": lon, "sport_types": list(SPORT_TYPES)},
+        )
+        sport_rows = gs_sports.mappings().all()
+
+        sport_type_counts: dict[str, int] = {}
+        for r in sport_rows:
+            st = r["site_type"] or "Other"
+            sport_type_counts[st] = sport_type_counts.get(st, 0) + 1
+        sport_list = [
+            {"name": r["site_name"] or "Unnamed", "type": r["site_type"], "distance_m": int(r["distance_m"])}
+            for r in sport_rows[:8]
+        ]
+        metrics.append(metric(
+            "sports_recreation", "Sports & Recreation (1km)",
+            len(sport_rows), None, "count",
+            details={
+                **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
+                "facilities": sport_list,
+            } if sport_rows else None,
         ))
 
     # --- EPC Energy Performance ---

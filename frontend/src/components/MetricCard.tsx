@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ChevronRight, TrendingUp, TrendingDown, Minus,
+  ChevronRight, TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
   PoundSterling, BarChart3, Activity, Scale, Building2, Home,
   Percent, Building, MapPin, Train, Zap, Wifi, Droplets, Wind,
   Cloud, Volume2, TreePine, Flame, Users, Clock, Heart, Key,
   LayoutGrid, GraduationCap, School, BarChart2, Stethoscope,
   Receipt, Landmark, Ruler, Wallet, Award, Sprout, Timer,
   TrainFront, Bike, Smartphone, Sparkles, Vote, Droplet,
-  ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe,
+  ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe, Dumbbell,
 } from 'lucide-react';
 import type { Metric, PersonaId } from '../types';
+import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
 import { formatValue, METRIC_ICONS } from '../utils/tabs';
 import { getTakeaway } from '../utils/personas';
+import TransactionTable from './TransactionTable';
+import NewBuildTrendChart from './NewBuildTrendChart';
 import AmenityRadarChart from './AmenityRadarChart';
 import PriceByTypeChart from './PriceByTypeChart';
+import DistrictPriceHistoryChart from './DistrictPriceHistoryChart';
 import EpcRatingChart from './EpcRatingChart';
 import TransportModeChart from './TransportModeChart';
 import PtalGauge from './PtalGauge';
@@ -33,6 +37,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Receipt, Landmark, TrendingUp, TrendingDown, Ruler, Wallet,
   Award, Sprout, Timer, TrainFront, Bike, Smartphone, Sparkles,
   Vote, Droplet, ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe,
+  Dumbbell,
 };
 
 /** Per-metric data source badge: label + licence */
@@ -72,7 +77,9 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   noise:                  { label: 'DEFRA Strategic Noise Mapping', licence: 'OGL v3' },
   nearest_park:           { label: 'OS Open Greenspace', licence: 'OGL v3' },
   green_cover:            { label: 'OS Open Greenspace', licence: 'OGL v3' },
+  green_spaces:           { label: 'OS Open Greenspace', licence: 'OGL v3' },
   parks_1km:              { label: 'OS Open Greenspace', licence: 'OGL v3' },
+  sports_recreation:      { label: 'OS Open Greenspace', licence: 'OGL v3' },
   crime_rate:             { label: 'Home Office Crime Statistics', licence: 'OGL v3' },
   crime_trend:            { label: 'Home Office Crime Statistics', licence: 'OGL v3' },
   esg_score:              { label: 'Multi-source composite', licence: 'OGL v3' },
@@ -112,11 +119,41 @@ interface Props {
   metric: Metric;
   persona: PersonaId;
   parentName: string;
+  priceByTypeData?: PriceByTypeResponse;
+  priceHistoryData?: PriceHistoryResponse;
+  areaName?: string;
+  sessionKey?: string;
 }
 
-export default function MetricCard({ metric, persona, parentName }: Props) {
+interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
+
+function TrendBadge({ trend }: { trend: Trend }) {
+  const label = `${trend.pct > 0 ? '+' : ''}${trend.pct.toFixed(1)}%`;
+  if (trend.direction === 'up') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600">
+        <ArrowUp className="w-3 h-3" />{label}
+      </span>
+    );
+  }
+  if (trend.direction === 'down') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-600">
+        <ArrowDown className="w-3 h-3" />{label}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-ink-faint">
+      <Minus className="w-3 h-3" />0%
+    </span>
+  );
+}
+
+export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey }: Props) {
   const [expanded, setExpanded] = useState(false);
   const takeaway = getTakeaway(metric, persona);
+  const trend = (metric.details as Record<string, unknown> | null)?.trend as Trend | undefined;
   const colours = COLOUR_STYLES[takeaway.colour];
   const iconName = METRIC_ICONS[metric.id] || 'BarChart3';
   const Icon = ICON_MAP[iconName] || BarChart3;
@@ -152,8 +189,11 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
         </div>
 
         {/* Local */}
-        <div className="text-lg font-bold font-mono text-ink tracking-tight">
-          {formatValue(metric.local_value, metric.unit)}
+        <div className="flex flex-col gap-0.5">
+          <span className="text-lg font-bold font-mono text-ink tracking-tight">
+            {formatValue(metric.local_value, metric.unit)}
+          </span>
+          {trend && <TrendBadge trend={trend} />}
         </div>
 
         {/* Parent */}
@@ -211,10 +251,11 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
-          <div className="flex items-baseline gap-2 mt-0.5">
+          <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
             <span className="text-xl font-bold font-mono text-ink tracking-tight">
               {formatValue(metric.local_value, metric.unit)}
             </span>
+            {trend && <TrendBadge trend={trend} />}
             {metric.parent_value !== null && (
               <span className="flex items-center gap-1 text-xs text-ink-faint">
                 <ComparisonIcon className="w-3 h-3" />
@@ -257,7 +298,27 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
             className="overflow-hidden"
           >
             <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
-              <DetailsRenderer details={metric.details} unit={metric.unit} />
+              {priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
+                <DistrictPriceHistoryChart
+                  data={priceByTypeData}
+                  overallLocal={priceHistoryData?.local}
+                  overallRegional={priceHistoryData?.regional}
+                  regionalName={priceHistoryData?.regional_name}
+                  byBedrooms={metric.id === 'median_price' || metric.id === 'price_per_sqft' ? undefined : priceHistoryData?.by_bedrooms}
+                  areaName={areaName}
+                  priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
+                />
+              )}
+              <DetailsRenderer
+                details={priceByTypeData
+                  ? Object.fromEntries(Object.entries(metric.details as Record<string, unknown>).filter(([k]) => !['detached', 'semi', 'terraced', 'flat', 'uk_median', 'parent_median'].includes(k)))
+                  : metric.details as Record<string, unknown>
+                }
+                unit={metric.unit}
+              />
+              {metric.id === 'transaction_volume' && sessionKey && (
+                <TransactionTable sessionKey={sessionKey} />
+              )}
               {METRIC_SOURCES[metric.id] && (
                 <div className="mt-3 flex items-center gap-1.5">
                   <span className="text-[10px] text-ink-faint">Source:</span>
@@ -276,8 +337,29 @@ export default function MetricCard({ metric, persona, parentName }: Props) {
   );
 }
 
-/** Render details object as sub-rows or list */
+/** Render _note entries from details */
+function DataNotes({ details }: { details: Record<string, unknown> }) {
+  const notes = Object.entries(details).filter(([k, v]) => k.endsWith('_note') && typeof v === 'string');
+  if (notes.length === 0) return null;
+  return (
+    <div className="mt-3">
+      {notes.map(([key, value]) => (
+        <p key={key} className="text-[11px] text-ink-muted italic px-1">{String(value)}</p>
+      ))}
+    </div>
+  );
+}
+
+/** Render details object as sub-rows or list, always appending data notes */
 function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; unit: string }) {
+  const content = renderDetailsContent(details, unit);
+  const notes = <DataNotes details={details} />;
+  // If only notes and no content, still show notes
+  if (!content) return notes;
+  return <>{content}{notes}</>;
+}
+
+function renderDetailsContent(details: Record<string, unknown>, unit: string): React.ReactNode {
   if (Array.isArray(details.schools)) {
     return (
       <div className="space-y-2 mt-2">
@@ -314,7 +396,7 @@ function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; 
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
             <Train className="w-4 h-4 text-ink-faint shrink-0" />
             <span className="text-sm text-ink flex-1 truncate">{String(s.name)}</span>
-            <span className="text-xs text-ink-muted shrink-0">{Number(s.distance_m).toLocaleString()}m</span>
+            {s.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(s.distance_m).toLocaleString()}m</span>}
           </div>
         ))}
         {details.bus_stops_500m != null && (
@@ -336,7 +418,7 @@ function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; 
               {p.type != null && <span className="text-xs text-ink-faint">{String(p.type)}</span>}
             </div>
             {p.area_ha != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.area_ha).toFixed(1)} ha</span>}
-            <span className="text-xs text-ink-muted shrink-0">{Number(p.distance_m).toLocaleString()}m</span>
+            {p.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.distance_m).toLocaleString()}m</span>}
           </div>
         ))}
       </div>
@@ -379,7 +461,7 @@ function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; 
               <span className="text-sm text-ink truncate block">{String(f.name)}</span>
               {f.type != null && <span className="text-xs text-ink-faint">{String(f.type)}</span>}
             </div>
-            <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>
+            {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
           </div>
         ))}
       </div>
@@ -544,45 +626,49 @@ function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; 
     return (
       <AmenityRadarChart
         counts={details.counts as Record<string, number>}
-        nearest={details.nearest as Array<{ type: string; name: string; distance_m: number }> | undefined}
+        nearest={details.nearest as Array<{ type: string; name: string; distance_m?: number }> | undefined}
       />
     );
   }
 
-  const notes = Object.entries(details).filter(([k, v]) => k.endsWith('_note') && typeof v === 'string');
-  const entries = Object.entries(details).filter(([k, v]) => v !== null && v !== undefined && !k.endsWith('_note'));
-  if (entries.length === 0 && notes.length === 0) return null;
+  // New build trend chart
+  if (Array.isArray(details.nb_trend)) {
+    return (
+      <NewBuildTrendChart
+        trend={details.nb_trend as Array<{ year: number; new_builds: number; total: number; pct: number }>}
+      />
+    );
+  }
+
+  // Generic fallback: key-value grid (notes handled by parent DetailsRenderer wrapper)
+  const entries = Object.entries(details).filter(([k, v]) => v !== null && v !== undefined && !k.endsWith('_note') && k !== 'trend');
+  if (entries.length === 0) return null;
 
   return (
     <div className="space-y-2 mt-2">
-      {entries.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          {entries.map(([key, value]) => {
-            if (typeof value === 'object') return null;
-            const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
-            const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
-            const display = typeof value === 'number'
-              ? isGbp
-                ? '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 })
-                : typeof value === 'number' && String(key).includes('pct')
-                ? value.toFixed(1) + '%'
-                : value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
-              : typeof value === 'boolean'
-              ? value ? 'Yes' : 'No'
-              : String(value);
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {entries.map(([key, value]) => {
+          if (typeof value === 'object') return null;
+          const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
+          const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
+          const display = typeof value === 'number'
+            ? isGbp
+              ? '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 })
+              : typeof value === 'number' && String(key).includes('pct')
+              ? value.toFixed(1) + '%'
+              : value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
+            : typeof value === 'boolean'
+            ? value ? 'Yes' : 'No'
+            : String(value);
 
-            return (
-              <div key={key} className="p-2.5 rounded-xl bg-surface">
-                <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">{label}</div>
-                <div className="text-sm font-semibold text-ink mt-0.5">{display}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {notes.map(([key, value]) => (
-        <p key={key} className="text-[11px] text-ink-muted italic px-1">{String(value)}</p>
-      ))}
+          return (
+            <div key={key} className="p-2.5 rounded-xl bg-surface">
+              <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">{label}</div>
+              <div className="text-sm font-semibold text-ink mt-0.5">{display}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

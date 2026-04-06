@@ -62,7 +62,7 @@ const SOURCES = [
   { name: 'Census 2021 TS058 — Distance Travelled to Work', licence: 'OGL v3', org: 'Office for National Statistics',
     note: 'Distance bands and work-from-home rates by LSOA.' },
   { name: 'MHCLG EPC Register (Energy Performance Certificates)', licence: 'OGL v3', org: 'MHCLG',
-    note: 'Energy efficiency ratings and heating type data by LSOA.' },
+    note: 'Energy efficiency ratings, floor area, and habitable rooms. Used for LSOA aggregates and individual property enrichment on sold price map pins.' },
 ];
 
 export default function Attribution() {

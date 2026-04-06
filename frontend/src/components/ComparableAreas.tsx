@@ -7,7 +7,8 @@ interface Props {
   comparable: ComparableArea[];
 }
 
-function fmt(n: number) {
+function fmt(n: number | null | undefined) {
+  if (n == null) return 'N/A';
   return '£' + n.toLocaleString('en-GB', { maximumFractionDigits: 0 });
 }
 
@@ -77,7 +78,7 @@ export default function ComparableAreas({ target, comparable }: Props) {
                 { label: 'Avg Price', val: fmt(area.avg_price), ref: fmt(target.avg_price) },
                 { label: 'Rent/mo', val: fmt(area.median_rent), ref: fmt(target.median_rent) },
                 { label: 'Earnings', val: fmt(area.earnings), ref: fmt(target.earnings) },
-                { label: 'HPI YoY', val: (area.hpi_yoy > 0 ? '+' : '') + area.hpi_yoy.toFixed(1) + '%', ref: null },
+                { label: 'HPI YoY', val: area.hpi_yoy == null ? 'N/A' : (area.hpi_yoy > 0 ? '+' : '') + area.hpi_yoy.toFixed(1) + '%', ref: null },
               ].map(({ label, val, ref }) => (
                 <div key={label} className="bg-surface rounded-lg px-1.5 py-1.5">
                   <div className="text-[9px] text-ink-faint uppercase tracking-wide leading-tight">{label}</div>

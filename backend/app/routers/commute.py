@@ -1,13 +1,15 @@
 """
-GET /api/v1/commute?origin_lat=&origin_lon=&destination=
+GET /api/v1/commute?session_key=&destination=
 Haversine + mode speed factors → structured commute estimate.
 """
 import math
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import http_error
 from app.services.geo_resolver import resolve_search
+from app.services.helpers import get_lsoa_session
 from app.cache import cache_get, cache_set
 
 router = APIRouter()
@@ -46,11 +48,18 @@ def estimate_mode(straight_km: float, mode: dict) -> dict:
 
 @router.get("/commute")
 async def commute(
-    origin_lat: float = Query(...),
-    origin_lon: float = Query(...),
+    session_key: str = Query(..., description="LSOA session key from /resolve"),
     destination: str = Query(..., min_length=2),
     db: AsyncSession = Depends(get_db),
 ):
+    sess = await get_lsoa_session(session_key)
+    if not sess:
+        raise http_error(410, "SESSION_EXPIRED", "Session expired — please search again")
+    origin_lat = sess.get("lat")
+    origin_lon = sess.get("lon")
+    if origin_lat is None or origin_lon is None:
+        raise http_error(400, "NO_COORDINATES", "Origin coordinates not available for this search")
+
     cache_key = f"commute:{round(origin_lat,4)}:{round(origin_lon,4)}:{destination.strip().lower()}"
     cached = await cache_get(cache_key)
     if cached:
@@ -58,7 +67,7 @@ async def commute(
 
     resolved = await resolve_search(db, destination.strip())
     if not resolved.get("coordinates") or not resolved["coordinates"].get("lat"):
-        raise HTTPException(status_code=404, detail="Destination not found")
+        raise http_error(404, "DESTINATION_NOT_FOUND", "Destination not found")
 
     dest_lat = resolved["coordinates"]["lat"]
     dest_lon = resolved["coordinates"]["lon"]

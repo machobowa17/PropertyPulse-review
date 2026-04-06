@@ -9,12 +9,10 @@ export async function resolveSearch(query: string): Promise<ResolveResponse> {
 }
 
 export async function fetchAreaTab(
-  lad: string,
-  ward: string,
-  lsoa: string,
+  sessionKey: string,
   tab: TabName,
 ): Promise<AreaResponse> {
-  const url = `${BASE}/area/${lad}/${ward}/${lsoa}?tab=${encodeURIComponent(tab)}`;
+  const url = `${BASE}/area?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Area fetch failed: ${res.status}`);
   return res.json();
@@ -41,18 +39,29 @@ export interface PriceHistoryPoint {
   year: string;
   avg_price: number;
   median_price: number;
+  avg_ppsf?: number;
   transactions: number;
+}
+
+export interface BedroomBreakdownPoint {
+  year: string;
+  bedrooms: number;
+  avg_price: number;
+  transaction_count: number;
 }
 
 export interface PriceHistoryResponse {
   local: PriceHistoryPoint[];
   regional: PriceHistoryPoint[];
   regional_name: string;
+  by_bedrooms: BedroomBreakdownPoint[];
 }
 
-export async function fetchPriceHistory(lad: string, ward: string, lsoa: string): Promise<PriceHistoryResponse | null> {
+export async function fetchPriceHistory(
+  sessionKey: string,
+): Promise<PriceHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/price-history/${lad}/${ward}/${lsoa}`);
+    const res = await fetch(`${BASE}/price-history?session_key=${encodeURIComponent(sessionKey)}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -73,9 +82,9 @@ export interface AqHistoryResponse {
   lad_name: string;
 }
 
-export async function fetchAqHistory(lad: string): Promise<AqHistoryResponse | null> {
+export async function fetchAqHistory(sessionKey: string): Promise<AqHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/aq-history/${lad}`);
+    const res = await fetch(`${BASE}/aq-history?session_key=${encodeURIComponent(sessionKey)}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -100,9 +109,9 @@ export interface ComparableResponse {
   comparable: ComparableArea[];
 }
 
-export async function fetchComparable(lad: string): Promise<ComparableResponse | null> {
+export async function fetchComparable(sessionKey: string): Promise<ComparableResponse | null> {
   try {
-    const res = await fetch(`${BASE}/comparable/${lad}`);
+    const res = await fetch(`${BASE}/comparable?session_key=${encodeURIComponent(sessionKey)}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -110,9 +119,13 @@ export async function fetchComparable(lad: string): Promise<ComparableResponse |
   }
 }
 
-export async function fetchMapPois(lat: number, lon: number, tab: string): Promise<GeoJSON.FeatureCollection | null> {
+export async function fetchMapPois(
+  sessionKey: string,
+  tab: string,
+): Promise<GeoJSON.FeatureCollection | null> {
   try {
-    const res = await fetch(`${BASE}/map-pois?lat=${lat}&lon=${lon}&tab=${encodeURIComponent(tab)}`);
+    const url = `${BASE}/map-pois?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
+    const res = await fetch(url);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -139,12 +152,11 @@ export interface CommuteResult {
 }
 
 export async function fetchCommute(
-  originLat: number,
-  originLon: number,
+  sessionKey: string,
   destination: string,
 ): Promise<CommuteResult> {
   const res = await fetch(
-    `${BASE}/commute?origin_lat=${originLat}&origin_lon=${originLon}&destination=${encodeURIComponent(destination)}`,
+    `${BASE}/commute?session_key=${encodeURIComponent(sessionKey)}&destination=${encodeURIComponent(destination)}`,
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -153,9 +165,11 @@ export async function fetchCommute(
   return res.json();
 }
 
-export async function fetchBoundary(wardCode: string): Promise<GeoJSON.Feature | null> {
+export async function fetchBoundary(
+  sessionKey: string,
+): Promise<GeoJSON.FeatureCollection | GeoJSON.Feature | null> {
   try {
-    const res = await fetch(`${BASE}/boundary/${wardCode}`);
+    const res = await fetch(`${BASE}/boundary?session_key=${encodeURIComponent(sessionKey)}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -163,21 +177,51 @@ export async function fetchBoundary(wardCode: string): Promise<GeoJSON.Feature |
   }
 }
 
-export interface DistrictPricePoint {
+export interface ChoroplethMetadata {
+  layer: string;
+  unit: string;
+  min_value: number | null;
+  max_value: number | null;
+  quantiles: number[];
+  lsoa_count: number;
+}
+
+export interface ChoroplethResponse extends GeoJSON.FeatureCollection {
+  metadata: ChoroplethMetadata;
+}
+
+export async function fetchChoropleth(
+  sessionKey: string,
+  layer: string,
+): Promise<ChoroplethResponse | null> {
+  try {
+    const url = `${BASE}/map-choropleth?session_key=${encodeURIComponent(sessionKey)}&layer=${encodeURIComponent(layer)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export interface PriceByTypePoint {
   year: string;
   avg_price: number;
   median_price: number;
   transactions: number;
+  avg_ppsf?: number | null;
 }
 
-export interface DistrictPriceResponse {
-  district: string;
-  by_type: Record<string, DistrictPricePoint[]>;
+export interface PriceByTypeResponse {
+  by_type: Record<string, PriceByTypePoint[]>;
+  parent_by_type?: Record<string, PriceByTypePoint[]>;
 }
 
-export async function fetchDistrictPriceHistory(district: string): Promise<DistrictPriceResponse | null> {
+export async function fetchPriceByType(
+  sessionKey: string,
+): Promise<PriceByTypeResponse | null> {
   try {
-    const res = await fetch(`${BASE}/district-price-history/${encodeURIComponent(district)}`);
+    const res = await fetch(`${BASE}/price-by-type?session_key=${encodeURIComponent(sessionKey)}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -185,12 +229,49 @@ export async function fetchDistrictPriceHistory(district: string): Promise<Distr
   }
 }
 
-export async function fetchLsoaBoundary(lsoaCode: string): Promise<GeoJSON.Feature | null> {
-  try {
-    const res = await fetch(`${BASE}/boundary/lsoa/${lsoaCode}`);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
+// ---------------------------------------------------------------------------
+// Individual transactions (paginated, sortable, filterable)
+// ---------------------------------------------------------------------------
+
+export interface Transaction {
+  date: string;
+  address: string;
+  price: number;
+  property_type: string;
+  property_type_label: string;
+  beds: number | null;
+  beds_label: string | null;
+  size_sqm: number | null;
+  tenure: string;
+  tenure_label: string;
+  epc: string | null;
+}
+
+export interface TransactionsResponse {
+  transactions: Transaction[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export async function fetchTransactions(
+  sessionKey: string,
+  params: {
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+    sortDir?: string;
+    propertyType?: string;
+  } = {},
+): Promise<TransactionsResponse> {
+  const qs = new URLSearchParams({ session_key: sessionKey });
+  if (params.page) qs.set('page', String(params.page));
+  if (params.pageSize) qs.set('page_size', String(params.pageSize));
+  if (params.sortBy) qs.set('sort_by', params.sortBy);
+  if (params.sortDir) qs.set('sort_dir', params.sortDir);
+  if (params.propertyType) qs.set('property_type', params.propertyType);
+  const res = await fetch(`${BASE}/transactions?${qs}`);
+  if (!res.ok) throw new Error(`Transactions fetch failed: ${res.status}`);
+  return res.json();
 }

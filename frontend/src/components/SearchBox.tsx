@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Building2, Loader2, ArrowRight } from 'lucide-react';
+import { Search, MapPin, Building2, Landmark, Loader2, ArrowRight } from 'lucide-react';
 import { fetchSuggestions, type Suggestion } from '../api/client';
 
 interface Props {
@@ -94,8 +94,27 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
   const isDark = variant === 'dark';
   const typeIcon = (type: string) => {
     if (type === 'postcode' || type === 'postcode_district') return <MapPin className="w-3.5 h-3.5 text-brand-400" />;
+    if (type === 'borough' || type === 'district' || type === 'county') return <Landmark className="w-3.5 h-3.5 text-brand-400" />;
     if (type === 'City' || type === 'Town') return <Building2 className="w-3.5 h-3.5 text-brand-400" />;
     return <MapPin className="w-3.5 h-3.5 text-ink-faint" />;
+  };
+
+  const typeLabel = (type: string) => {
+    switch (type) {
+      case 'postcode': case 'postcode_district': return 'Postcode';
+      case 'place': return 'Place';
+      case 'ward': return 'Ward';
+      case 'borough': return 'Borough';
+      case 'district': return 'District';
+      case 'county': return 'County';
+      case 'City': return 'City';
+      case 'Town': return 'Town';
+      case 'Suburban Area': return 'Area';
+      case 'Village': return 'Village';
+      case 'Other Settlement': return 'Place';
+      case 'Hamlet': return 'Hamlet';
+      default: return '';
+    }
   };
 
   return (
@@ -161,6 +180,11 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
             >
               {typeIcon(s.type)}
               <span className={`font-medium ${isDark ? 'text-white' : 'text-ink'}`}>{s.label}</span>
+              {typeLabel(s.type) && (
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                  isDark ? 'bg-white/10 text-white/50' : 'bg-surface text-ink-faint'
+                }`}>{typeLabel(s.type)}</span>
+              )}
               {s.area && <span className={`text-xs ml-auto ${isDark ? 'text-white/40' : 'text-ink-faint'}`}>{s.area}</span>}
             </button>
           ))}

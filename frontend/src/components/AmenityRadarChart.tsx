@@ -23,7 +23,7 @@ const AMENITY_LABELS: Record<string, string> = {
 
 interface Props {
   counts: Record<string, number>;
-  nearest?: Array<{ type: string; name: string; distance_m: number }>;
+  nearest?: Array<{ type: string; name: string; distance_m?: number }>;
 }
 
 export default function AmenityRadarChart({ counts, nearest }: Props) {
@@ -103,9 +103,11 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
                 <span className="text-sm text-ink truncate flex-1">
                   {n.name || 'Unnamed'}
                 </span>
-                <span className="text-xs text-ink-faint shrink-0">
-                  {n.distance_m.toLocaleString()}m
-                </span>
+                {n.distance_m != null && (
+                  <span className="text-xs text-ink-faint shrink-0">
+                    {n.distance_m.toLocaleString()}m
+                  </span>
+                )}
               </div>
             ))}
           </div>

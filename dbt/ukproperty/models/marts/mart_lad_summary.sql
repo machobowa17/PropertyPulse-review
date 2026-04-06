@@ -5,12 +5,13 @@
 WITH latest_prices AS (
     SELECT
         lad_code,
-        AVG(avg_price) FILTER (WHERE year_month >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS avg_price_latest,
-        AVG(avg_price) FILTER (WHERE year_month >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 year')
-                                AND year_month < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS avg_price_prev,
-        SUM(transaction_count) FILTER (WHERE year_month >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS transactions_ytd
-    FROM core_property_prices_lad
+        AVG(price) FILTER (WHERE date_of_transfer >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS avg_price_latest,
+        AVG(price) FILTER (WHERE date_of_transfer >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '2 year')
+                                AND date_of_transfer < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS avg_price_prev,
+        COUNT(*) FILTER (WHERE date_of_transfer >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '1 year')) AS transactions_ytd
+    FROM core_property_transactions
     WHERE property_type IN ('D','S','T','F')
+      AND lad_code IS NOT NULL
     GROUP BY lad_code
 ),
 epc_summary AS (
@@ -29,7 +30,7 @@ crime_summary AS (
         SUM(c.total_crimes)::float / NULLIF(SUM(dem.total_population), 0) * 1000 AS crime_rate_per_1k
     FROM core_crime_lsoa c
     JOIN core_lsoa_boundaries lb ON lb.lsoa_code = c.lsoa_code
-    JOIN core_census_demographics_lsoa dem ON dem.lsoa_code = c.lsoa_code
+    JOIN core_census_lsoa dem ON dem.lsoa_code = c.lsoa_code
     GROUP BY lb.lad_code
 )
 SELECT

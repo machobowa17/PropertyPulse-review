@@ -4,8 +4,7 @@ import { fetchCommute } from '../api/client';
 import type { CommuteResult } from '../api/client';
 
 interface Props {
-  originLat: number;
-  originLon: number;
+  sessionKey: string;
   originLabel: string;
 }
 
@@ -16,7 +15,7 @@ const MODE_META: Record<string, { Icon: React.ElementType; colour: string }> = {
   walking: { Icon: Footprints, colour: '#b45309' },
 };
 
-export default function CommuteEstimator({ originLat, originLon, originLabel }: Props) {
+export default function CommuteEstimator({ sessionKey, originLabel }: Props) {
   const [dest, setDest] = useState('');
   const [result, setResult] = useState<CommuteResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,14 +27,14 @@ export default function CommuteEstimator({ originLat, originLon, originLabel }: 
     setError('');
     setResult(null);
     try {
-      const data = await fetchCommute(originLat, originLon, dest.trim());
+      const data = await fetchCommute(sessionKey, dest.trim());
       setResult(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not resolve destination');
     } finally {
       setLoading(false);
     }
-  }, [dest, originLat, originLon]);
+  }, [dest, sessionKey]);
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3 mt-2">

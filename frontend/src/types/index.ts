@@ -2,7 +2,8 @@
 
 export interface ResolveResponse {
   query: string;
-  type: 'postcode' | 'place_name';
+  type: 'postcode' | 'postcode_district' | 'place' | 'ward' | 'lad' | 'county' | 'place_name';
+  search_mode?: 'postcode' | 'area';
   resolved_codes?: {
     lsoa: string | null;
     msoa?: string | null;
@@ -14,6 +15,9 @@ export interface ResolveResponse {
     lat: number | null;
     lon: number | null;
   };
+  /** Single canonical token computed at resolve time. Pass to every data endpoint.
+   *  Present on all successful resolves; absent on error/not-found responses. */
+  session_key?: string;
   error?: string;
   suggestions?: Array<{ label: string; type: string; area: string | null }>;
 }

@@ -11,3 +11,6 @@ etl/*.geojson
 etl/*.shp
 etl/*.zip
 etl/*.gz
+dump.rdb
+frontend/test-results/
+*.rdb

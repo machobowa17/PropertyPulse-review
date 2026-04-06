@@ -1,6 +1,13 @@
 import { useRef, useEffect } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import Supercluster from 'supercluster';
+import type { ChoroplethResponse } from '../api/client';
+
+interface Viewport {
+  center: [number, number];
+  zoom: number;
+}
 
 interface Props {
   lat: number;
@@ -9,21 +16,143 @@ interface Props {
   lsoaBoundary?: GeoJSON.Feature | null;
   pois?: GeoJSON.FeatureCollection | null;
   activeTab?: string;
+  visibleLayers?: Record<string, boolean>;
+  searchLsoa?: string;
+  initialViewport?: Viewport | null;
+  onViewportChange?: (vp: Viewport) => void;
+  choroplethData?: ChoroplethResponse | null;
 }
 
 const POI_COLOURS: Record<string, string> = {
   school: '#ea580c',
   station: '#7c3aed',
   ev_charger: '#16a34a',
+  sold_price: '#0891b2',
 };
 
-export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab }: Props) {
+const PROPERTY_TYPE_COLOURS: Record<string, string> = {
+  Detached: '#2563eb',
+  'Semi-Detached': '#16a34a',
+  Terraced: '#d97706',
+  Flat: '#9333ea',
+};
+
+const CHOROPLETH_RAMPS: Record<string, string[]> = {
+  avg_price:      ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
+  price_per_sqft: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
+  epc_score:      ['#d73027', '#fc8d59', '#fee08b', '#91cf60', '#1a9850'],
+};
+
+const CHOROPLETH_UNITS: Record<string, string> = {
+  avg_price: '£',
+  price_per_sqft: '£/sqft',
+  epc_score: 'score',
+};
+
+const POI_TABS = ['Property & Market', 'Community & Education', 'Lifestyle & Connectivity', 'Environment & Safety'];
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatPrice(price: number): string {
+  if (!Number.isFinite(price)) return '£--';
+  if (price >= 999_500) return `£${(price / 1_000_000).toFixed(1)}m`;
+  if (price >= 1_000) return `£${Math.round(price / 1_000)}k`;
+  return `£${price}`;
+}
+
+function createPricePillElement(price: number, propertyType?: string): HTMLDivElement {
+  const bg = (propertyType && PROPERTY_TYPE_COLOURS[propertyType]) || '#0891b2';
+  const el = document.createElement('div');
+  el.style.cssText = `
+    background: ${bg}; color: white; font-size: 11px; font-weight: 700;
+    padding: 2px 7px; border-radius: 9999px; white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.4; border: 1.5px solid rgba(255,255,255,0.6);
+  `;
+  el.textContent = formatPrice(price);
+  return el;
+}
+
+function createClusterElement(count: number): HTMLDivElement {
+  const size = 28 + Math.min(count, 80) * 0.2;
+  const el = document.createElement('div');
+  el.style.cssText = `
+    background: rgba(8,145,178,0.85); color: white; width: ${size}px; height: ${size}px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); border: 2px solid rgba(255,255,255,0.7);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  `;
+  el.textContent = `${count}`;
+  return el;
+}
+
+const EPC_COLOURS: Record<string, string> = {
+  A: '#008054', B: '#19b459', C: '#8dce46',
+  D: '#ffd500', E: '#fcaa65', F: '#ef8023', G: '#e9153b',
+};
+
+function soldPricePopupHtml(props: Record<string, unknown>): string {
+  const typeColour = (props.property_type && PROPERTY_TYPE_COLOURS[String(props.property_type)]) || '#0891b2';
+  const bedStr = props.bedrooms != null ? ` · ${props.bedrooms} bed (est.)` : '';
+  const floorStr = props.floor_area_sqm != null ? ` · ${Math.round(Number(props.floor_area_sqm))} m²` : '';
+  const epcRating = props.epc_rating ? String(props.epc_rating) : null;
+  const epcColour = epcRating ? (EPC_COLOURS[epcRating] || '#888') : null;
+  const hasEstimate = props.bedrooms != null;
+  return `<div style="font-size:12px">
+    <strong>${esc(String(props.name || ''))}</strong>
+    <br><span style="font-size:14px;font-weight:700;color:${typeColour}">${formatPrice(props.price as number)}</span>
+    ${props.property_type ? `<br>${esc(String(props.property_type))}` : ''}${props.tenure ? ` · ${esc(String(props.tenure))}` : ''}${bedStr}${floorStr}
+    ${epcRating ? `<br><span style="display:inline-block;background:${epcColour};color:${epcRating === 'D' ? '#333' : '#fff'};font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;vertical-align:middle">EPC ${epcRating}</span>` : ''}
+    ${props.date ? `<br>${new Date(String(props.date)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}` : ''}
+    ${props.actual_psf ? `<br>£${Number(props.actual_psf).toLocaleString('en-GB')}/sqft` : ''}
+    ${props.dist_m ? `<br><span style="color:#888">${esc(String(props.dist_m))}m away</span>` : ''}
+    ${hasEstimate ? `<br><span style="color:#aaa;font-size:10px">* Bedroom count estimated from total habitable rooms (EPC data)</span>` : ''}
+  </div>`;
+}
+
+export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
-  // Keep a ref to activeTab so the map on('load') callback can read the current value
+
+  // Separate marker refs: sold prices (clustered, re-rendered on zoom) vs other POIs (static)
+  const soldMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const poiMarkersRef = useRef<maplibregl.Marker[]>([]);
+
+  // Supercluster index and filtered features
+  const clusterIndexRef = useRef<Supercluster | null>(null);
+
+  // Spider fan-out state for overlapping markers
+  const spiderRef = useRef<{
+    markers: maplibregl.Marker[];
+    layerId: string | null;
+    center: [number, number] | null;
+    leaves: Supercluster.PointFeature<Record<string, unknown>>[] | null;
+  }>({
+    markers: [], layerId: null, center: null, leaves: null,
+  });
+
+  // Track previous tab to detect tab changes (for stale marker cleanup)
+  const prevTabRef = useRef(activeTab);
+
+  // Store choropleth event handlers for cleanup
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cleanupHandlersRef = useRef<{ clickHandler: any; enterHandler: any; leaveHandler: any } | null>(null);
+
+  // Keep refs so the map on('load') callback and moveend handler can read current values
   const activeTabRef = useRef(activeTab);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  const poisRef = useRef(pois);
+  useEffect(() => { poisRef.current = pois; }, [pois]);
+  const visibleLayersRef = useRef(visibleLayers);
+  useEffect(() => { visibleLayersRef.current = visibleLayers; }, [visibleLayers]);
+  const searchLsoaRef = useRef(searchLsoa);
+  useEffect(() => { searchLsoaRef.current = searchLsoa; }, [searchLsoa]);
+  const onViewportChangeRef = useRef(onViewportChange);
+  useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
 
   const ISOCHRONE_LAYERS = [
     'iso-15-fill', 'iso-15-line',
@@ -48,11 +177,318 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     });
   }
 
+  /** Remove spider markers and leg lines only (keep center/leaves for re-render) */
+  function removeSpiderVisuals(map: maplibregl.Map) {
+    spiderRef.current.markers.forEach((m) => m.remove());
+    spiderRef.current.markers = [];
+    if (spiderRef.current.layerId) {
+      try {
+        if (map.getLayer(spiderRef.current.layerId)) map.removeLayer(spiderRef.current.layerId);
+        if (map.getSource(spiderRef.current.layerId)) map.removeSource(spiderRef.current.layerId);
+      } catch { /* layer already removed */ }
+      spiderRef.current.layerId = null;
+    }
+  }
+
+  /** Fully clear spider state (visuals + stored center/leaves) */
+  function clearSpider(map: maplibregl.Map) {
+    removeSpiderVisuals(map);
+    spiderRef.current.center = null;
+    spiderRef.current.leaves = null;
+  }
+
+  /** Render spider visuals from stored center + leaves at current zoom */
+  function renderSpiderVisuals(map: maplibregl.Map) {
+    const { center, leaves } = spiderRef.current;
+    if (!center || !leaves || leaves.length === 0) return;
+
+    removeSpiderVisuals(map);
+
+    const count = leaves.length;
+    const zoom = map.getZoom();
+
+    // Convert a fixed pixel radius to degrees at current zoom
+    const pixelRadius = 40 + Math.min(count, 20) * 3;
+    const metersPerPixel =
+      (40075016.686 * Math.cos((center[1] * Math.PI) / 180)) /
+      (256 * Math.pow(2, zoom));
+    const degOffset = (pixelRadius * metersPerPixel) / 111320;
+
+    const legFeatures: GeoJSON.Feature[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+      const offsetLng = center[0] + degOffset * Math.cos(angle);
+      const offsetLat = center[1] + degOffset * Math.sin(angle);
+
+      const props = leaves[i].properties || {};
+      const el = createPricePillElement(
+        props.price as number,
+        props.property_type as string | undefined,
+      );
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([offsetLng, offsetLat])
+        .setPopup(
+          new maplibregl.Popup({ offset: 12, maxWidth: '220px' }).setHTML(
+            soldPricePopupHtml(props),
+          ),
+        )
+        .addTo(map);
+      spiderRef.current.markers.push(marker);
+
+      legFeatures.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [center, [offsetLng, offsetLat]],
+        },
+        properties: {},
+      });
+    }
+
+    const legId = 'spider-legs';
+    // Safety: remove stale source/layer if removal previously failed
+    try {
+      if (map.getLayer(legId)) map.removeLayer(legId);
+      if (map.getSource(legId)) map.removeSource(legId);
+    } catch { /* already clean */ }
+    map.addSource(legId, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: legFeatures },
+    });
+    map.addLayer({
+      id: legId,
+      type: 'line',
+      source: legId,
+      paint: {
+        'line-color': '#888',
+        'line-width': 1,
+        'line-dasharray': [2, 2],
+      },
+    });
+    spiderRef.current.layerId = legId;
+  }
+
+  /** Fan out overlapping markers in a radial circle with spider-leg lines */
+  function spiderfy(
+    map: maplibregl.Map,
+    index: Supercluster,
+    clusterId: number,
+    center: [number, number],
+  ) {
+    clearSpider(map);
+
+    const leaves = index.getLeaves(clusterId, Infinity) as Supercluster.PointFeature<Record<string, unknown>>[];
+    spiderRef.current.center = center;
+    spiderRef.current.leaves = leaves;
+
+    // Re-render all sold markers — this will create spider visuals
+    // and skip normal markers at the spider center (removing the old cluster badge)
+    renderSoldPriceMarkers(map);
+  }
+
+  /** Render sold price markers from the current supercluster index at the map's current zoom/bounds */
+  function renderSoldPriceMarkers(map: maplibregl.Map) {
+    // Clear old sold markers (but NOT the spider — it persists across zoom/pan)
+    soldMarkersRef.current.forEach((m) => m.remove());
+    soldMarkersRef.current = [];
+
+    const index = clusterIndexRef.current;
+    if (!index) return;
+
+    // If spider is active, check if we should keep it or close it
+    let spiderCenter = spiderRef.current.center;
+    if (spiderCenter && spiderRef.current.leaves) {
+      // Check if the spider center is still a "stuck" cluster at the current zoom.
+      // If we zoomed out enough that it's now part of a bigger expandable cluster, close spider.
+      const zoom = Math.floor(map.getZoom());
+      const nearClusters = index.getClusters(
+        [spiderCenter[0] - 0.001, spiderCenter[1] - 0.001,
+         spiderCenter[0] + 0.001, spiderCenter[1] + 0.001],
+        zoom,
+      );
+      const matchingCluster = nearClusters.find(
+        (c) => c.properties?.cluster &&
+          Math.abs(c.geometry.coordinates[0] - spiderCenter![0]) < 1e-4 &&
+          Math.abs(c.geometry.coordinates[1] - spiderCenter![1]) < 1e-4,
+      );
+      if (matchingCluster && index.getClusterExpansionZoom(matchingCluster.properties!.cluster_id as number) <= 16) {
+        // Zoomed out — cluster is now expandable normally. Close spider.
+        clearSpider(map);
+        spiderCenter = null;
+      } else {
+        // Still stuck or individual points — re-render spider at new zoom
+        removeSpiderVisuals(map);
+        renderSpiderVisuals(map);
+      }
+    }
+
+    try {
+      const bounds = map.getBounds();
+      const zoom = Math.floor(map.getZoom());
+      const clusters = index.getClusters(
+        [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        zoom,
+      );
+
+      for (const feature of clusters) {
+        const coords = feature.geometry.coordinates as [number, number];
+        if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
+
+        // Skip features at the spider center — they're shown as spider markers
+        if (spiderCenter &&
+            Math.abs(coords[0] - spiderCenter[0]) < 1e-4 &&
+            Math.abs(coords[1] - spiderCenter[1]) < 1e-4) {
+          continue;
+        }
+
+        const props = feature.properties || {};
+
+        if (props.cluster) {
+          // Cluster marker
+          const count = props.point_count as number;
+          const el = createClusterElement(count);
+          const clusterId = props.cluster_id as number;
+          el.addEventListener('click', () => {
+            const expZoom = index.getClusterExpansionZoom(clusterId);
+            if (expZoom > 16) {
+              // All points overlap — fan them out in a spider pattern
+              spiderfy(map, index, clusterId, coords);
+            } else {
+              clearSpider(map);
+              map.flyTo({ center: coords, zoom: expZoom, duration: 500 });
+            }
+          });
+          const marker = new maplibregl.Marker({ element: el })
+            .setLngLat(coords)
+            .addTo(map);
+          soldMarkersRef.current.push(marker);
+        } else {
+          // Individual sold price pill
+          const el = createPricePillElement(props.price as number, props.property_type as string | undefined);
+          const marker = new maplibregl.Marker({ element: el })
+            .setLngLat(coords)
+            .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: '220px' }).setHTML(soldPricePopupHtml(props)))
+            .addTo(map);
+          soldMarkersRef.current.push(marker);
+        }
+      }
+    } catch (err) {
+      console.error('[MapView] renderSoldPriceMarkers error:', err);
+    }
+  }
+
+  /** Render POI markers + flood zone polygons on the given map */
+  function renderPoisOnMap(
+    map: maplibregl.Map,
+    poisData: GeoJSON.FeatureCollection | null | undefined,
+    layers: Record<string, boolean>,
+    lsoaCode?: string,
+  ) {
+    // Don't clear markers if no new data — keeps old markers visible during tab-switch loading
+    if (!poisData?.features) return;
+
+    // Clear old markers (new data is ready to render)
+    soldMarkersRef.current.forEach((m) => m.remove());
+    soldMarkersRef.current = [];
+    poiMarkersRef.current.forEach((m) => m.remove());
+    poiMarkersRef.current = [];
+    clusterIndexRef.current = null;
+    clearSpider(map);
+
+    // Remove old flood zone layers/source
+    const FLOOD_SOURCE = 'flood-zones';
+    if (map.getLayer('flood-zones-fill')) map.removeLayer('flood-zones-fill');
+    if (map.getLayer('flood-zones-line')) map.removeLayer('flood-zones-line');
+    if (map.getSource(FLOOD_SOURCE)) map.removeSource(FLOOD_SOURCE);
+
+    try {
+      const wardOn = layers.ward_boundary !== false;
+      const lsoaOn = layers.lsoa_boundary !== false;
+
+      const visibleFeatures = poisData.features.filter((f) => {
+        if (!f.geometry) return false;
+        const cat = f.properties?.category;
+        if (cat && layers[cat] === false) return false;
+        if (cat === 'sold_price') {
+          const inWard = f.properties?.in_ward;
+          const inLsoa = lsoaCode && f.properties?.lsoa_code === lsoaCode;
+          if (wardOn && lsoaOn) return true;
+          if (wardOn) return inWard;
+          if (lsoaOn && lsoaCode) return inLsoa;
+          return true;
+        }
+        return true;
+      });
+
+      // Separate sold prices from other POIs
+      const soldFeatures = visibleFeatures.filter(
+        (f) => f.geometry.type === 'Point' && f.properties?.category === 'sold_price',
+      );
+      const otherPointFeatures = visibleFeatures.filter(
+        (f) => f.geometry.type === 'Point' && f.properties?.category !== 'sold_price',
+      );
+      const polygonFeatures = visibleFeatures.filter(
+        (f) => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon',
+      );
+
+      // Build supercluster index for sold prices
+      if (soldFeatures.length > 0) {
+        const index = new Supercluster({ radius: 60, maxZoom: 16 });
+        index.load(soldFeatures as Supercluster.PointFeature<Record<string, unknown>>[]);
+        clusterIndexRef.current = index;
+        renderSoldPriceMarkers(map);
+      }
+
+      // Render other POI markers (schools, stations, EV chargers)
+      for (const feature of otherPointFeatures) {
+        const coords = (feature.geometry as GeoJSON.Point).coordinates;
+        if (!coords || coords.length < 2 || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
+        const [lng, lt] = coords as [number, number];
+        const props = feature.properties || {};
+
+        const colour = POI_COLOURS[props.category] || '#6b7280';
+        const marker = new maplibregl.Marker({ color: colour, scale: 0.7 })
+          .setLngLat([lng, lt])
+          .setPopup(
+            new maplibregl.Popup({ offset: 20, maxWidth: '200px' }).setHTML(
+              `<div style="font-size:12px"><strong>${esc(props.name || '')}</strong>${props.ofsted ? `<br>Ofsted: ${esc(props.ofsted)}` : ''}${props.phase ? `<br>${esc(props.phase)}` : ''}${props.operator ? `<br>${esc(props.operator)}` : ''}${props.connectors != null ? `<br>${props.connectors} connector${props.connectors !== 1 ? 's' : ''}` : ''}${props.max_kw != null ? ` · ${props.max_kw}kW` : ''}${props.dist_m ? `<br>${props.dist_m}m away` : ''}</div>`,
+            ),
+          )
+          .addTo(map);
+        poiMarkersRef.current.push(marker);
+      }
+
+      // Flood zone polygons
+      if (polygonFeatures.length > 0) {
+        const floodCollection: GeoJSON.FeatureCollection = {
+          type: 'FeatureCollection',
+          features: polygonFeatures,
+        };
+        map.addSource(FLOOD_SOURCE, { type: 'geojson', data: floodCollection });
+        map.addLayer({
+          id: 'flood-zones-fill',
+          type: 'fill',
+          source: FLOOD_SOURCE,
+          paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.2 },
+        });
+        map.addLayer({
+          id: 'flood-zones-line',
+          type: 'line',
+          source: FLOOD_SOURCE,
+          paint: { 'line-color': '#1d4ed8', 'line-width': 1.5, 'line-opacity': 0.8 },
+        });
+      }
+    } catch (err) {
+      console.error('[MapView] renderPoisOnMap error:', err);
+    }
+  }
+
   // Reactive effect: handles tab switches on an already-loaded map
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!map.isStyleLoaded()) return; // map-creation effect handles initial render via on('load')
+    if (!map.isStyleLoaded()) return;
     applyIsochronesToMap(map, activeTab, lat, lon);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
@@ -74,7 +510,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           id: 'lsoa-boundary-fill',
           type: 'fill',
           source: SOURCE,
-          paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.07 },
+          paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.12 },
         });
         map.addLayer({
           id: 'lsoa-boundary-line',
@@ -97,75 +533,213 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     applyLsoaBoundary();
   }, [lsoaBoundary]);
 
-  // Update POI markers + flood zone polygons when pois change (without recreating the map)
+  // Update POI markers + flood zone polygons when pois, visibility, searchLsoa, or tab change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const tabChanged = prevTabRef.current !== activeTab;
+    prevTabRef.current = activeTab;
+
+    // Helper: clear all markers + flood zone layers
+    const clearAll = () => {
+      soldMarkersRef.current.forEach((m) => m.remove());
+      soldMarkersRef.current = [];
+      poiMarkersRef.current.forEach((m) => m.remove());
+      poiMarkersRef.current = [];
+      clusterIndexRef.current = null;
+      clearSpider(map);
+      if (map.getLayer('flood-zones-fill')) map.removeLayer('flood-zones-fill');
+      if (map.getLayer('flood-zones-line')) map.removeLayer('flood-zones-line');
+      if (map.getSource('flood-zones')) map.removeSource('flood-zones');
+    };
+
+    // If tab doesn't fetch POIs (Local Governance), clear everything
+    if (!POI_TABS.includes(activeTab || '')) {
+      clearAll();
+      return;
+    }
+
+    // If tab changed but new data hasn't arrived yet, clear stale markers from old tab
+    // (prevents flood zones / old POIs lingering during loading gap)
+    if (tabChanged && !pois?.features) {
+      clearAll();
+      return;
+    }
+
+    renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pois, visibleLayers, searchLsoa, activeTab]);
+
+  // Choropleth rendering
+  const choroplethLegendRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const renderPois = () => {
-      // Remove old POI markers
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
+    const CHORO_SOURCE = 'choropleth';
+    const CHORO_FILL = 'choropleth-fill';
+    const CHORO_LINE = 'choropleth-line';
 
-      // Remove old flood zone layers/source
-      const FLOOD_SOURCE = 'flood-zones';
-      if (map.getLayer('flood-zones-fill')) map.removeLayer('flood-zones-fill');
-      if (map.getLayer('flood-zones-line')) map.removeLayer('flood-zones-line');
-      if (map.getSource(FLOOD_SOURCE)) map.removeSource(FLOOD_SOURCE);
-
-      if (pois && pois.features) {
-        const pointFeatures = pois.features.filter((f) => f.geometry.type === 'Point');
-        const polygonFeatures = pois.features.filter(
-          (f) => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'
-        );
-
-        for (const feature of pointFeatures) {
-          const [lng, lt] = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
-          const props = feature.properties || {};
-          const colour = POI_COLOURS[props.category] || '#6b7280';
-          const marker = new maplibregl.Marker({ color: colour, scale: 0.7 })
-            .setLngLat([lng, lt])
-            .setPopup(
-              new maplibregl.Popup({ offset: 20, maxWidth: '200px' }).setHTML(
-                `<div style="font-size:12px"><strong>${props.name || ''}</strong>${props.ofsted ? `<br>Ofsted: ${props.ofsted}` : ''}${props.phase ? `<br>${props.phase}` : ''}${props.operator ? `<br>${props.operator}` : ''}${props.connectors != null ? `<br>${props.connectors} connector${props.connectors !== 1 ? 's' : ''}` : ''}${props.max_kw != null ? ` · ${props.max_kw}kW` : ''}${props.dist_m ? `<br>${props.dist_m}m away` : ''}</div>`
-              )
-            )
-            .addTo(map);
-          markersRef.current.push(marker);
-        }
-
-        if (polygonFeatures.length > 0) {
-          const floodCollection: GeoJSON.FeatureCollection = {
-            type: 'FeatureCollection',
-            features: polygonFeatures,
-          };
-          map.addSource(FLOOD_SOURCE, { type: 'geojson', data: floodCollection });
-          map.addLayer({
-            id: 'flood-zones-fill',
-            type: 'fill',
-            source: FLOOD_SOURCE,
-            paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.2 },
-          });
-          map.addLayer({
-            id: 'flood-zones-line',
-            type: 'line',
-            source: FLOOD_SOURCE,
-            paint: { 'line-color': '#1d4ed8', 'line-width': 1.5, 'line-opacity': 0.8 },
-          });
-        }
+    const cleanup = () => {
+      try {
+        if (map.getLayer(CHORO_FILL)) map.removeLayer(CHORO_FILL);
+        if (map.getLayer(CHORO_LINE)) map.removeLayer(CHORO_LINE);
+        if (map.getSource(CHORO_SOURCE)) map.removeSource(CHORO_SOURCE);
+      } catch { /* map may be removed */ }
+      if (choroplethLegendRef.current) {
+        choroplethLegendRef.current.remove();
+        choroplethLegendRef.current = null;
       }
     };
 
-    // If style not loaded yet, defer until the load event
+    // If map style not loaded yet, wait for it then re-trigger via a one-shot listener
     if (!map.isStyleLoaded()) {
-      map.once('load', renderPois);
-      return () => { map.off('load', renderPois); };
+      const m = map;
+      const onLoad = () => { cleanup(); applyChoropleth(m); };
+      m.once('load', onLoad);
+      return () => { m.off('load', onLoad); cleanup(); };
     }
-    renderPois();
-  }, [pois]);
+
+    cleanup();
+    applyChoropleth(map);
+
+    function applyChoropleth(m: maplibregl.Map) {
+      if (!choroplethData || !choroplethData.features?.length) return;
+
+      const meta = choroplethData.metadata;
+      const ramp = CHOROPLETH_RAMPS[meta.layer] || CHOROPLETH_RAMPS.avg_price;
+      const noDataColour = '#d1d5db';
+
+      // Build match expression: quantile → colour
+      const matchExpr: unknown[] = ['match', ['get', 'quantile']];
+      for (let i = 0; i < 5; i++) matchExpr.push(i, ramp[i]);
+      matchExpr.push(noDataColour); // fallback for -1 / null
+
+      try {
+        m.addSource(CHORO_SOURCE, { type: 'geojson', data: choroplethData as GeoJSON.FeatureCollection });
+
+        // Insert below boundary layers so they remain visible on top
+        const beforeLayer = m.getLayer('lsoa-boundary-fill')
+          ? 'lsoa-boundary-fill'
+          : m.getLayer('ward-boundary-fill')
+            ? 'ward-boundary-fill'
+            : undefined;
+
+        m.addLayer({
+          id: CHORO_FILL,
+          type: 'fill',
+          source: CHORO_SOURCE,
+          paint: { 'fill-color': matchExpr as unknown as string, 'fill-opacity': 0.55 },
+        }, beforeLayer);
+
+        m.addLayer({
+          id: CHORO_LINE,
+          type: 'line',
+          source: CHORO_SOURCE,
+          paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.7 },
+        }, beforeLayer);
+      } catch (err) {
+        console.error('[MapView] choropleth layer error:', err);
+        return;
+      }
+
+      // Click popup for LSOA details
+      const clickHandler = (e: maplibregl.MapMouseEvent) => {
+        try {
+          if (!m.getLayer(CHORO_FILL)) return;
+          const features = m.queryRenderedFeatures(e.point, { layers: [CHORO_FILL] });
+          if (!features.length) return;
+          const p = features[0].properties;
+          if (!p) return;
+          const unit = CHOROPLETH_UNITS[meta.layer] || '';
+          const valStr = p.value != null
+            ? (meta.layer === 'epc_score' ? `${Number(p.value).toFixed(0)} ${unit}` : `${unit}${Number(p.value).toLocaleString('en-GB')}`)
+            : 'No data';
+          new maplibregl.Popup({ maxWidth: '200px' })
+            .setLngLat(e.lngLat)
+            .setHTML(`<div style="font-size:12px"><strong>${esc(String(p.lsoa_name || p.lsoa_code || ''))}</strong><br>${valStr}</div>`)
+            .addTo(m);
+        } catch { /* map may be disposed */ }
+      };
+      m.on('click', CHORO_FILL, clickHandler);
+
+      // Cursor change on hover
+      const enterHandler = () => { try { m.getCanvas().style.cursor = 'pointer'; } catch { /* */ } };
+      const leaveHandler = () => { try { m.getCanvas().style.cursor = ''; } catch { /* */ } };
+      m.on('mouseenter', CHORO_FILL, enterHandler);
+      m.on('mouseleave', CHORO_FILL, leaveHandler);
+
+      // Floating legend
+      const legend = document.createElement('div');
+      legend.style.cssText = `
+        position: absolute; bottom: 8px; right: 8px; background: white;
+        border-radius: 8px; padding: 8px 10px; font-size: 10px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.15); z-index: 5; pointer-events: none;
+      `;
+      const layerLabel = meta.layer === 'avg_price' ? 'Avg Price' : meta.layer === 'price_per_sqft' ? '£/sqft' : 'EPC Score';
+      const fmtVal = (v: number | null) => {
+        if (v == null) return '–';
+        if (meta.layer === 'epc_score') return v.toFixed(0);
+        if (v >= 1_000_000) return `£${(v / 1_000_000).toFixed(1)}m`;
+        if (v >= 1_000) return `£${Math.round(v / 1_000)}k`;
+        return `£${v}`;
+      };
+      legend.innerHTML = `
+        <div style="font-weight:600;margin-bottom:4px">${layerLabel}</div>
+        <div style="display:flex;gap:0;height:10px;border-radius:3px;overflow:hidden;margin-bottom:3px">
+          ${ramp.map((c) => `<div style="flex:1;background:${c}"></div>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;color:#666">
+          <span>${fmtVal(meta.min_value)}</span><span>${fmtVal(meta.max_value)}</span>
+        </div>
+      `;
+      containerRef.current?.appendChild(legend);
+      choroplethLegendRef.current = legend;
+
+      // Store handlers for cleanup
+      cleanupHandlersRef.current = { clickHandler, enterHandler, leaveHandler };
+    }
+
+    return () => {
+      const h = cleanupHandlersRef.current;
+      if (h) {
+        try {
+          map.off('click', CHORO_FILL, h.clickHandler);
+          map.off('mouseenter', CHORO_FILL, h.enterHandler);
+          map.off('mouseleave', CHORO_FILL, h.leaveHandler);
+        } catch { /* map may be removed */ }
+        cleanupHandlersRef.current = null;
+      }
+      cleanup();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choroplethData]);
+
+  // Toggle boundary layer visibility
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const wardVis = visibleLayers.ward_boundary !== false ? 'visible' : 'none';
+    const lsoaVis = visibleLayers.lsoa_boundary !== false ? 'visible' : 'none';
+
+    for (const id of ['ward-boundary-fill', 'ward-boundary-line']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', wardVis);
+    }
+    for (const id of ['lsoa-boundary-fill', 'lsoa-boundary-line']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', lsoaVis);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleLayers]);
 
   useEffect(() => {
     if (!containerRef.current) return;
+
+    // Use restored viewport if available, otherwise default
+    const useViewport = initialViewport != null;
+    const mapCenter: [number, number] = useViewport ? initialViewport.center : [lon, lat];
+    const mapZoom = useViewport ? initialViewport.zoom : 14;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -183,8 +757,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           { id: 'osm-tiles', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 19 },
         ],
       },
-      center: [lon, lat],
-      zoom: 14,
+      center: mapCenter,
+      zoom: mapZoom,
       attributionControl: { compact: true },
     });
 
@@ -194,18 +768,40 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       .setLngLat([lon, lat])
       .addTo(map);
 
+    // Re-render sold price clusters on zoom/pan change
+    map.on('moveend', () => {
+      if (clusterIndexRef.current) {
+        renderSoldPriceMarkers(map);
+      }
+      // Report viewport to parent for preservation across mount/unmount
+      const c = map.getCenter();
+      onViewportChangeRef.current?.({ center: [c.lng, c.lat], zoom: map.getZoom() });
+    });
+
+    // Close spider when clicking empty map area
+    map.on('click', (e: maplibregl.MapMouseEvent) => {
+      // Only close if spider is active and click wasn't on a marker element
+      if (spiderRef.current.center) {
+        const target = e.originalEvent.target as HTMLElement;
+        if (target === map.getCanvas()) {
+          clearSpider(map);
+          renderSoldPriceMarkers(map);
+        }
+      }
+    });
+
     map.on('load', () => {
-      // Walking isochrones — rendered here so they appear on every fresh map instance
+      // Walking isochrones
       applyIsochronesToMap(map, activeTabRef.current, lat, lon);
 
-      // LSOA boundary — tighter dashed purple overlay
+      // LSOA boundary
       if (lsoaBoundary && lsoaBoundary.geometry) {
         map.addSource('lsoa-boundary', { type: 'geojson', data: lsoaBoundary });
         map.addLayer({
           id: 'lsoa-boundary-fill',
           type: 'fill',
           source: 'lsoa-boundary',
-          paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.07 },
+          paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.12 },
         });
         map.addLayer({
           id: 'lsoa-boundary-line',
@@ -220,7 +816,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         });
       }
 
-      // Bible 6.2.4: Ward boundary polygon
+      // Ward boundary polygon
       if (boundary && boundary.geometry) {
         map.addSource('ward-boundary', {
           type: 'geojson',
@@ -246,14 +842,16 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           },
         });
 
-        // Fit map to boundary bounds
-        const coords = getAllCoords(boundary.geometry);
-        if (coords.length > 0) {
-          const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
-          coords.forEach((c) => bounds.extend(c));
-          map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
+        // Fit map to boundary bounds (skip if restoring a saved viewport)
+        if (!useViewport) {
+          const coords = getAllCoords(boundary.geometry);
+          if (coords.length > 0) {
+            const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
+            coords.forEach((c) => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
+          }
         }
-      } else {
+      } else if (!useViewport) {
         // Fallback: 1km radius circle
         map.addSource('radius', {
           type: 'geojson',
@@ -272,6 +870,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           paint: { 'line-color': '#3b82f6', 'line-width': 2, 'line-dasharray': [3, 2], 'line-opacity': 0.5 },
         });
       }
+
+      // Render any POIs that arrived before or during map creation
+      renderPoisOnMap(map, poisRef.current, visibleLayersRef.current, searchLsoaRef.current);
     });
 
     mapRef.current = map;

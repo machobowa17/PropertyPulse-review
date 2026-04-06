@@ -44,6 +44,7 @@ export function formatValue(value: number | string | null, unit: string): string
   if (unit === 'dB') return value.toFixed(0) + ' dB';
   if (unit === 'people/hectare') return value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) + '/ha';
   if (unit === 'years') return value.toFixed(1) + ' yrs';
+  if (unit === 'count/LSOA') return value.toLocaleString('en-GB', { maximumFractionDigits: 1 }) + '/LSOA';
   if (unit === 'count') return value.toLocaleString('en-GB');
   if (unit === 'score' || unit.startsWith('score')) return value.toFixed(1);
   return String(value);
@@ -80,7 +81,9 @@ export const METRIC_ICONS: Record<string, string> = {
   noise: 'Volume2',
   nearest_park: 'TreePine',
   green_cover: 'TreePine',
+  green_spaces: 'TreePine',
   parks_1km: 'MapPin',
+  sports_recreation: 'Dumbbell',
   epc_rating: 'Flame',
   demographics_overview: 'Users',
   population_density: 'Users',

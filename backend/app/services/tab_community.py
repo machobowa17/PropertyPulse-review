@@ -1,15 +1,17 @@
 """Tab 4: Community & Education — Bible Part 4, Tab 4.
-Queries: core_census_demographics_lsoa, core_census_housing_lsoa, core_schools,
+Queries: core_census_lsoa (consolidated), core_census_ethnicity_ward, core_schools,
          core_imd_lsoa, core_nhs_facilities.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
-from app.services.helpers import metric, get_parent_lad_codes
+from app.services.helpers import metric
 
 
-async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon):
+async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon, search_mode="postcode", local_lads=None, parent_lads=None, parent_name="England", boundary_source="lad"):
     metrics = []
     lat, lon = centroid_lat, centroid_lon
-    parent_lads = await get_parent_lad_codes(db, lad_code)
+    if parent_lads is None:
+        parent_lads = []
+    is_area = search_mode == "area"
 
     # --- Demographics ---
     demo_local = await db.execute(
@@ -23,7 +25,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(pct_families) as pct_families,
                    AVG(pct_singles) as pct_singles,
                    AVG(pct_sharers) as pct_sharers
-            FROM core_census_demographics_lsoa WHERE lsoa_code = ANY(:codes)
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )
@@ -37,7 +39,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(pct_sharers) as avg_sharers,
                    AVG(pct_age_0_15) as avg_0_15, AVG(pct_age_16_64) as avg_16_64,
                    AVG(pct_age_65_plus) as avg_65plus
-            FROM core_census_demographics_lsoa d
+            FROM core_census_lsoa d
             JOIN core_lsoa_boundaries l ON l.lsoa_code = d.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
@@ -88,7 +90,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(pct_degree) as pct_degree,
                    AVG(pct_no_car) as pct_no_car,
                    AVG(pct_born_abroad) as pct_born_abroad
-            FROM core_census_extra_lsoa WHERE lsoa_code = ANY(:codes)
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )
@@ -101,7 +103,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(e.pct_degree) as pct_degree,
                    AVG(e.pct_no_car) as pct_no_car,
                    AVG(e.pct_born_abroad) as pct_born_abroad
-            FROM core_census_extra_lsoa e
+            FROM core_census_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
@@ -145,11 +147,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             "%",
         ))
 
-    # --- WFH ---
+    # --- WFH (from census commute data, consolidated into core_census_lsoa) ---
     wfh_result = await db.execute(
         text("""
             SELECT AVG(pct_wfh) as pct_wfh
-            FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )
@@ -158,7 +160,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     wfh_parent = await db.execute(
         text("""
             SELECT AVG(c.pct_wfh) as avg_wfh
-            FROM core_cycling_lsoa c
+            FROM core_census_lsoa c
             JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
@@ -233,7 +235,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(pct_semi) as pct_semi,
                    AVG(pct_terraced) as pct_terraced,
                    AVG(pct_flat) as pct_flat
-            FROM core_census_housing_lsoa WHERE lsoa_code = ANY(:codes)
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )
@@ -244,7 +246,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             SELECT AVG(pct_owned) as avg_owned, AVG(pct_private_rent) as avg_priv_rent,
                    AVG(pct_detached) as avg_det, AVG(pct_semi) as avg_semi,
                    AVG(pct_terraced) as avg_terr, AVG(pct_flat) as avg_flat
-            FROM core_census_housing_lsoa h
+            FROM core_census_lsoa h
             JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
@@ -283,7 +285,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         text("""
             SELECT AVG(pct_1person) as pct_1person, AVG(pct_2person) as pct_2person,
                    AVG(pct_3_4person) as pct_3_4person, AVG(pct_5plus) as pct_5plus
-            FROM core_census_hh_size_lsoa WHERE lsoa_code = ANY(:codes)
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )
@@ -293,7 +295,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         text("""
             SELECT AVG(h.pct_1person) as pct_1person, AVG(h.pct_2person) as pct_2person,
                    AVG(h.pct_3_4person) as pct_3_4person, AVG(h.pct_5plus) as pct_5plus
-            FROM core_census_hh_size_lsoa h
+            FROM core_census_lsoa h
             JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
@@ -355,8 +357,94 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             },
         ))
 
-    # --- Schools (Bible: count Outstanding/Good within radius) ---
-    if lat is not None:
+    # --- Schools (Bible: count Outstanding/Good within radius / in area) ---
+    if is_area:
+        # Area mode: schools within LSOA boundaries (containment-based)
+        primary = await db.execute(
+            text("""
+                SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
+                       COUNT(*) as total
+                FROM core_schools s
+                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                WHERE s.phase = 'Primary' AND s.is_open = TRUE
+                  AND lb.lsoa_code = ANY(:codes)
+            """),
+            {"codes": lsoa_codes},
+        )
+        prim_row = primary.mappings().first()
+
+        primary_list = await db.execute(
+            text("""
+                SELECT s.school_name, s.ofsted_rating, s.ks2_reading_pct, s.ks2_maths_pct
+                FROM core_schools s
+                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                WHERE s.phase = 'Primary' AND s.is_open = TRUE
+                  AND lb.lsoa_code = ANY(:codes)
+                ORDER BY s.school_name LIMIT 15
+            """),
+            {"codes": lsoa_codes},
+        )
+        prim_list = [
+            {
+                "name": r["school_name"],
+                "ofsted": r["ofsted_rating"],
+                "ks2_reading": _r(r["ks2_reading_pct"]),
+                "ks2_maths": _r(r["ks2_maths_pct"]),
+            }
+            for r in primary_list.mappings().all()
+        ]
+
+        metrics.append(metric(
+            "primary_schools", "Primary Schools in Area",
+            int(prim_row["good_count"]) if prim_row else 0,
+            None, "Outstanding/Good count",
+            details={"total_in_area": int(prim_row["total"]) if prim_row else 0, "schools": prim_list},
+        ))
+
+        # Secondary: within LSOA boundaries
+        secondary = await db.execute(
+            text("""
+                SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
+                       COUNT(*) as total
+                FROM core_schools s
+                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                WHERE s.phase = 'Secondary' AND s.is_open = TRUE
+                  AND lb.lsoa_code = ANY(:codes)
+            """),
+            {"codes": lsoa_codes},
+        )
+        sec_row = secondary.mappings().first()
+
+        secondary_list = await db.execute(
+            text("""
+                SELECT s.school_name, s.ofsted_rating, s.gcse_progress_8, s.gcse_attainment_8
+                FROM core_schools s
+                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                WHERE s.phase = 'Secondary' AND s.is_open = TRUE
+                  AND lb.lsoa_code = ANY(:codes)
+                ORDER BY s.school_name LIMIT 15
+            """),
+            {"codes": lsoa_codes},
+        )
+        sec_list = [
+            {
+                "name": r["school_name"],
+                "ofsted": r["ofsted_rating"],
+                "progress_8": _r(r["gcse_progress_8"]),
+                "attainment_8": _r(r["gcse_attainment_8"]),
+            }
+            for r in secondary_list.mappings().all()
+        ]
+
+        metrics.append(metric(
+            "secondary_schools", "Secondary Schools in Area",
+            int(sec_row["good_count"]) if sec_row else 0,
+            None, "Outstanding/Good count",
+            details={"total_in_area": int(sec_row["total"]) if sec_row else 0, "schools": sec_list},
+        ))
+
+    elif lat is not None:
+        # Postcode mode: distance-based
         # Primary: within 1 mile (1609m)
         primary = await db.execute(
             text("""
@@ -370,7 +458,6 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         )
         prim_row = primary.mappings().first()
 
-        # Nearest primary schools with details
         primary_list = await db.execute(
             text("""
                 SELECT school_name, ofsted_rating, ks2_reading_pct, ks2_maths_pct,
@@ -493,8 +580,63 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             },
         ))
 
-    # --- NHS Facilities nearby ---
-    if lat is not None:
+    # --- NHS Facilities nearby / in area ---
+    if is_area:
+        # Area mode: NHS facilities within LSOA boundaries
+        nhs_counts_result = await db.execute(
+            text("""
+                SELECT nf.facility_type, COUNT(*) as cnt
+                FROM core_nhs_facilities nf
+                JOIN core_lsoa_boundaries lb ON ST_Within(nf.geom, lb.geom)
+                WHERE lb.lsoa_code = ANY(:codes)
+                GROUP BY nf.facility_type
+            """),
+            {"codes": lsoa_codes},
+        )
+        nhs_counts = {r["facility_type"]: int(r["cnt"]) for r in nhs_counts_result.mappings().all()}
+        total_nhs = sum(nhs_counts.values())
+
+        nhs_list_result = await db.execute(
+            text("""
+                SELECT nf.name, nf.facility_type
+                FROM core_nhs_facilities nf
+                JOIN core_lsoa_boundaries lb ON ST_Within(nf.geom, lb.geom)
+                WHERE lb.lsoa_code = ANY(:codes)
+                ORDER BY nf.name LIMIT 15
+            """),
+            {"codes": lsoa_codes},
+        )
+        nhs_list = [
+            {"name": r["name"], "type": r["facility_type"]}
+            for r in nhs_list_result.mappings().all()
+        ]
+
+        type_summary = {t: {"count": nhs_counts.get(t, 0)} for t in nhs_counts}
+
+        # Parent avg NHS count (from pre-computed LSOA table)
+        nhs_area_parent_result = await db.execute(
+            text("""
+                SELECT AVG(n.nhs_count_2km) as avg_count
+                FROM core_nhs_lsoa n
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = n.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        nhs_area_parent_row = nhs_area_parent_result.mappings().first()
+        nhs_area_parent_avg = _r(nhs_area_parent_row["avg_count"]) if nhs_area_parent_row and nhs_area_parent_row["avg_count"] else None
+
+        metrics.append(metric(
+            "nhs_facilities", "NHS Facilities in Area",
+            total_nhs, nhs_area_parent_avg, "count",
+            details={
+                "type_summary": type_summary,
+                "facilities": nhs_list,
+            } if (nhs_counts or nhs_list) else None,
+        ))
+
+    elif lat is not None:
+        # Postcode mode: distance-based
         # Counts by type within 2km
         nhs_counts_result = await db.execute(
             text("""
@@ -564,20 +706,19 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # Bible: classify area based on demographics, housing, density
     demo = await db.execute(
         text("""
-            SELECT AVG(d.population_density) as population_density,
-                   AVG(d.median_age) as median_age,
-                   AVG(d.pct_families) as pct_families,
-                   AVG(d.pct_singles) as pct_singles,
-                   AVG(d.pct_age_0_15) as pct_age_0_15,
-                   AVG(d.pct_age_16_64) as pct_age_16_64,
-                   AVG(d.pct_age_65_plus) as pct_age_65_plus,
-                   AVG(h.pct_owned) as pct_owned,
-                   AVG(h.pct_private_rent) as pct_private_rent,
-                   AVG(h.pct_detached) as pct_detached,
-                   AVG(h.pct_flat) as pct_flat
-            FROM core_census_demographics_lsoa d
-            JOIN core_census_housing_lsoa h ON h.lsoa_code = d.lsoa_code
-            WHERE d.lsoa_code = ANY(:codes)
+            SELECT AVG(population_density) as population_density,
+                   AVG(median_age) as median_age,
+                   AVG(pct_families) as pct_families,
+                   AVG(pct_singles) as pct_singles,
+                   AVG(pct_age_0_15) as pct_age_0_15,
+                   AVG(pct_age_16_64) as pct_age_16_64,
+                   AVG(pct_age_65_plus) as pct_age_65_plus,
+                   AVG(pct_owned) as pct_owned,
+                   AVG(pct_private_rent) as pct_private_rent,
+                   AVG(pct_detached) as pct_detached,
+                   AVG(pct_flat) as pct_flat
+            FROM core_census_lsoa
+            WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
     )

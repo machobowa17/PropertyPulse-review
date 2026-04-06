@@ -103,30 +103,6 @@ CREATE TABLE IF NOT EXISTS core_lad_county_lookup (
 -- CORE DATA TABLES (Land Registry)
 -- ============================================================
 
--- Land Registry price paid (aggregated at LSOA level)
-CREATE TABLE IF NOT EXISTS core_property_prices_lsoa (
-    lsoa_code           TEXT NOT NULL,
-    year_month          DATE NOT NULL,
-    property_type       CHAR(1),
-    avg_price           NUMERIC(12,2),
-    median_price        NUMERIC(12,2),
-    min_price           NUMERIC(12,2),
-    max_price           NUMERIC(12,2),
-    transaction_count   INTEGER,
-    new_build_count     INTEGER,
-    freehold_count      INTEGER,
-    leasehold_count     INTEGER,
-    PRIMARY KEY (lsoa_code, year_month, property_type)
-);
-CREATE INDEX IF NOT EXISTS idx_prices_lsoa ON core_property_prices_lsoa (lsoa_code);
-
--- Pre-computed parent-level (LAD) price averages
-CREATE TABLE IF NOT EXISTS core_property_prices_lad (
-    lad_code            TEXT NOT NULL,
-    year_month          DATE NOT NULL,
-    property_type       CHAR(1),
-    avg_price           NUMERIC(12,2),
-    median_price        NUMERIC(12,2),
-    transaction_count   INTEGER,
-    PRIMARY KEY (lad_code, year_month, property_type)
-);
+-- DROPPED: core_property_prices_lsoa and core_property_prices_lad
+-- Replaced by denormalized lsoa_month_* columns on core_property_transactions (migration 006).
+-- See etl/migrations/006_lsoa_month_columns.sql for the replacement.

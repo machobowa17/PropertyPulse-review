@@ -1,15 +1,15 @@
--- Staging: Property prices from core tables → clean intermediate view
--- Aggregates LSOA-level prices to LAD level with YoY change
+-- Staging: Property prices from master table → clean intermediate view
+-- Aggregates transaction-level prices to LAD level with counts
 {{ config(materialized='view') }}
 
 SELECT
     lad_code,
-    year_month,
+    DATE_TRUNC('month', date_of_transfer)::DATE AS year_month,
     property_type,
-    AVG(avg_price) AS avg_price,
-    AVG(median_price) AS median_price,
-    SUM(transaction_count) AS transaction_count,
-    SUM(new_build_count) AS new_build_count
-FROM core_property_prices_lsoa pp
-JOIN core_lsoa_boundaries lb ON lb.lsoa_code = pp.lsoa_code
-GROUP BY lad_code, year_month, property_type
+    AVG(price) AS avg_price,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price) AS median_price,
+    COUNT(*) AS transaction_count
+FROM core_property_transactions
+WHERE lad_code IS NOT NULL
+  AND property_type IN ('D','S','T','F')
+GROUP BY lad_code, DATE_TRUNC('month', date_of_transfer)::DATE, property_type

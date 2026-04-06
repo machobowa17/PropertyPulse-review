@@ -1,6 +1,7 @@
 """Comparable Areas — find LADs most similar to a given LAD.
 Uses normalised feature vectors: avg_price, median_rent, earnings, pm25, hpi_yoy."""
 from sqlalchemy import text
+from app.constants import PRICE_TYPES
 
 
 async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
@@ -12,12 +13,12 @@ async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
                 SELECT
                     lb.lad_code,
                     lb.lad_name,
-                    -- Latest avg price (transaction-weighted, matching Property tab method)
-                    (SELECT SUM(pp.avg_price * pp.transaction_count) / NULLIF(SUM(pp.transaction_count), 0)
-                     FROM core_property_prices_lad pp
-                     WHERE pp.lad_code = lb.lad_code
-                       AND pp.year_month >= (SELECT MAX(year_month) - INTERVAL '12 months' FROM core_property_prices_lad WHERE lad_code = lb.lad_code)
-                       AND pp.property_type IN ('D','S','T','F')
+                    -- Latest avg price from raw transactions
+                    (SELECT AVG(price)
+                     FROM core_property_transactions
+                     WHERE lsoa_code IN (SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = lb.lad_code)
+                       AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                       AND property_type = ANY(:price_types)
                     ) AS avg_price,
                     -- Median rent
                     (SELECT r.median_rent_all
@@ -101,7 +102,7 @@ async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
             ORDER BY distance ASC
             LIMIT :lim
         """),
-        {"lad": lad_code, "lim": limit},
+        {"lad": lad_code, "lim": limit, "price_types": list(PRICE_TYPES)},
     )
     rows = result.mappings().all()
 
@@ -109,11 +110,11 @@ async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
     target = await db.execute(
         text("""
             SELECT lb.lad_name,
-                   (SELECT ROUND(AVG(pp.avg_price)::numeric, 0)
-                    FROM core_property_prices_lad pp
-                    WHERE pp.lad_code = :lad
-                      AND pp.year_month >= (SELECT MAX(year_month) - INTERVAL '12 months' FROM core_property_prices_lad WHERE lad_code = :lad)
-                      AND pp.property_type IN ('D','S','T','F')
+                   (SELECT ROUND(AVG(price)::numeric, 0)
+                    FROM core_property_transactions
+                    WHERE lsoa_code IN (SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = :lad)
+                      AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                      AND property_type = ANY(:price_types)
                    ) AS avg_price,
                    (SELECT ROUND(r.median_rent_all::numeric, 0)
                     FROM core_voa_rents_lad r WHERE r.lad_code = :lad
@@ -124,7 +125,7 @@ async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
                    ) AS earnings
             FROM core_lad_boundaries lb WHERE lb.lad_code = :lad
         """),
-        {"lad": lad_code},
+        {"lad": lad_code, "price_types": list(PRICE_TYPES)},
     )
     target_row = target.mappings().first()
 

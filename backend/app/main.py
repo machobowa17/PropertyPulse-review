@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -10,7 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger("uvicorn.error")
 
-from app.routers import resolve, area, commute, report
+from app.routers import resolve, area, commute, report, health, data_freshness
 
 # ---------------------------------------------------------------------------
 # Rate limiter — 60 requests/minute per IP on all endpoints
@@ -40,7 +41,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # In production set ALLOWED_ORIGINS env var to your actual domain(s)
 # ---------------------------------------------------------------------------
 import os
-_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173,http://localhost:8008")
+_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3001")
 ALLOWED_ORIGINS = [o.strip() for o in _raw.split(",") if o.strip()]
 
 app.add_middleware(
@@ -74,22 +75,33 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # ---------------------------------------------------------------------------
+# HTTP exception handler — returns {"error": code, "detail": message}
+# Structured detail dict (from http_error()) is returned as-is;
+# plain string detail is wrapped under "detail".
+# ---------------------------------------------------------------------------
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail
+    if isinstance(detail, dict) and "error" in detail:
+        content = detail
+    else:
+        content = {"error": "HTTP_ERROR", "detail": str(detail) if detail else "An error occurred"}
+    return JSONResponse(status_code=exc.status_code, content=content)
+
+# ---------------------------------------------------------------------------
 # Global exception handler — never leak tracebacks to clients
 # ---------------------------------------------------------------------------
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled exception on %s: %s", request.url.path, exc, exc_info=True)
-    return JSONResponse(status_code=500, content={"error": "Internal server error"})
+    return JSONResponse(status_code=500, content={"error": "Internal server error", "detail": "An unexpected error occurred"})
 
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
-app.include_router(resolve.router, prefix="/api/v1")
-app.include_router(area.router, prefix="/api/v1")
-app.include_router(commute.router, prefix="/api/v1")
-app.include_router(report.router, prefix="/api/v1")
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+app.include_router(resolve.router,         prefix="/api/v1")
+app.include_router(area.router,           prefix="/api/v1")
+app.include_router(commute.router,        prefix="/api/v1")
+app.include_router(report.router,         prefix="/api/v1")
+app.include_router(health.router,         prefix="/api/v1")
+app.include_router(data_freshness.router, prefix="/api/v1")

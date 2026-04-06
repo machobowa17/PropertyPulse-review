@@ -1,0 +1,335 @@
+"""
+sources/schools.py — DfE GIAS + Ofsted + KS2/KS4 → core_schools
+
+Consolidated ingestion replacing three separate legacy scripts:
+    ingest_schools.py      — GIAS + KS2/KS4
+    ingest_schools_ofsted.py — GIAS + Ofsted upsert
+    ingest_ofsted.py       — Ofsted ratings update
+
+This module does everything in one run:
+  1. Download GIAS JSON from GitHub (cached in etl/data/).
+  2. Load KS2 progress scores (etl/data/ks2_school_2024.csv) — optional.
+  3. Load KS4 progress/attainment scores (etl/data/ks4_school_2024.csv) — optional.
+  4. Load Ofsted ratings from etl/data/ofsted_latest.csv.
+  5. Upsert all open English schools into core_schools (ON CONFLICT DO UPDATE).
+  6. Mark schools absent from the open set as is_open = false.
+  7. Rebuild PostGIS geometry column.
+
+Standard interface:
+    METADATA  dict
+    run(db_url: str) -> int   (returns open school count in core_schools)
+
+Data files in etl/data/ (required):
+    ofsted_latest.csv     — from https://www.gov.uk/government/statistics/
+                              state-funded-schools-inspections-and-outcomes-as-at-31-august
+
+Data files in etl/data/ (optional — KS scores will be NULL if absent):
+    ks2_school_2024.csv   — from DfE key stage 2 performance tables
+    ks4_school_2024.csv   — from DfE key stage 4 performance tables
+
+GIAS JSON is auto-downloaded from:
+    https://dfe-digital.github.io/gias-data/schools.json
+"""
+
+import csv
+import json
+import os
+
+import psycopg2
+import requests
+from psycopg2.extras import execute_values
+
+from constants import SCHEDULE_MONTHLY, TABLE_NAMES
+
+# ---------------------------------------------------------------------------
+# Module metadata
+# ---------------------------------------------------------------------------
+
+METADATA = {
+    "name":        "schools",
+    "description": "DfE GIAS + Ofsted ratings + KS2/KS4 scores → core_schools.",
+    "schedule":           SCHEDULE_MONTHLY,
+    "depends_on":         ["postcodes"],
+    "tables_written":     [TABLE_NAMES["schools"]],
+    "cache_key_patterns": ["area:*"],
+    "expected_row_range": (20_000, 35_000),
+}
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+_DATA_DIR         = os.path.join(os.path.dirname(__file__), "..", "data")
+_GIAS_PATH        = os.path.join(_DATA_DIR, "gias_schools.json")
+_OFSTED_PATH      = os.path.join(_DATA_DIR, "ofsted_latest.csv")
+_KS2_PATH         = os.path.join(_DATA_DIR, "ks2_school_2024.csv")
+_KS4_PATH         = os.path.join(_DATA_DIR, "ks4_school_2024.csv")
+
+_GIAS_JSON_URL    = "https://dfe-digital.github.io/gias-data/schools.json"
+
+# Phase labels accepted as valid school phases (English education system)
+_PHASE_MAP = {
+    "Primary":                    "Primary",
+    "Secondary":                  "Secondary",
+    "All-through":                "All-through",
+    "Middle deemed primary":      "Middle deemed primary",
+    "Middle deemed secondary":    "Middle deemed secondary",
+    "16 plus":                    "16 plus",
+    "Not applicable":             "Not applicable",   # nurseries, special, AP
+    "Nursery":                    "Nursery",
+}
+
+# Ofsted numeric code → readable label
+_OFSTED_NUM_TO_TEXT = {
+    "1": "Outstanding",
+    "2": "Good",
+    "3": "Requires Improvement",
+    "4": "Inadequate",
+}
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _download_gias():
+    if os.path.exists(_GIAS_PATH):
+        print(f"  GIAS JSON present ({_GIAS_PATH}), skipping download", flush=True)
+        return
+    print(f"  Downloading GIAS JSON from {_GIAS_JSON_URL}...", flush=True)
+    resp = requests.get(_GIAS_JSON_URL, timeout=120)
+    resp.raise_for_status()
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    with open(_GIAS_PATH, "wb") as f:
+        f.write(resp.content)
+    print(f"  Downloaded {len(resp.content) / 1_048_576:.1f} MB", flush=True)
+
+
+def _load_ks2():
+    """Load KS2 progress scores: {urn: {reading: float, maths: float}}."""
+    ks2 = {}
+    if not os.path.exists(_KS2_PATH):
+        print(f"  KS2 file not found at {_KS2_PATH} — scores will be NULL", flush=True)
+        return ks2
+    with open(_KS2_PATH, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            urn_str = r.get("school_urn", "").strip()
+            if not urn_str:
+                continue
+            try:
+                urn     = int(urn_str)
+                subject = r.get("subject", "").lower()
+                score   = r.get("progress_measure_score", "")
+                score_f = float(score) if score and score != "x" else None
+            except (ValueError, TypeError):
+                continue
+            if urn not in ks2:
+                ks2[urn] = {}
+            if "reading" in subject and score_f is not None:
+                ks2[urn]["reading"] = score_f
+            elif "math" in subject and score_f is not None:
+                ks2[urn]["maths"] = score_f
+    print(f"  KS2 scores loaded: {len(ks2):,}", flush=True)
+    return ks2
+
+
+def _load_ks4():
+    """Load KS4 progress/attainment scores: {urn: {p8: float, a8: float}}."""
+    ks4 = {}
+    if not os.path.exists(_KS4_PATH):
+        print(f"  KS4 file not found at {_KS4_PATH} — scores will be NULL", flush=True)
+        return ks4
+    _supressed = {"x", "SUPP", "NE", "z", "c"}
+    with open(_KS4_PATH, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            urn_str = r.get("school_urn", "").strip()
+            if not urn_str:
+                continue
+            if r.get("breakdown", "") != "Total":
+                continue
+            try:
+                urn = int(urn_str)
+                p8  = r.get("avg_p8score", "")
+                a8  = r.get("avg_att8", "")
+                p8_f = float(p8) if p8 and p8 not in _supressed else None
+                a8_f = float(a8) if a8 and a8 not in _supressed else None
+            except (ValueError, TypeError):
+                continue
+            if p8_f is not None or a8_f is not None:
+                ks4[urn] = {"p8": p8_f, "a8": a8_f}
+    print(f"  KS4 scores loaded: {len(ks4):,}", flush=True)
+    return ks4
+
+
+def _load_ofsted():
+    """Load Ofsted ratings: {urn: (rating_text, inspection_date)}."""
+    if not os.path.exists(_OFSTED_PATH):
+        raise FileNotFoundError(
+            f"Ofsted CSV not found: {_OFSTED_PATH}. "
+            "Download from https://www.gov.uk/government/statistics/"
+            "state-funded-schools-inspections-and-outcomes-as-at-31-august"
+        )
+    ratings = {}
+    with open(_OFSTED_PATH, encoding="latin-1") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            urn_str = r.get("URN", "").strip()
+            if not urn_str or not urn_str.isdigit():
+                continue
+            num        = r.get("Overall effectiveness", "").strip()
+            text_rating = _OFSTED_NUM_TO_TEXT.get(num)
+            if not text_rating:
+                continue
+            date_str  = r.get("Inspection start date", "").strip()
+            date_iso  = None
+            if date_str and date_str != "NULL":
+                parts = date_str.split("/")
+                if len(parts) == 3:
+                    date_iso = f"{parts[2]}-{parts[1]}-{parts[0]}"
+            ratings[int(urn_str)] = (text_rating, date_iso)
+    print(f"  Ofsted ratings loaded: {len(ratings):,}", flush=True)
+    return ratings
+
+
+# ---------------------------------------------------------------------------
+# Main run function
+# ---------------------------------------------------------------------------
+
+def run(db_url: str) -> int:
+    """
+    Ingest GIAS + KS2/KS4 + Ofsted → core_schools.
+    Returns count of open schools.
+    """
+    _download_gias()
+    ks2    = _load_ks2()
+    ks4    = _load_ks4()
+    ofsted = _load_ofsted()
+
+    with open(_GIAS_PATH, "r", encoding="utf-8") as f:
+        schools = json.load(f)
+    print(f"  GIAS schools: {len(schools):,}", flush=True)
+
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False
+    cur  = conn.cursor()
+
+    rows = []
+    for s in schools:
+        status = s.get("status", "")
+        if status not in ("Open", "Open, but proposed to close"):
+            continue
+
+        urn_raw = s.get("urn")
+        if not urn_raw:
+            continue
+        try:
+            urn = int(urn_raw)
+        except (ValueError, TypeError):
+            continue
+
+        phase = s.get("phase_of_education", "")
+        if phase not in _PHASE_MAP:
+            continue
+
+        # England only: administrative district code starts with 'E'
+        lad_code = s.get("administritive_district_code", "")
+        if not lad_code.startswith("E"):
+            continue
+
+        try:
+            lat_f = float(s["latitude"])  if s.get("latitude")  else None
+            lon_f = float(s["longitude"]) if s.get("longitude") else None
+        except (ValueError, TypeError):
+            lat_f = lon_f = None
+
+        # Skip schools without coordinates — cannot place on map
+        if lat_f is None or lon_f is None:
+            continue
+
+        ofsted_rating, ofsted_date = ofsted.get(urn, (None, None))
+        k2 = ks2.get(urn, {})
+        k4 = ks4.get(urn, {})
+
+        rows.append((
+            urn,
+            s.get("name", ""),
+            s.get("type", ""),
+            _PHASE_MAP[phase],
+            s.get("postcode", ""),
+            lat_f, lon_f,
+            lad_code,
+            ofsted_rating,
+            ofsted_date,
+            k2.get("reading"),
+            k2.get("maths"),
+            k4.get("p8"),
+            k4.get("a8"),
+            True,   # is_open
+        ))
+
+    print(f"  Prepared {len(rows):,} rows for upsert", flush=True)
+
+    execute_values(
+        cur,
+        f"""INSERT INTO {TABLE_NAMES['schools']} (
+                urn, school_name, school_type, phase, postcode,
+                latitude, longitude, lad_code,
+                ofsted_rating, ofsted_date,
+                ks2_reading_pct, ks2_maths_pct,
+                gcse_progress_8, gcse_attainment_8,
+                is_open
+            ) VALUES %s
+            ON CONFLICT (urn) DO UPDATE SET
+                school_name    = EXCLUDED.school_name,
+                school_type    = EXCLUDED.school_type,
+                phase          = EXCLUDED.phase,
+                postcode       = EXCLUDED.postcode,
+                latitude       = EXCLUDED.latitude,
+                longitude      = EXCLUDED.longitude,
+                lad_code       = EXCLUDED.lad_code,
+                ofsted_rating  = COALESCE(EXCLUDED.ofsted_rating,
+                                          {TABLE_NAMES['schools']}.ofsted_rating),
+                ofsted_date    = COALESCE(EXCLUDED.ofsted_date,
+                                          {TABLE_NAMES['schools']}.ofsted_date),
+                ks2_reading_pct = COALESCE(EXCLUDED.ks2_reading_pct,
+                                           {TABLE_NAMES['schools']}.ks2_reading_pct),
+                ks2_maths_pct  = COALESCE(EXCLUDED.ks2_maths_pct,
+                                           {TABLE_NAMES['schools']}.ks2_maths_pct),
+                gcse_progress_8  = COALESCE(EXCLUDED.gcse_progress_8,
+                                             {TABLE_NAMES['schools']}.gcse_progress_8),
+                gcse_attainment_8 = COALESCE(EXCLUDED.gcse_attainment_8,
+                                              {TABLE_NAMES['schools']}.gcse_attainment_8),
+                is_open        = EXCLUDED.is_open""",
+        rows,
+        page_size=5000,
+    )
+    conn.commit()
+
+    # Mark schools absent from the open GIAS set as closed
+    open_urns = [r[0] for r in rows]
+    cur.execute(
+        f"UPDATE {TABLE_NAMES['schools']} SET is_open = false WHERE urn != ALL(%s)",
+        (open_urns,),
+    )
+    closed_count = cur.rowcount
+    conn.commit()
+    print(f"  Marked {closed_count:,} schools as closed", flush=True)
+
+    # Rebuild PostGIS geometry
+    cur.execute(f"""
+        UPDATE {TABLE_NAMES['schools']}
+        SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+        WHERE latitude IS NOT NULL
+          AND (geom IS NULL
+               OR ST_X(geom) != longitude
+               OR ST_Y(geom) != latitude)
+    """)
+    conn.commit()
+
+    cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['schools']} WHERE is_open = true")
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    print(f"  core_schools: {count:,} open schools", flush=True)
+    return count
