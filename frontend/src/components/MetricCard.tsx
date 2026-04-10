@@ -150,6 +150,26 @@ function TrendBadge({ trend }: { trend: Trend }) {
   );
 }
 
+/** Interpretation-aware colour for parent comparison.
+ * lower_is_better + lower_than_parent → green (good)
+ * higher_is_better + higher_than_parent → green (good)
+ * Otherwise uses amber for worse, neutral for equal/unknown */
+function comparisonColor(
+  flag: Metric['comparison_flag'],
+  direction?: Metric['interpretation_direction'],
+): 'green' | 'amber' | 'neutral' {
+  if (!flag || !direction || direction === 'neutral') return 'neutral';
+  const isGood =
+    (direction === 'lower_is_better' && flag === 'lower_than_parent') ||
+    (direction === 'higher_is_better' && flag === 'higher_than_parent');
+  const isBad =
+    (direction === 'lower_is_better' && flag === 'higher_than_parent') ||
+    (direction === 'higher_is_better' && flag === 'lower_than_parent');
+  if (isGood) return 'green';
+  if (isBad) return 'amber';
+  return 'neutral';
+}
+
 export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey }: Props) {
   const [expanded, setExpanded] = useState(false);
   const takeaway = getTakeaway(metric, persona);
@@ -164,6 +184,12 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
     : metric.comparison_flag === 'lower_than_parent'
     ? TrendingDown
     : Minus;
+  const compColour = comparisonColor(metric.comparison_flag, metric.interpretation_direction);
+  const compColourClass = compColour === 'green'
+    ? 'text-emerald-600'
+    : compColour === 'amber'
+    ? 'text-amber-600'
+    : 'text-ink-faint';
 
   return (
     <div
@@ -185,7 +211,12 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${colours.bg}`}>
             <Icon className={`w-[18px] h-[18px] ${colours.text}`} />
           </div>
-          <span className="text-sm font-semibold text-ink truncate">{metric.name}</span>
+          <div className="min-w-0">
+            <span className="text-sm font-semibold text-ink truncate block">{metric.name}</span>
+            {metric.decision_question && (
+              <span className="text-[10px] text-ink-faint/60 truncate block">{metric.decision_question}</span>
+            )}
+          </div>
         </div>
 
         {/* Local */}
@@ -197,12 +228,14 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         </div>
 
         {/* Parent */}
-        <div className="flex items-center gap-1.5 text-sm text-ink-faint">
+        <div className={`flex items-center gap-1.5 text-sm ${compColourClass}`}>
           {metric.parent_value !== null ? (
             <>
               <ComparisonIcon className="w-3.5 h-3.5 shrink-0" />
               {formatValue(metric.parent_value, metric.unit)}
             </>
+          ) : metric.comparison_status === 'not_modelled_yet' ? (
+            <span className="text-[11px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
           ) : (
             <span className="text-ink-faint/50">&mdash;</span>
           )}
@@ -251,18 +284,23 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
+          {metric.decision_question && (
+            <div className="text-[10px] text-ink-faint/60 truncate">{metric.decision_question}</div>
+          )}
           <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
             <span className="text-xl font-bold font-mono text-ink tracking-tight">
               {formatValue(metric.local_value, metric.unit)}
             </span>
             {trend && <TrendBadge trend={trend} />}
-            {metric.parent_value !== null && (
-              <span className="flex items-center gap-1 text-xs text-ink-faint">
+            {metric.parent_value !== null ? (
+              <span className={`flex items-center gap-1 text-xs ${compColourClass}`}>
                 <ComparisonIcon className="w-3 h-3" />
                 {formatValue(metric.parent_value, metric.unit)}
                 <span className="hidden sm:inline opacity-60">({parentName})</span>
               </span>
-            )}
+            ) : metric.comparison_status === 'not_modelled_yet' ? (
+              <span className="text-[10px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
+            ) : null}
           </div>
         </div>
         {hasDetails && (
@@ -318,6 +356,11 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
               />
               {metric.id === 'transaction_volume' && sessionKey && (
                 <TransactionTable sessionKey={sessionKey} />
+              )}
+              {metric.quality_notes && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200/60 text-[11px] text-amber-800">
+                  {metric.quality_notes}
+                </div>
               )}
               {METRIC_SOURCES[metric.id] && (
                 <div className="mt-3 flex items-center gap-1.5">
@@ -637,6 +680,64 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
       <NewBuildTrendChart
         trend={details.nb_trend as Array<{ year: number; new_builds: number; total: number; pct: number }>}
       />
+    );
+  }
+
+  // Housing-stock context (Census 2021 dwelling types)
+  if (details.housing_stock && typeof details.housing_stock === 'object' && !Array.isArray(details.housing_stock)) {
+    const hs = details.housing_stock as Record<string, number | null>;
+    const types = [
+      { label: 'Detached', key: 'pct_detached', parentKey: 'parent_pct_detached', icon: Home },
+      { label: 'Semi-detached', key: 'pct_semi', parentKey: 'parent_pct_semi', icon: Building2 },
+      { label: 'Terraced', key: 'pct_terraced', parentKey: 'parent_pct_terraced', icon: Building },
+      { label: 'Flat', key: 'pct_flat', parentKey: 'parent_pct_flat', icon: LayoutGrid },
+    ];
+    // Filter to non-null entries and render the rest of details normally below
+    const otherEntries = Object.entries(details).filter(
+      ([k, v]) => k !== 'housing_stock' && k !== 'trend' && !k.endsWith('_note') && v !== null && v !== undefined && typeof v !== 'object'
+    );
+    return (
+      <div className="space-y-3 mt-2">
+        <div className="text-[11px] font-semibold text-ink-muted uppercase tracking-wide">Housing Stock (Census 2021)</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {types.map(({ label, key, parentKey, icon: TypeIcon }) => {
+            const local = hs[key];
+            const parent = hs[parentKey];
+            if (local == null) return null;
+            return (
+              <div key={key} className="p-3 rounded-xl bg-surface border border-divider/50">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <TypeIcon className="w-3.5 h-3.5 text-brand-500" />
+                  <span className="text-[11px] text-ink-faint font-medium">{label}</span>
+                </div>
+                <div className="text-lg font-bold text-ink">{local.toFixed(1)}%</div>
+                {parent != null && (
+                  <div className="text-[10px] text-ink-faint mt-0.5">vs {parent.toFixed(1)}% region</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {otherEntries.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {otherEntries.map(([key, value]) => {
+              const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
+              const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
+              const display = typeof value === 'number'
+                ? isGbp ? '£' + (value as number).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+                : String(key).includes('pct') ? (value as number).toFixed(1) + '%'
+                : (value as number).toLocaleString('en-GB', { maximumFractionDigits: 1 })
+                : String(value);
+              return (
+                <div key={key} className="p-2.5 rounded-xl bg-surface">
+                  <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">{label}</div>
+                  <div className="text-sm font-semibold text-ink mt-0.5">{display}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   }
 
