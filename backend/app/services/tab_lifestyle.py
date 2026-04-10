@@ -2,6 +2,7 @@
 Queries: core_osm_amenities, core_transport_stops, core_ev_chargers, core_broadband_postcode.
 Spatial queries use area centroid. Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
+from app.constants import TABLE_NAMES
 from app.services.helpers import metric
 
 
@@ -101,16 +102,6 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     parent_amenity_row = parent_avg_result.mappings().first()
     parent_amenity_avg = round(float(parent_amenity_row["avg_count"]), 1) if parent_amenity_row and parent_amenity_row["avg_count"] else None
 
-    # Bible: Composite Score 0-100 (each of 10 amenity types present = 10 points)
-    types_present = sum(1 for t in AMENITY_TYPES if local_amenities.get(t, 0) > 0)
-    composite_score = types_present * 10
-
-    metrics.append(metric(
-        "fifteen_min_score", "15-Minute Score",
-        composite_score, None, "score /100",
-        details=local_amenities or None,
-    ))
-
     amenity_label = "Amenities in Area" if is_area else "15-Minute Amenities (1km)"
     metrics.append(metric(
         "amenities_15min", amenity_label,
@@ -119,6 +110,21 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     ))
 
     # --- Transport & Commuting ---
+    # Parent average nearest station (pre-computed in core_lsoa_transport)
+    parent_station_m = None
+    if parent_lads:
+        parent_station_res = await db.execute(
+            text("""
+                SELECT AVG(t.nearest_station_m) AS avg_station_m
+                FROM core_lsoa_transport t
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = t.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        ps_row = parent_station_res.mappings().first()
+        parent_station_m = round(float(ps_row["avg_station_m"])) if ps_row and ps_row["avg_station_m"] else None
+
     if is_area:
         # Area mode: stations within boundary
         rail_result = await db.execute(
@@ -221,7 +227,7 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     else:
         metrics.append(metric(
             "nearest_station", "Nearest Station",
-            nearest_station_m, None, "metres",
+            nearest_station_m, parent_station_m, "metres",
             details={
                 "stations": stations_detail,
                 "bus_stops_500m": bus_count,
@@ -282,6 +288,62 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             },
         ))
         ptal_score_emitted = True
+
+    # --- Official DfT destination-reach context ---
+    connectivity_result = await db.execute(
+        text(f"""
+            SELECT AVG(overall_score) AS overall_score,
+                   AVG(overall_public_transport) AS overall_public_transport,
+                   AVG(overall_walking) AS overall_walking,
+                   AVG(overall_cycling) AS overall_cycling,
+                   AVG(overall_driving) AS overall_driving,
+                   AVG(employment_overall) AS employment_overall,
+                   AVG(education_overall) AS education_overall,
+                   AVG(healthcare_overall) AS healthcare_overall,
+                   AVG(leisure_community_overall) AS leisure_community_overall,
+                   AVG(shopping_overall) AS shopping_overall,
+                   AVG(residential_overall) AS residential_overall,
+                   MIN(source_release) AS source_release
+            FROM {TABLE_NAMES['connectivity_lsoa']}
+            WHERE lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    connectivity_row = connectivity_result.mappings().first()
+
+    if connectivity_row and connectivity_row["overall_score"] is not None:
+        connectivity_parent = await db.execute(
+            text(f"""
+                SELECT AVG(c.overall_score) AS overall_score
+                FROM {TABLE_NAMES['connectivity_lsoa']} c
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        connectivity_parent_row = connectivity_parent.mappings().first()
+
+        metrics.append(metric(
+            "commuter_connectivity", "Commuter Connectivity",
+            _r(connectivity_row["overall_score"]),
+            _r(connectivity_parent_row["overall_score"]) if connectivity_parent_row else None,
+            "score /100",
+            details={
+                "overall_public_transport": _r(connectivity_row["overall_public_transport"]),
+                "overall_walking": _r(connectivity_row["overall_walking"]),
+                "overall_cycling": _r(connectivity_row["overall_cycling"]),
+                "overall_driving": _r(connectivity_row["overall_driving"]),
+                "employment_overall": _r(connectivity_row["employment_overall"]),
+                "education_overall": _r(connectivity_row["education_overall"]),
+                "healthcare_overall": _r(connectivity_row["healthcare_overall"]),
+                "leisure_community_overall": _r(connectivity_row["leisure_community_overall"]),
+                "shopping_overall": _r(connectivity_row["shopping_overall"]),
+                "residential_overall": _r(connectivity_row["residential_overall"]),
+                "source_release": connectivity_row["source_release"],
+                "methodology_note": "Official DfT contextual accessibility score showing structural reach to employment and everyday destinations; not a bespoke journey-time estimate.",
+                "search_mode": search_mode,
+            },
+        ))
 
     # --- EV Chargers ---
     if is_area:
@@ -357,47 +419,48 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     if bb_row:
         local_gigabit = round(float(bb_row["gigabit"]), 1) if bb_row["gigabit"] else None
         parent_gigabit = round(float(bb_parent_row["gigabit"]), 1) if bb_parent_row and bb_parent_row["gigabit"] else None
+        local_full_fibre = round(float(bb_row["fttp"]), 1) if bb_row["fttp"] else None
+        parent_full_fibre = round(float(bb_parent_row["fttp"]), 1) if bb_parent_row and bb_parent_row["fttp"] else None
+        local_superfast = round(float(bb_row["sfbb"]), 1) if bb_row["sfbb"] else None
+        parent_superfast = round(float(bb_parent_row["sfbb"]), 1) if bb_parent_row and bb_parent_row["sfbb"] else None
 
         metrics.append(metric(
             "broadband", "Broadband Coverage",
             local_gigabit, parent_gigabit, "% gigabit",
             details={
-                "full_fibre_pct": round(float(bb_row["fttp"]), 1) if bb_row["fttp"] else None,
+                "full_fibre_pct": local_full_fibre,
                 "superfast_pct": round(float(bb_row["sfbb"]), 1) if bb_row["sfbb"] else None,
                 "ultrafast_pct": round(float(bb_row["ufbb"]), 1) if bb_row["ufbb"] else None,
                 "gigabit_pct": local_gigabit,
-                "parent_full_fibre_pct": round(float(bb_parent_row["fttp"]), 1) if bb_parent_row and bb_parent_row["fttp"] else None,
+                "parent_full_fibre_pct": parent_full_fibre,
                 "parent_superfast_pct": round(float(bb_parent_row["sfbb"]), 1) if bb_parent_row and bb_parent_row["sfbb"] else None,
                 "parent_gigabit_pct": parent_gigabit,
             },
         ))
 
-    # --- Connectivity Index (non-London only) ---
-    # London areas already have ptal_score from the block above; only compute
-    # connectivity_index for areas where official TfL PTAL data is unavailable.
-    if not ptal_score_emitted:
-        # Bible: "Connectivity Index" for non-London areas
-        # - Rail stations within 2km (max 25 pts: 5 per station, cap at 5)
-        # - Bus stops within 500m (max 25 pts: 1 per stop, cap at 25)
-        # - Gigabit broadband coverage % (max 25 pts: 25 * gigabit_pct / 100)
-        # - Amenity score (max 25 pts: composite_score / 4)
-        rail_score = min(len(stations_detail) * 5, 25) if stations_detail else 0
-        bus_score = min(bus_count, 25)
-        bb_gigabit = float(bb_row["gigabit"]) if bb_row and bb_row["gigabit"] else 0
-        bb_score = round(25 * bb_gigabit / 100, 1)
-        amenity_component = round(composite_score / 4, 1)
-        connectivity_index = round(rail_score + bus_score + bb_score + amenity_component, 1)
+        if local_full_fibre is not None:
+            metrics.append(metric(
+                "full_fibre", "Full-Fibre Coverage",
+                local_full_fibre, parent_full_fibre, "%",
+                details={
+                    "gigabit_pct": local_gigabit,
+                    "parent_gigabit_pct": parent_gigabit,
+                    "source_note": "Surfaced from the same Ofcom Connected Nations coverage dataset used for the headline broadband row.",
+                },
+            ))
 
-        metrics.append(metric(
-            "connectivity_index", "Connectivity Index",
-            connectivity_index, None, "score /100",
-            details={
-                "rail_stations_2km": len(stations_detail) if stations_detail else 0,
-                "bus_stops_500m": bus_count,
-                "gigabit_pct": round(bb_gigabit, 1),
-                "amenity_score": composite_score,
-            },
-        ))
+        if local_superfast is not None:
+            metrics.append(metric(
+                "superfast_broadband", "Superfast Broadband Coverage",
+                local_superfast, parent_superfast, "%",
+                details={
+                    "gigabit_pct": local_gigabit,
+                    "full_fibre_pct": local_full_fibre,
+                    "parent_gigabit_pct": parent_gigabit,
+                    "parent_full_fibre_pct": parent_full_fibre,
+                    "source_note": "Uses the same Ofcom Connected Nations postcode-to-area coverage dataset as the headline broadband row, but focuses on baseline superfast availability.",
+                },
+            ))
 
     # --- Cycling ---
     cycling_result = await db.execute(
@@ -470,21 +533,52 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     mobile_row = mobile_result.mappings().first()
     if mobile_row and mobile_row["pct_4g_outdoor"] is not None:
         mobile_parent = await db.execute(
-            text("SELECT AVG(pct_4g_outdoor) as avg_4g FROM core_mobile_coverage_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT AVG(pct_4g_outdoor) as avg_4g, AVG(pct_4g_indoor) as avg_4g_indoor, AVG(pct_5g_outdoor) as avg_5g FROM core_mobile_coverage_lad WHERE lad_code = ANY(:lads)"),
             {"lads": parent_lads},
         )
         mp_row = mobile_parent.mappings().first()
         parent_4g = round(float(mp_row["avg_4g"]), 1) if mp_row and mp_row["avg_4g"] else None
+        local_4g_indoor = round(float(mobile_row["pct_4g_indoor"]), 1) if mobile_row["pct_4g_indoor"] else None
+        parent_4g_indoor = round(float(mp_row["avg_4g_indoor"]), 1) if mp_row and mp_row["avg_4g_indoor"] else None
+        local_5g = round(float(mobile_row["pct_5g_outdoor"]), 1) if mobile_row["pct_5g_outdoor"] else None
+        parent_5g = round(float(mp_row["avg_5g"]), 1) if mp_row and mp_row["avg_5g"] else None
 
         metrics.append(metric(
             "mobile_coverage", "Mobile Coverage (4G/5G)",
             round(float(mobile_row["pct_4g_outdoor"]), 1) if mobile_row["pct_4g_outdoor"] else None,
             parent_4g, "% 4G outdoor",
-            details={
-                "pct_4g_indoor": round(float(mobile_row["pct_4g_indoor"]), 1) if mobile_row["pct_4g_indoor"] else None,
-                "pct_5g_outdoor": round(float(mobile_row["pct_5g_outdoor"]), 1) if mobile_row["pct_5g_outdoor"] else None,
-            },
-        ))
+                details={
+                    "pct_4g_indoor": local_4g_indoor,
+                    "pct_5g_outdoor": local_5g,
+                    "parent_4g_indoor": parent_4g_indoor,
+                    "parent_5g_outdoor": parent_5g,
+                },
+            ))
+
+        if local_4g_indoor is not None:
+            metrics.append(metric(
+                "mobile_4g_indoor", "4G Indoor Coverage",
+                local_4g_indoor, parent_4g_indoor, "%",
+                details={
+                    "pct_4g_outdoor": round(float(mobile_row["pct_4g_outdoor"]), 1) if mobile_row["pct_4g_outdoor"] else None,
+                    "pct_5g_outdoor": local_5g,
+                    "parent_4g_outdoor": parent_4g,
+                    "parent_5g_outdoor": parent_5g,
+                    "source_note": "Uses the same Ofcom Connected Nations LAD-level coverage model as the headline mobile row, but focuses on indoor 4G reliability.",
+                },
+            ))
+
+        if local_5g is not None:
+
+            metrics.append(metric(
+                "mobile_5g_outdoor", "5G Outdoor Coverage",
+                local_5g, parent_5g, "%",
+                details={
+                    "pct_4g_outdoor": round(float(mobile_row["pct_4g_outdoor"]), 1) if mobile_row["pct_4g_outdoor"] else None,
+                    "parent_4g_outdoor": parent_4g,
+                    "source_note": "Uses the same Ofcom Connected Nations LAD-level coverage model as the headline mobile row.",
+                },
+            ))
 
     return metrics
 

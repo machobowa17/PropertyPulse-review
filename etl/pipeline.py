@@ -275,6 +275,17 @@ SOURCE_REGISTRY = {
         "critical":     False,
     },
 
+    "noise": {
+        "module":       "sources.noise",
+        "schedule":     SCHEDULE_ANNUAL,
+        "depends_on":   ["postcodes"],
+        "description":  "Defra Round 4 strategic noise maps (road + rail Lden) → core_noise at postcode level.",
+        "tables_written": ["core_noise"],
+        "cache_key_patterns": ["area:*"],
+        "expected_row_range": (200_000, 1_500_000),
+        "critical":     False,
+    },
+
     "air_quality": {
         "module":       "sources.air_quality",
         "schedule":     SCHEDULE_ANNUAL,
@@ -360,6 +371,17 @@ SOURCE_REGISTRY = {
         "tables_written": ["core_cycling_lsoa", "core_ptal_lsoa"],
         "cache_key_patterns": ["area:*"],
         "expected_row_range": (30_000, 36_000),   # core_cycling_lsoa
+        "critical":     False,
+    },
+
+    "connectivity_metric": {
+        "module":       "sources.connectivity_metric",
+        "schedule":     SCHEDULE_ANNUAL,
+        "depends_on":   [],
+        "description":  "DfT Transport Connectivity Metric 2025 ODS → core_connectivity_lsoa.",
+        "tables_written": ["core_connectivity_lsoa"],
+        "cache_key_patterns": ["area:*"],
+        "expected_row_range": (30_000, 36_000),
         "critical":     False,
     },
 

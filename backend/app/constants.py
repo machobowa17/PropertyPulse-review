@@ -139,8 +139,6 @@ TABLE_NAMES = {
     "epc_domestic":             "core_epc_domestic",
     "epc_lsoa":                 "core_epc_lsoa",
 
-    "price_sqm_lad":            "core_price_sqm_lad",
-    "price_sqm_lsoa":           "core_price_sqm_lsoa",
     "price_by_bedrooms_lad":    "core_price_by_bedrooms_lad",
     "crime_lsoa":               "core_crime_lsoa",
     "census_lsoa":              "core_census_lsoa",
@@ -157,6 +155,7 @@ TABLE_NAMES = {
     "mobile_coverage_lad":      "core_mobile_coverage_lad",
     "ptal_lsoa":                "core_ptal_lsoa",
     "cycling_lsoa":             "core_cycling_lsoa",
+    "connectivity_lsoa":        "core_connectivity_lsoa",
     "flood_zones":              "core_flood_zones",
     "flood_lsoa":               "core_flood_lsoa",
     "air_quality":              "core_air_quality",
@@ -168,4 +167,6 @@ TABLE_NAMES = {
     "s114_notices":             "core_s114_notices",
     "water_company_lad":        "core_water_company_lad",
     "pipeline_runs":            "core_pipeline_runs",
+    "lsoa_green_space":         "core_lsoa_green_space",
+    "lsoa_transport":           "core_lsoa_transport",
 }
