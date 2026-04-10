@@ -1,135 +1,202 @@
-"""Comparable Areas — find LADs most similar to a given LAD.
-Uses normalised feature vectors: avg_price, median_rent, earnings, pm25, hpi_yoy."""
+"""Comparable-area logic for PropertyPulse.
+
+Supports both single-LAD comparisons and broader multi-LAD scope comparisons by
+building normalised feature vectors at LAD level and then aggregating them into
+comparison scopes.
+"""
+from __future__ import annotations
+
+from collections.abc import Sequence
+
 from sqlalchemy import text
+
 from app.constants import PRICE_TYPES
 
 
-async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
-    """Return up to `limit` LADs most similar to the given LAD."""
-    # Build feature vectors for all LADs in a single query
-    result = await db.execute(
-        text("""
-            WITH features AS (
-                SELECT
-                    lb.lad_code,
-                    lb.lad_name,
-                    -- Latest avg price from raw transactions
-                    (SELECT AVG(price)
-                     FROM core_property_transactions
-                     WHERE lsoa_code IN (SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = lb.lad_code)
-                       AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                       AND property_type = ANY(:price_types)
-                    ) AS avg_price,
-                    -- Median rent
-                    (SELECT r.median_rent_all
-                     FROM core_voa_rents_lad r
-                     WHERE r.lad_code = lb.lad_code
-                     ORDER BY r.period DESC LIMIT 1
-                    ) AS median_rent,
-                    -- Earnings
-                    (SELECT e.median_annual_earnings
-                     FROM core_earnings_lad e
-                     WHERE e.lad_code = lb.lad_code
-                    ) AS earnings,
-                    -- PM2.5 (latest year)
-                    (SELECT aq.pm25_ugm3
-                     FROM core_air_quality_lad aq
-                     WHERE aq.lad_code = lb.lad_code
-                     ORDER BY aq.year DESC LIMIT 1
-                    ) AS pm25,
-                    -- HPI yearly change
-                    (SELECT h.yearly_change_pct
-                     FROM core_hpi_lad h
-                     WHERE h.lad_code = lb.lad_code
-                     ORDER BY h.date DESC LIMIT 1
-                    ) AS hpi_yoy
-                FROM core_lad_boundaries lb
-            ),
-            stats AS (
-                SELECT
-                    AVG(avg_price) AS mean_price, STDDEV(avg_price) AS std_price,
-                    AVG(median_rent) AS mean_rent, STDDEV(median_rent) AS std_rent,
-                    AVG(earnings) AS mean_earn, STDDEV(earnings) AS std_earn,
-                    AVG(pm25) AS mean_pm25, STDDEV(pm25) AS std_pm25,
-                    AVG(hpi_yoy) AS mean_hpi, STDDEV(hpi_yoy) AS std_hpi
-                FROM features
-                WHERE avg_price IS NOT NULL
-            ),
-            normalised AS (
-                SELECT
-                    f.lad_code, f.lad_name,
-                    f.avg_price, f.median_rent, f.earnings, f.pm25, f.hpi_yoy,
-                    COALESCE((f.avg_price - s.mean_price) / NULLIF(s.std_price, 0), 0) AS n_price,
-                    COALESCE((f.median_rent - s.mean_rent) / NULLIF(s.std_rent, 0), 0) AS n_rent,
-                    COALESCE((f.earnings - s.mean_earn) / NULLIF(s.std_earn, 0), 0) AS n_earn,
-                    COALESCE((f.pm25 - s.mean_pm25) / NULLIF(s.std_pm25, 0), 0) AS n_pm25,
-                    COALESCE((f.hpi_yoy - s.mean_hpi) / NULLIF(s.std_hpi, 0), 0) AS n_hpi
-                FROM features f, stats s
-                WHERE f.avg_price IS NOT NULL
-            ),
-            target AS (
-                SELECT * FROM normalised WHERE lad_code = :lad
-            )
-            SELECT
-                n.lad_code, n.lad_name,
-                ROUND(n.avg_price::numeric, 0) AS avg_price,
-                ROUND(n.median_rent::numeric, 0) AS median_rent,
-                ROUND(n.earnings::numeric, 0) AS earnings,
-                ROUND(n.pm25::numeric, 1) AS pm25,
-                ROUND(n.hpi_yoy::numeric, 1) AS hpi_yoy,
-                ROUND(
-                    SQRT(
-                        POWER(n.n_price - t.n_price, 2) +
-                        POWER(n.n_rent - t.n_rent, 2) +
-                        POWER(n.n_earn - t.n_earn, 2) +
-                        POWER(n.n_pm25 - t.n_pm25, 2) +
-                        POWER(n.n_hpi - t.n_hpi, 2)
-                    )::numeric, 3
-                ) AS distance,
-                ROUND(
-                    GREATEST(0, 100 * EXP(
-                        -SQRT(
-                            POWER(n.n_price - t.n_price, 2) +
-                            POWER(n.n_rent - t.n_rent, 2) +
-                            POWER(n.n_earn - t.n_earn, 2) +
-                            POWER(n.n_pm25 - t.n_pm25, 2) +
-                            POWER(n.n_hpi - t.n_hpi, 2)
-                        ) / 2.0
-                    ))::numeric, 1
-                ) AS similarity_pct
-            FROM normalised n, target t
-            WHERE n.lad_code != :lad
-            ORDER BY distance ASC
-            LIMIT :lim
-        """),
-        {"lad": lad_code, "lim": limit, "price_types": list(PRICE_TYPES)},
+FEATURES_SQL = text(
+    """
+    WITH features AS (
+        SELECT
+            lb.lad_code,
+            lb.lad_name,
+            (
+                SELECT AVG(price)
+                FROM core_property_transactions
+                WHERE lsoa_code IN (
+                    SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = lb.lad_code
+                )
+                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                  AND property_type = ANY(:price_types)
+            ) AS avg_price,
+            (
+                SELECT r.median_rent_all
+                FROM core_voa_rents_lad r
+                WHERE r.lad_code = lb.lad_code
+                ORDER BY r.period DESC
+                LIMIT 1
+            ) AS median_rent,
+            (
+                SELECT e.median_annual_earnings
+                FROM core_earnings_lad e
+                WHERE e.lad_code = lb.lad_code
+            ) AS earnings,
+            (
+                SELECT aq.pm25_ugm3
+                FROM core_air_quality_lad aq
+                WHERE aq.lad_code = lb.lad_code
+                ORDER BY aq.year DESC
+                LIMIT 1
+            ) AS pm25,
+            (
+                SELECT h.yearly_change_pct
+                FROM core_hpi_lad h
+                WHERE h.lad_code = lb.lad_code
+                ORDER BY h.date DESC
+                LIMIT 1
+            ) AS hpi_yoy
+        FROM core_lad_boundaries lb
     )
-    rows = result.mappings().all()
+    SELECT *
+    FROM features
+    WHERE avg_price IS NOT NULL
+    """
+)
 
-    # Also fetch the target LAD's own values for context
-    target = await db.execute(
-        text("""
-            SELECT lb.lad_name,
-                   (SELECT ROUND(AVG(price)::numeric, 0)
-                    FROM core_property_transactions
-                    WHERE lsoa_code IN (SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = :lad)
-                      AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                      AND property_type = ANY(:price_types)
-                   ) AS avg_price,
-                   (SELECT ROUND(r.median_rent_all::numeric, 0)
-                    FROM core_voa_rents_lad r WHERE r.lad_code = :lad
-                    ORDER BY r.period DESC LIMIT 1
-                   ) AS median_rent,
-                   (SELECT ROUND(e.median_annual_earnings::numeric, 0)
-                    FROM core_earnings_lad e WHERE e.lad_code = :lad
-                   ) AS earnings
-            FROM core_lad_boundaries lb WHERE lb.lad_code = :lad
-        """),
-        {"lad": lad_code, "price_types": list(PRICE_TYPES)},
+
+def _normalise_rows(rows: list[dict]) -> list[dict]:
+    numeric_fields = ["avg_price", "median_rent", "earnings", "pm25", "hpi_yoy"]
+    stats: dict[str, tuple[float, float]] = {}
+    for field in numeric_fields:
+        values = [float(row[field]) for row in rows if row.get(field) is not None]
+        if not values:
+            stats[field] = (0.0, 1.0)
+            continue
+        mean = sum(values) / len(values)
+        variance = sum((value - mean) ** 2 for value in values) / max(len(values), 1)
+        std = variance ** 0.5 or 1.0
+        stats[field] = (mean, std)
+
+    normalised: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        for field in numeric_fields:
+            value = item.get(field)
+            mean, std = stats[field]
+            item[f"n_{field}"] = 0.0 if value is None else (float(value) - mean) / std
+        normalised.append(item)
+    return normalised
+
+
+def _aggregate_scope(rows: Sequence[dict], *, name: str, code: str, scope_type: str) -> dict:
+    numeric_fields = ["avg_price", "median_rent", "earnings", "pm25", "hpi_yoy"]
+    aggregated: dict[str, float | str | int | list[str]] = {
+        "lad_code": code,
+        "lad_name": name,
+        "scope_name": name,
+        "scope_type": scope_type,
+        "component_lads": [row["lad_code"] for row in rows],
+        "component_count": len(rows),
+    }
+    for field in numeric_fields:
+        values = [float(row[field]) for row in rows if row.get(field) is not None]
+        aggregated[field] = sum(values) / len(values) if values else None
+        n_values = [float(row[f"n_{field}"]) for row in rows if row.get(field) is not None]
+        aggregated[f"n_{field}"] = sum(n_values) / len(n_values) if n_values else 0.0
+    return aggregated
+
+
+def _distance(a: dict, b: dict) -> float:
+    dims = ["avg_price", "median_rent", "earnings", "pm25", "hpi_yoy"]
+    return sum((float(a[f"n_{dim}"]) - float(b[f"n_{dim}"])) ** 2 for dim in dims) ** 0.5
+
+
+def _similarity(distance: float) -> float:
+    import math
+
+    return round(max(0.0, 100 * math.exp(-(distance / 2.0))), 1)
+
+
+async def _fetch_normalised_lad_rows(db) -> list[dict]:
+    result = await db.execute(FEATURES_SQL, {"price_types": list(PRICE_TYPES)})
+    rows = [dict(row) for row in result.mappings().all()]
+    return _normalise_rows(rows)
+
+
+async def find_comparable_scopes(
+    db,
+    *,
+    target_lad_codes: Sequence[str],
+    target_name: str,
+    scope_type: str,
+    limit: int = 5,
+):
+    """Return comparable scopes for either one-LAD or multi-LAD search areas."""
+    normalised_rows = await _fetch_normalised_lad_rows(db)
+    by_lad = {row["lad_code"]: row for row in normalised_rows}
+
+    target_rows = [by_lad[lad_code] for lad_code in target_lad_codes if lad_code in by_lad]
+    if not target_rows:
+        return {
+            "target": {
+                "lad_name": target_name,
+                "scope_name": target_name,
+                "scope_type": scope_type,
+                "component_count": 0,
+            },
+            "comparable": [],
+            "status": "no_comparison_data",
+            "message": "No comparison-ready data is available for this scope yet.",
+        }
+
+    target_scope = _aggregate_scope(
+        target_rows,
+        name=target_name,
+        code="|".join(sorted(target_lad_codes)),
+        scope_type=scope_type,
     )
-    target_row = target.mappings().first()
+
+    candidates: list[dict] = []
+    for row in normalised_rows:
+        if row["lad_code"] in set(target_lad_codes):
+            continue
+        candidate = _aggregate_scope(
+            [row],
+            name=row["lad_name"],
+            code=row["lad_code"],
+            scope_type="lad",
+        )
+        distance = _distance(candidate, target_scope)
+        candidate["distance"] = round(distance, 3)
+        candidate["similarity_pct"] = _similarity(distance)
+        candidates.append(candidate)
+
+    candidates.sort(key=lambda item: item["distance"])
 
     return {
-        "target": dict(target_row) if target_row else {},
-        "comparable": [dict(r) for r in rows],
+        "target": target_scope,
+        "comparable": candidates[:limit],
+        "status": "ok",
+        "comparison_basis": "Aggregated LAD profile across price, rent, earnings, air quality, and price growth.",
     }
+
+
+async def find_comparable_lads(db, *, lad_code: str, limit: int = 5):
+    """Backward-compatible wrapper for single-LAD comparable results."""
+    result = await find_comparable_scopes(
+        db,
+        target_lad_codes=[lad_code],
+        target_name=lad_code,
+        scope_type="lad",
+        limit=limit,
+    )
+    if result.get("target", {}).get("component_count") == 1:
+        target_row = result["target"]
+        row = await db.execute(
+            text("SELECT lad_name FROM core_lad_boundaries WHERE lad_code = :lad_code"),
+            {"lad_code": lad_code},
+        )
+        match = row.mappings().first()
+        if match:
+            target_row["lad_name"] = match["lad_name"]
+            target_row["scope_name"] = match["lad_name"]
+    return result

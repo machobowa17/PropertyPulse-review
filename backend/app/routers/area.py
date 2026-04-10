@@ -6,6 +6,7 @@ Build Bible Part 6, Sections 6.1 & 6.2.4 — Data + Boundary Endpoints
 All data endpoints accept a single session_key (created at /resolve time).
 The session contains all derived values (LSOAs, centroid, parent comparison, etc.).
 """
+import hashlib
 import json
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -22,9 +23,95 @@ from app.services.tab_lifestyle import fetch_lifestyle_connectivity
 from app.services.tab_environment import fetch_environment_safety
 from app.services.tab_community import fetch_community_education
 from app.services.tab_governance import fetch_local_governance
-from app.services.comparable_areas import find_comparable_lads
+from app.services.comparable_areas import find_comparable_lads, find_comparable_scopes
 
 router = APIRouter()
+
+AREA_CACHE_VERSION = "v8"
+MAP_CACHE_VERSION = "v2"
+
+
+def _geo(sess: dict) -> dict:
+    return sess.get("geo") or {}
+
+
+def _geo_entity(sess: dict) -> dict:
+    return _geo(sess).get("entity") or {}
+
+
+def _geo_local_scope(sess: dict) -> dict:
+    return _geo(sess).get("local_scope") or {}
+
+
+def _geo_comparison_scope(sess: dict) -> dict:
+    return _geo(sess).get("comparison_scope") or {}
+
+
+def _geo_display_geometry(sess: dict) -> dict:
+    return _geo(sess).get("display_geometry") or {}
+
+
+def _session_centroid(sess: dict) -> tuple:
+    centroid = _geo(sess).get("centroid") or {}
+    return centroid.get("lat", sess.get("lat")), centroid.get("lon", sess.get("lon"))
+
+
+def _session_boundary_source(sess: dict) -> str:
+    geom = _geo_display_geometry(sess)
+    return geom.get("type") or sess.get("boundary_source", "lad")
+
+
+def _session_boundary_id(sess: dict) -> str:
+    geom = _geo_display_geometry(sess)
+    return geom.get("id") or sess.get("boundary_id", "")
+
+
+def _session_local_scope_type(sess: dict) -> str:
+    local_scope = _geo_local_scope(sess)
+    return local_scope.get("type") or sess.get("local_scope_type") or ("area" if sess.get("search_mode") == "area" else "lsoa")
+
+
+def _session_entity_name(sess: dict) -> str:
+    entity = _geo_entity(sess)
+    return entity.get("name") or sess.get("query") or _session_boundary_id(sess) or "Selected area"
+
+
+def _session_parent_name(sess: dict) -> str:
+    comparison = _geo_comparison_scope(sess)
+    return comparison.get("name") or sess.get("comparison_scope_name") or sess.get("parent_name", "England")
+
+
+def _session_parent_lads(sess: dict) -> list:
+    comparison = _geo_comparison_scope(sess)
+    return comparison.get("lad_codes") or sess.get("parent_lad_codes", [])
+
+
+def _area_scope_cache_key(sess: dict, tab: str) -> str:
+    local_scope = _geo_local_scope(sess)
+    comparison_scope = _geo_comparison_scope(sess)
+    display_geometry = _geo_display_geometry(sess)
+    lsoa_codes = sorted(sess.get("lsoa_codes") or [])
+    scope_payload = {
+        "tab": tab,
+        "search_mode": sess.get("search_mode"),
+        "local_scope": {
+            "type": local_scope.get("type") or _session_local_scope_type(sess),
+            "id": local_scope.get("id") or sess.get("local_scope_id") or _session_boundary_id(sess),
+            "lad_codes": sorted(local_scope.get("lad_codes") or sess.get("local_lads") or []),
+        },
+        "comparison_scope": {
+            "id": comparison_scope.get("id") or _session_parent_name(sess),
+            "lad_codes": sorted(comparison_scope.get("lad_codes") or _session_parent_lads(sess)),
+        },
+        "display_geometry": {
+            "type": display_geometry.get("type") or _session_boundary_source(sess),
+            "id": display_geometry.get("id") or _session_boundary_id(sess),
+        },
+        "lsoa_codes_hash": hashlib.sha256(json.dumps(lsoa_codes).encode()).hexdigest()[:16],
+    }
+    scope_hash = hashlib.sha256(json.dumps(scope_payload, sort_keys=True).encode()).hexdigest()[:24]
+    return f"area_scope:{AREA_CACHE_VERSION}:{scope_hash}"
+
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,
@@ -59,28 +146,35 @@ async def get_area_data(
     if not handler:
         raise http_error(400, "INVALID_TAB", f"Unknown tab: {tab}. Valid tabs: {list(TAB_HANDLERS.keys())}")
 
-    cache_key = f"area:{session_key}:{tab}"
+    cache_key = f"area:{AREA_CACHE_VERSION}:{session_key}:{tab}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
     sess = await _require_session(session_key)
+    scope_cache_key = _area_scope_cache_key(sess, tab)
+    shared_cached = await cache_get(scope_cache_key)
+    if shared_cached:
+        await cache_set(cache_key, shared_cached, ttl=3600)
+        return shared_cached
 
+    centroid_lat, centroid_lon = _session_centroid(sess)
     metrics = await handler(
         db,
         lad_code=sess["lad_code"],
         ward_code=sess["ward_code"],
         lsoa_codes=sess["lsoa_codes"],
-        centroid_lat=sess.get("lat"),
-        centroid_lon=sess.get("lon"),
+        centroid_lat=centroid_lat,
+        centroid_lon=centroid_lon,
         search_mode=sess.get("search_mode", "postcode"),
         local_lads=sess.get("local_lads", []),
-        parent_lads=sess.get("parent_lad_codes", []),
-        parent_name=sess.get("parent_name", "England"),
-        boundary_source=sess.get("boundary_source", "lad"),
+        parent_lads=_session_parent_lads(sess),
+        parent_name=_session_parent_name(sess),
+        boundary_source=_session_boundary_source(sess),
     )
     result = {"tab": tab, "metrics": metrics}
     await cache_set(cache_key, result, ttl=3600)
+    await cache_set(scope_cache_key, result, ttl=3600)
     return result
 
 
@@ -612,29 +706,51 @@ async def get_aq_history(
     session_key: str = Query(..., description="LSOA session key from /resolve"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return yearly PM2.5/NO2 averages for the LAD (7-year trend)."""
+    """Return yearly PM2.5/NO2 averages for the resolved local scope and national benchmark."""
     sess = await _require_session(session_key)
     lad_code = sess["lad_code"]
+    local_lads = sorted({code for code in (sess.get("local_lads") or []) if code and code != "_"})
+    boundary_source = _session_boundary_source(sess)
+    entity_name = _session_entity_name(sess)
 
-    cache_key = f"aq_history:{lad_code}"
+    if boundary_source == "county" and local_lads:
+        cache_key = f"aq_history:county:{entity_name}"
+    else:
+        cache_key = f"aq_history:{lad_code}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    # Local LAD
-    local_res = await db.execute(
-        text("""
-            SELECT year, pm25_ugm3, no2_ugm3, pm10_ugm3
-            FROM core_air_quality_lad
-            WHERE lad_code = :lad
-            ORDER BY year
-        """),
-        {"lad": lad_code},
-    )
+    # Local history
+    if boundary_source == "county" and local_lads:
+        local_res = await db.execute(
+            text("""
+                SELECT year,
+                       AVG(pm25_ugm3) AS pm25_ugm3,
+                       AVG(no2_ugm3) AS no2_ugm3,
+                       AVG(pm10_ugm3) AS pm10_ugm3
+                FROM core_air_quality_lad
+                WHERE lad_code = ANY(:lads)
+                GROUP BY year
+                ORDER BY year
+            """),
+            {"lads": local_lads},
+        )
+    else:
+        local_res = await db.execute(
+            text("""
+                SELECT year, pm25_ugm3, no2_ugm3, pm10_ugm3
+                FROM core_air_quality_lad
+                WHERE lad_code = :lad
+                ORDER BY year
+            """),
+            {"lad": lad_code},
+        )
     local_rows = [dict(r) for r in local_res.mappings().all()]
 
     # National average per year
     national_res = await db.execute(
+
         text("""
             SELECT year,
                    ROUND(AVG(pm25_ugm3)::numeric, 2) AS pm25_ugm3,
@@ -646,13 +762,16 @@ async def get_aq_history(
     )
     national_rows = [dict(r) for r in national_res.mappings().all()]
 
-    # LAD name
-    lad_name_res = await db.execute(
-        text("SELECT lad_name FROM core_lad_boundaries WHERE lad_code = :lad"),
-        {"lad": lad_code},
-    )
-    lad_name_row = lad_name_res.mappings().first()
-    lad_name = lad_name_row["lad_name"] if lad_name_row else lad_code
+    # Display name
+    if boundary_source == "county" and local_lads:
+        lad_name = entity_name
+    else:
+        lad_name_res = await db.execute(
+            text("SELECT lad_name FROM core_lad_boundaries WHERE lad_code = :lad"),
+            {"lad": lad_code},
+        )
+        lad_name_row = lad_name_res.mappings().first()
+        lad_name = lad_name_row["lad_name"] if lad_name_row else entity_name
 
     # Serialize numeric types
     for row in local_rows + national_rows:
@@ -678,23 +797,45 @@ async def get_comparable_areas(
     session_key: str = Query(..., description="LSOA session key from /resolve"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Find the 5 most similar LADs based on price, rent, earnings, AQ, HPI."""
+    """Find the 5 most similar LADs for single-authority sessions.
+
+    Multi-authority scopes such as counties are intentionally marked unsupported
+    until a true county-to-county comparable model is implemented.
+    """
     sess = await _require_session(session_key)
     lad_code = sess["lad_code"]
+    local_lads = sorted({code for code in (sess.get("local_lads") or []) if code and code != "_"})
+    scope_type = _session_local_scope_type(sess)
+    entity_name = _session_entity_name(sess)
 
-    cache_key = f"comparable:{lad_code}"
+    cache_key = f"comparable:{session_key}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    result = await find_comparable_lads(db, lad_code=lad_code, limit=5)
+    if len(local_lads) > 1:
+        result = await find_comparable_scopes(
+            db,
+            target_lad_codes=local_lads,
+            target_name=entity_name,
+            scope_type=scope_type,
+            limit=5,
+        )
+        result.setdefault("target", {})["lad_count"] = len(local_lads)
+    else:
+        anchor_lad = local_lads[0] if local_lads else lad_code
+        result = await find_comparable_lads(db, lad_code=anchor_lad, limit=5)
+        result["status"] = "ok"
+        result.setdefault("target", {})["scope_name"] = entity_name
+        result["target"]["scope_type"] = scope_type
+        result["target"]["anchor_lad_code"] = anchor_lad
 
     # Serialize Decimal types
     for area in result.get("comparable", []):
         for k in ("avg_price", "median_rent", "earnings", "pm25", "hpi_yoy", "distance"):
             if area.get(k) is not None:
                 area[k] = float(area[k])
-    for k in ("avg_price", "median_rent", "earnings"):
+    for k in ("avg_price", "median_rent", "earnings", "pm25", "hpi_yoy", "distance"):
         if result.get("target", {}).get(k) is not None:
             result["target"][k] = float(result["target"][k])
 
@@ -713,15 +854,15 @@ async def get_map_pois(
     db: AsyncSession = Depends(get_db),
 ):
     """Return nearby POIs relevant to the active tab for map display."""
-    cache_key = f"pois:{session_key}:{tab}"
+    cache_key = f"pois:{MAP_CACHE_VERSION}:{session_key}:{tab}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
     sess = await _require_session(session_key)
-    lat = sess.get("lat")
-    lon = sess.get("lon")
-    is_area = sess.get("search_mode") == "area"
+    lat, lon = _session_centroid(sess)
+    local_scope_type = _session_local_scope_type(sess)
+    is_area = local_scope_type != "lsoa"
     ward_code = sess.get("ward_code", "_")
     lsoa_code = sess.get("lsoa_code", "_")
     area_lsoa_list = sess["lsoa_codes"] if is_area else []
@@ -928,6 +1069,46 @@ async def get_map_pois(
                 "properties": props,
             })
 
+        if is_area and area_lsoa_list:
+            nhs_res = await db.execute(
+                text("""
+                    SELECT nf.name, nf.facility_type, nf.latitude, nf.longitude
+                    FROM core_nhs_facilities nf
+                    JOIN core_lsoa_boundaries lb ON ST_Within(nf.geom, lb.geom)
+                    WHERE nf.geom IS NOT NULL
+                      AND lb.lsoa_code = ANY(:codes)
+                    ORDER BY nf.facility_type, nf.name
+                    LIMIT 30
+                """),
+                {"codes": area_lsoa_list},
+            )
+        else:
+            nhs_res = await db.execute(
+                text("""
+                    SELECT name, facility_type, latitude, longitude,
+                           ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m
+                    FROM core_nhs_facilities
+                    WHERE geom IS NOT NULL
+                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
+                    ORDER BY dist_m
+                    LIMIT 20
+                """),
+                {"lat": lat, "lon": lon},
+            )
+        for r in nhs_res.mappings().all():
+            props = {
+                "name": r["name"] or "NHS facility",
+                "category": "nhs_facility",
+                "facility_type": r["facility_type"],
+            }
+            if not is_area and "dist_m" in dict(r):
+                props["dist_m"] = round(float(r["dist_m"]))
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
+                "properties": props,
+            })
+
     elif tab == "Environment & Safety":
         if is_area and area_lsoa_list:
             res = await db.execute(
@@ -962,6 +1143,72 @@ async def get_map_pois(
                     "category": "flood_zone",
                     "flood_zone": r["flood_zone"],
                 },
+            })
+
+        park_types = ["Public Park Or Garden"]
+        sport_types = [
+            "Playing Field",
+            "Sports Facility",
+            "Golf Course",
+            "Tennis Court",
+            "Bowling Green",
+            "Other Sports Facility",
+        ]
+        if is_area and area_lsoa_list:
+            green_res = await db.execute(
+                text("""
+                    SELECT gs.site_name, gs.site_type,
+                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
+                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
+                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
+                           CASE
+                               WHEN gs.site_type = ANY(:park_types) THEN 'park'
+                               ELSE 'sports_recreation'
+                           END AS category
+                    FROM core_green_space gs
+                    JOIN core_lsoa_boundaries lb ON ST_Intersects(gs.geom, lb.geom)
+                    WHERE gs.geom IS NOT NULL
+                      AND lb.lsoa_code = ANY(:codes)
+                      AND gs.site_type = ANY(:all_types)
+                    ORDER BY area_ha DESC NULLS LAST, gs.site_name
+                    LIMIT 40
+                """),
+                {"codes": area_lsoa_list, "park_types": park_types, "all_types": park_types + sport_types},
+            )
+        else:
+            green_res = await db.execute(
+                text("""
+                    SELECT gs.site_name, gs.site_type,
+                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
+                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
+                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
+                           ST_Distance(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           CASE
+                               WHEN gs.site_type = ANY(:park_types) THEN 'park'
+                               ELSE 'sports_recreation'
+                           END AS category
+                    FROM core_green_space gs
+                    WHERE gs.geom IS NOT NULL
+                      AND ST_DWithin(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1500)
+                      AND gs.site_type = ANY(:all_types)
+                    ORDER BY dist_m
+                    LIMIT 30
+                """),
+                {"lat": lat, "lon": lon, "park_types": park_types, "all_types": park_types + sport_types},
+            )
+        for r in green_res.mappings().all():
+            props = {
+                "name": r["site_name"] or "Green space",
+                "category": r["category"],
+                "site_type": r["site_type"],
+                "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] is not None else None,
+            }
+            if not is_area and "dist_m" in dict(r):
+                props["dist_m"] = round(float(r["dist_m"]))
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
+                "properties": props,
             })
 
     elif tab == "Lifestyle & Connectivity":
@@ -1058,6 +1305,56 @@ async def get_map_pois(
                 "properties": props,
             })
 
+        amenity_types = ['supermarket', 'cafe', 'restaurant', 'pub', 'gym', 'park', 'pharmacy', 'dentist', 'hospital', 'doctors']
+        if is_area and area_lsoa_list:
+            amenity_res = await db.execute(
+                text("""
+                    SELECT DISTINCT ON (a.amenity_type, COALESCE(a.name, 'Unnamed'))
+                        COALESCE(a.name, INITCAP(REPLACE(a.amenity_type, '_', ' '))) AS name,
+                        a.amenity_type,
+                        a.latitude,
+                        a.longitude
+                    FROM core_osm_amenities a
+                    JOIN core_lsoa_boundaries lb ON ST_Within(a.geom, lb.geom)
+                    WHERE a.geom IS NOT NULL
+                      AND lb.lsoa_code = ANY(:codes)
+                      AND a.amenity_type = ANY(:types)
+                    ORDER BY a.amenity_type, COALESCE(a.name, 'Unnamed')
+                    LIMIT 40
+                """),
+                {"codes": area_lsoa_list, "types": amenity_types},
+            )
+        else:
+            amenity_res = await db.execute(
+                text("""
+                    SELECT COALESCE(name, INITCAP(REPLACE(amenity_type, '_', ' '))) AS name,
+                           amenity_type,
+                           latitude,
+                           longitude,
+                           ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m
+                    FROM core_osm_amenities
+                    WHERE geom IS NOT NULL
+                      AND amenity_type = ANY(:types)
+                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1500)
+                    ORDER BY dist_m
+                    LIMIT 30
+                """),
+                {"lat": lat, "lon": lon, "types": amenity_types},
+            )
+        for r in amenity_res.mappings().all():
+            props = {
+                "name": r["name"],
+                "category": "amenity",
+                "amenity_type": r["amenity_type"],
+            }
+            if not is_area and "dist_m" in dict(r):
+                props["dist_m"] = round(float(r["dist_m"]))
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
+                "properties": props,
+            })
+
     result: dict = {"type": "FeatureCollection", "features": features}
 
     # Include earliest sold-price date so the frontend legend can show "since MMM YYYY"
@@ -1084,8 +1381,8 @@ async def get_boundary(
 ):
     """Return the appropriate boundary GeoJSON based on session boundary_source."""
     sess = await _require_session(session_key)
-    source = sess.get("boundary_source", "lad")
-    bid = sess.get("boundary_id", "")
+    source = _session_boundary_source(sess)
+    bid = _session_boundary_id(sess)
 
     if source == "ward_lsoa":
         # Postcode search: return FeatureCollection with ward + LSOA boundaries
@@ -1247,7 +1544,42 @@ async def get_boundary(
 # Choropleth (LSOA-level heatmap polygons)
 # ---------------------------------------------------------------------------
 
-VALID_CHOROPLETH_LAYERS = {"avg_price", "price_per_sqft", "epc_score"}
+VALID_CHOROPLETH_LAYERS = {
+    "avg_price",
+    "price_per_sqft",
+    "epc_score",
+    "population_density",
+    "median_age",
+    "household_composition",
+    "good_health",
+    "economically_active",
+    "degree_educated",
+    "no_car",
+    "born_abroad",
+    "wfh",
+    "housing_tenure",
+    "housing_type",
+    "household_size",
+    "deprivation",
+    "deprivation_income",
+    "deprivation_employment",
+    "deprivation_education",
+    "deprivation_health",
+    "deprivation_crime",
+    "deprivation_barriers",
+    "deprivation_living_environment",
+    "broadband",
+    "full_fibre",
+    "superfast_broadband",
+    "mobile_coverage",
+    "mobile_4g_indoor",
+    "mobile_5g_outdoor",
+    "air_quality_no2",
+    "air_quality_pm25",
+    "council_tax",
+    "median_earnings",
+    "median_rent",
+}
 
 
 @router.get("/map-choropleth")
@@ -1260,13 +1592,13 @@ async def get_map_choropleth(
     if layer not in VALID_CHOROPLETH_LAYERS:
         raise http_error(400, "INVALID_LAYER", f"Invalid layer: {layer}. Valid: {VALID_CHOROPLETH_LAYERS}")
 
-    cache_key = f"choropleth:{session_key}:{layer}"
+    cache_key = f"choropleth:{MAP_CACHE_VERSION}:{session_key}:{layer}"
     cached = await cache_get(cache_key)
     if cached:
         return JSONResponse(content=cached)
 
     sess = await _require_session(session_key)
-    boundary_source = sess.get("boundary_source", "lad")
+    boundary_source = _session_boundary_source(sess)
     local_lads = sess.get("local_lads", [])
     lsoa_codes = sess.get("lsoa_codes", [])
     ward_code = sess.get("ward_code", "_")
@@ -1305,6 +1637,8 @@ async def get_map_choropleth(
         prec = 5
 
     # --- Query: geometry + metric value ---
+    metadata_note = None
+    metadata_grain = "lsoa"
     if layer == "avg_price":
         # Match tab_property aggregation: wavg across types weighted by transaction count
         sql = f"""
@@ -1341,7 +1675,7 @@ async def get_map_choropleth(
             WHERE lb.lsoa_code = ANY(:codes)
         """
         unit = "GBP/sqft"
-    else:  # epc_score
+    elif layer == "epc_score":
         sql = f"""
             SELECT lb.lsoa_code, lb.lsoa_name,
                    ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
@@ -1351,6 +1685,209 @@ async def get_map_choropleth(
             WHERE lb.lsoa_code = ANY(:codes)
         """
         unit = "score"
+    elif layer in {
+        "population_density",
+        "median_age",
+        "household_composition",
+        "good_health",
+        "economically_active",
+        "degree_educated",
+        "no_car",
+        "born_abroad",
+        "wfh",
+        "housing_tenure",
+        "housing_type",
+        "household_size",
+    }:
+        census_columns = {
+            "population_density": "population_density",
+            "median_age": "median_age",
+            "household_composition": "pct_families",
+            "good_health": "pct_good_health",
+            "economically_active": "pct_economically_active",
+            "degree_educated": "pct_degree",
+            "no_car": "pct_no_car",
+            "born_abroad": "pct_born_abroad",
+            "wfh": "pct_wfh",
+            "housing_tenure": "pct_owned",
+            "housing_type": "pct_detached",
+            "household_size": "pct_1person",
+        }
+        census_units = {
+            "population_density": "people/hectare",
+            "median_age": "years",
+            "household_composition": "% families",
+            "good_health": "%",
+            "economically_active": "%",
+            "degree_educated": "%",
+            "no_car": "%",
+            "born_abroad": "%",
+            "wfh": "%",
+            "housing_tenure": "% owner-occupied",
+            "housing_type": "% detached",
+            "household_size": "% one-person",
+        }
+        census_notes = {
+            "household_composition": "Household composition heatmap currently maps the family-household share, matching the headline metric while the card details still carry the broader household mix.",
+            "housing_tenure": "Housing tenure heatmap currently maps owner-occupation share, matching the headline metric while the card details still carry the wider tenure mix.",
+            "housing_type": "Housing stock heatmap currently maps detached-home share, matching the headline metric while the card details still carry the broader stock mix.",
+            "household_size": "Household size heatmap currently maps one-person-household share, matching the headline metric while the card details still carry the broader size mix.",
+        }
+        value_column = census_columns[layer]
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   c.{value_column} AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_census_lsoa c ON c.lsoa_code = lb.lsoa_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = census_units[layer]
+        metadata_note = census_notes.get(layer)
+    elif layer in {
+        "deprivation",
+        "deprivation_income",
+        "deprivation_employment",
+        "deprivation_education",
+        "deprivation_health",
+        "deprivation_crime",
+        "deprivation_barriers",
+        "deprivation_living_environment",
+    }:
+        deprivation_columns = {
+            "deprivation": "imd_score",
+            "deprivation_income": "income_score",
+            "deprivation_employment": "employment_score",
+            "deprivation_education": "education_score",
+            "deprivation_health": "health_score",
+            "deprivation_crime": "crime_score",
+            "deprivation_barriers": "barriers_score",
+            "deprivation_living_environment": "living_env_score",
+        }
+        value_column = deprivation_columns[layer]
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   imd.{value_column} AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_imd_lsoa imd ON imd.lsoa_code = lb.lsoa_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "score"
+    elif layer in {"broadband", "full_fibre", "superfast_broadband"}:
+        broadband_columns = {
+            "broadband": "gigabit_pct",
+            "full_fibre": "fttp_pct",
+            "superfast_broadband": "superfast_pct",
+        }
+        value_column = broadband_columns[layer]
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   sub.value AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN (
+                SELECT p.lsoa_code,
+                       ROUND(AVG(b.{value_column}), 1) AS value
+                FROM core_broadband_postcode b
+                JOIN core_postcodes p ON p.postcode = b.postcode
+                WHERE p.lsoa_code = ANY(:codes)
+                GROUP BY p.lsoa_code
+            ) sub ON sub.lsoa_code = lb.lsoa_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "%"
+    elif layer in {"mobile_coverage", "mobile_4g_indoor", "mobile_5g_outdoor"}:
+        mobile_columns = {
+            "mobile_coverage": "pct_4g_outdoor",
+            "mobile_4g_indoor": "pct_4g_indoor",
+            "mobile_5g_outdoor": "pct_5g_outdoor",
+        }
+        value_column = mobile_columns[layer]
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   m.{value_column} AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_mobile_coverage_lad m ON m.lad_code = lb.lad_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "%"
+        metadata_grain = "lad_proxy"
+        metadata_note = "Mobile coverage is sourced at local-authority grain and repeated across LSOAs as the best currently integrated official geographic proxy."
+    elif layer in {"air_quality_no2", "air_quality_pm25"}:
+        air_quality_columns = {
+            "air_quality_no2": "no2_ugm3",
+            "air_quality_pm25": "pm25_ugm3",
+        }
+        air_quality_notes = {
+            "air_quality_no2": "NO2 heatmap aggregates intersecting DEFRA air-quality grid cells to each LSOA, preserving published grid-cell evidence without implying address-level precision.",
+            "air_quality_pm25": "PM2.5 heatmap aggregates intersecting DEFRA air-quality grid cells to each LSOA, preserving published grid-cell evidence without implying address-level precision.",
+        }
+        value_column = air_quality_columns[layer]
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   aq.value AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN (
+                SELECT lb2.lsoa_code,
+                       ROUND(AVG(a.{value_column})::numeric, 2) AS value
+                FROM core_lsoa_boundaries lb2
+                JOIN core_air_quality a ON ST_Intersects(a.geom, lb2.geom)
+                WHERE lb2.lsoa_code = ANY(:codes)
+                GROUP BY lb2.lsoa_code
+            ) aq ON aq.lsoa_code = lb.lsoa_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "µg/m³"
+        metadata_grain = "grid_to_lsoa"
+        metadata_note = air_quality_notes[layer]
+    elif layer == "council_tax":
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   ct.band_d AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_council_tax_lad ct ON ct.lad_code = lb.lad_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "GBP/year"
+        metadata_grain = "lad_proxy"
+        metadata_note = "Council tax is published at local-authority level, so the heatmap repeats each authority's Band D charge across its constituent LSOAs as the best currently integrated official geographic proxy."
+    elif layer == "median_earnings":
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   e.median_annual_earnings AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_earnings_lad e ON e.lad_code = lb.lad_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "GBP/year"
+        metadata_grain = "lad_proxy"
+        metadata_note = "Median annual earnings are published at local-authority level, so the heatmap repeats each authority's ASHE earnings value across its constituent LSOAs as the best currently integrated official geographic proxy."
+    elif layer == "median_rent":
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   r.median_rent_all AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN (
+                SELECT DISTINCT ON (lad_code)
+                       lad_code,
+                       median_rent_all,
+                       period
+                FROM core_voa_rents_lad
+                ORDER BY lad_code, period DESC
+            ) r ON r.lad_code = lb.lad_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "GBP/month"
+        metadata_grain = "lad_proxy"
+        metadata_note = "Median rent is published at local-authority level, so the heatmap repeats each authority's latest official private-rent value across its constituent LSOAs as the best currently integrated geographic proxy."
+    else:
+        raise http_error(400, "INVALID_LAYER", f"Invalid layer: {layer}. Valid: {VALID_CHOROPLETH_LAYERS}")
 
     res = await db.execute(text(sql), {"codes": scope_codes, "price_types": list(PRICE_TYPES)})
     rows = res.mappings().all()
@@ -1405,6 +1942,8 @@ async def get_map_choropleth(
         "metadata": {
             "layer": layer,
             "unit": unit,
+            "grain": metadata_grain,
+            "note": metadata_note,
             "min_value": min_val,
             "max_value": max_val,
             "quantiles": quantiles,

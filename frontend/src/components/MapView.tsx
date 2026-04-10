@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Supercluster from 'supercluster';
@@ -27,6 +27,10 @@ const POI_COLOURS: Record<string, string> = {
   school: '#ea580c',
   station: '#7c3aed',
   ev_charger: '#16a34a',
+  amenity: '#0f766e',
+  park: '#22c55e',
+  sports_recreation: '#84cc16',
+  nhs_facility: '#dc2626',
   sold_price: '#0891b2',
 };
 
@@ -38,18 +42,86 @@ const PROPERTY_TYPE_COLOURS: Record<string, string> = {
 };
 
 const CHOROPLETH_RAMPS: Record<string, string[]> = {
-  avg_price:      ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
+  avg_price: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
   price_per_sqft: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
-  epc_score:      ['#d73027', '#fc8d59', '#fee08b', '#91cf60', '#1a9850'],
+  epc_score: ['#d73027', '#fc8d59', '#fee08b', '#91cf60', '#1a9850'],
+  population_density: ['#ecfeff', '#a5f3fc', '#67e8f9', '#06b6d4', '#155e75'],
+  median_age: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1e3a8a'],
+  household_composition: ['#f0fdfa', '#99f6e4', '#2dd4bf', '#0f766e', '#134e4a'],
+  good_health: ['#f0fdf4', '#bbf7d0', '#4ade80', '#16a34a', '#166534'],
+  economically_active: ['#f7fee7', '#d9f99d', '#a3e635', '#65a30d', '#365314'],
+  degree_educated: ['#fefce8', '#fde68a', '#facc15', '#ca8a04', '#713f12'],
+  no_car: ['#fff7ed', '#fdba74', '#fb923c', '#ea580c', '#9a3412'],
+  born_abroad: ['#fff7ed', '#fdba74', '#f97316', '#c2410c', '#7c2d12'],
+  wfh: ['#faf5ff', '#e9d5ff', '#c084fc', '#9333ea', '#581c87'],
+  housing_tenure: ['#faf5ff', '#e9d5ff', '#d8b4fe', '#a855f7', '#6b21a8'],
+  housing_type: ['#fdf4ff', '#f5d0fe', '#e879f9', '#c026d3', '#86198f'],
+  household_size: ['#fdf2f8', '#fbcfe8', '#f472b6', '#db2777', '#831843'],
+  deprivation: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_income: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_employment: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_education: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_health: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_crime: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_barriers: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  deprivation_living_environment: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
+  broadband: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
+  full_fibre: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
+  superfast_broadband: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
+  mobile_coverage: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
+  mobile_4g_indoor: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
+  mobile_5g_outdoor: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
+  air_quality_no2: ['#ecfeff', '#bae6fd', '#38bdf8', '#0284c7', '#0c4a6e'],
+  air_quality_pm25: ['#f0f9ff', '#bae6fd', '#7dd3fc', '#0369a1', '#082f49'],
+  council_tax: ['#eff6ff', '#93c5fd', '#3b82f6', '#1d4ed8', '#1e3a8a'],
+  median_earnings: ['#f5f3ff', '#d8b4fe', '#a855f7', '#7e22ce', '#581c87'],
+  median_rent: ['#fdf2f8', '#f9a8d4', '#ec4899', '#be185d', '#831843'],
 };
 
 const CHOROPLETH_UNITS: Record<string, string> = {
   avg_price: '£',
   price_per_sqft: '£/sqft',
   epc_score: 'score',
+  population_density: 'people/hectare',
+  median_age: 'years',
+  household_composition: '%',
+  good_health: '%',
+  economically_active: '%',
+  degree_educated: '%',
+  no_car: '%',
+  born_abroad: '%',
+  wfh: '%',
+  housing_tenure: '%',
+  housing_type: '%',
+  household_size: '%',
+  deprivation: 'score',
+  deprivation_income: 'score',
+  deprivation_employment: 'score',
+  deprivation_education: 'score',
+  deprivation_health: 'score',
+  deprivation_crime: 'score',
+  deprivation_barriers: 'score',
+  deprivation_living_environment: 'score',
+  broadband: '%',
+  full_fibre: '%',
+  superfast_broadband: '%',
+  mobile_coverage: '%',
+  mobile_4g_indoor: '%',
+  mobile_5g_outdoor: '%',
+  air_quality_no2: 'µg/m³',
+  air_quality_pm25: 'µg/m³',
+  council_tax: '£',
+  median_earnings: '£',
+  median_rent: '£',
 };
 
 const POI_TABS = ['Property & Market', 'Community & Education', 'Lifestyle & Connectivity', 'Environment & Safety'];
+const ISOCHRONE_LAYERS = [
+  'iso-15-fill', 'iso-15-line',
+  'iso-10-fill', 'iso-10-line',
+  'iso-5-fill',  'iso-5-line',
+] as const;
+const ISOCHRONE_SOURCES = ['iso-5', 'iso-10', 'iso-15'] as const;
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -95,6 +167,29 @@ const EPC_COLOURS: Record<string, string> = {
   D: '#ffd500', E: '#fcaa65', F: '#ef8023', G: '#e9153b',
 };
 
+function formatLabel(value: string): string {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function genericPoiPopupHtml(props: Record<string, unknown>): string {
+  const detailRows = [
+    props.ofsted ? `Ofsted: ${esc(String(props.ofsted))}` : null,
+    props.phase ? esc(String(props.phase)) : null,
+    props.facility_type ? `Type: ${esc(formatLabel(String(props.facility_type)))}` : null,
+    props.site_type ? `Type: ${esc(String(props.site_type))}` : null,
+    props.amenity_type ? `Amenity: ${esc(formatLabel(String(props.amenity_type)))}` : null,
+    props.operator ? esc(String(props.operator)) : null,
+    props.connectors != null ? `${props.connectors} connector${props.connectors !== 1 ? 's' : ''}` : null,
+    props.max_kw != null ? `${props.max_kw}kW max` : null,
+    props.area_ha != null ? `${props.area_ha} ha` : null,
+    props.dist_m ? `${props.dist_m}m away` : null,
+  ].filter(Boolean);
+
+  return `<div style="font-size:12px"><strong>${esc(String(props.name || ''))}</strong>${detailRows.length ? `<br>${detailRows.join('<br>')}` : ''}</div>`;
+}
+
 function soldPricePopupHtml(props: Record<string, unknown>): string {
   const typeColour = (props.property_type && PROPERTY_TYPE_COLOURS[String(props.property_type)]) || '#0891b2';
   const bedStr = props.bedrooms != null ? ` · ${props.bedrooms} bed (est.)` : '';
@@ -124,6 +219,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
   // Supercluster index and filtered features
   const clusterIndexRef = useRef<Supercluster | null>(null);
+  const renderSoldPriceMarkersRef = useRef<((map: maplibregl.Map) => void) | null>(null);
 
   // Spider fan-out state for overlapping markers
   const spiderRef = useRef<{
@@ -153,15 +249,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   useEffect(() => { searchLsoaRef.current = searchLsoa; }, [searchLsoa]);
   const onViewportChangeRef = useRef(onViewportChange);
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+  const initialViewportRef = useRef(initialViewport);
+  useEffect(() => { initialViewportRef.current = initialViewport; }, [initialViewport]);
+  const lsoaBoundaryRef = useRef(lsoaBoundary);
+  useEffect(() => { lsoaBoundaryRef.current = lsoaBoundary; }, [lsoaBoundary]);
 
-  const ISOCHRONE_LAYERS = [
-    'iso-15-fill', 'iso-15-line',
-    'iso-10-fill', 'iso-10-line',
-    'iso-5-fill',  'iso-5-line',
-  ];
-  const ISOCHRONE_SOURCES = ['iso-5', 'iso-10', 'iso-15'];
-
-  function applyIsochronesToMap(map: maplibregl.Map, tab: string | undefined, latVal: number, lonVal: number) {
+  const applyIsochronesToMap = useCallback((map: maplibregl.Map, tab: string | undefined, latVal: number, lonVal: number) => {
     ISOCHRONE_LAYERS.forEach((l) => { if (map.getLayer(l)) map.removeLayer(l); });
     ISOCHRONE_SOURCES.forEach((s) => { if (map.getSource(s)) map.removeSource(s); });
     if (tab !== 'Lifestyle & Connectivity') return;
@@ -175,10 +268,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       map.addLayer({ id: `${id}-fill`, type: 'fill', source: id, paint: { 'fill-color': colour, 'fill-opacity': 0.05 } });
       map.addLayer({ id: `${id}-line`, type: 'line', source: id, paint: { 'line-color': colour, 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.7 } });
     });
-  }
+  }, []);
 
   /** Remove spider markers and leg lines only (keep center/leaves for re-render) */
-  function removeSpiderVisuals(map: maplibregl.Map) {
+  const removeSpiderVisuals = useCallback((map: maplibregl.Map) => {
     spiderRef.current.markers.forEach((m) => m.remove());
     spiderRef.current.markers = [];
     if (spiderRef.current.layerId) {
@@ -188,17 +281,17 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       } catch { /* layer already removed */ }
       spiderRef.current.layerId = null;
     }
-  }
+  }, []);
 
   /** Fully clear spider state (visuals + stored center/leaves) */
-  function clearSpider(map: maplibregl.Map) {
+  const clearSpider = useCallback((map: maplibregl.Map) => {
     removeSpiderVisuals(map);
     spiderRef.current.center = null;
     spiderRef.current.leaves = null;
-  }
+  }, [removeSpiderVisuals]);
 
   /** Render spider visuals from stored center + leaves at current zoom */
-  function renderSpiderVisuals(map: maplibregl.Map) {
+  const renderSpiderVisuals = useCallback((map: maplibregl.Map) => {
     const { center, leaves } = spiderRef.current;
     if (!center || !leaves || leaves.length === 0) return;
 
@@ -267,28 +360,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       },
     });
     spiderRef.current.layerId = legId;
-  }
-
-  /** Fan out overlapping markers in a radial circle with spider-leg lines */
-  function spiderfy(
-    map: maplibregl.Map,
-    index: Supercluster,
-    clusterId: number,
-    center: [number, number],
-  ) {
-    clearSpider(map);
-
-    const leaves = index.getLeaves(clusterId, Infinity) as Supercluster.PointFeature<Record<string, unknown>>[];
-    spiderRef.current.center = center;
-    spiderRef.current.leaves = leaves;
-
-    // Re-render all sold markers — this will create spider visuals
-    // and skip normal markers at the spider center (removing the old cluster badge)
-    renderSoldPriceMarkers(map);
-  }
+  }, [removeSpiderVisuals]);
 
   /** Render sold price markers from the current supercluster index at the map's current zoom/bounds */
-  function renderSoldPriceMarkers(map: maplibregl.Map) {
+  const renderSoldPriceMarkers = useCallback((map: maplibregl.Map) => {
     // Clear old sold markers (but NOT the spider — it persists across zoom/pan)
     soldMarkersRef.current.forEach((m) => m.remove());
     soldMarkersRef.current = [];
@@ -353,7 +428,11 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
             const expZoom = index.getClusterExpansionZoom(clusterId);
             if (expZoom > 16) {
               // All points overlap — fan them out in a spider pattern
-              spiderfy(map, index, clusterId, coords);
+              clearSpider(map);
+              const leaves = index.getLeaves(clusterId, Infinity) as Supercluster.PointFeature<Record<string, unknown>>[];
+              spiderRef.current.center = coords;
+              spiderRef.current.leaves = leaves;
+              renderSoldPriceMarkersRef.current?.(map);
             } else {
               clearSpider(map);
               map.flyTo({ center: coords, zoom: expZoom, duration: 500 });
@@ -376,15 +455,19 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     } catch (err) {
       console.error('[MapView] renderSoldPriceMarkers error:', err);
     }
-  }
+  }, [clearSpider, removeSpiderVisuals, renderSpiderVisuals]);
+
+  useEffect(() => {
+    renderSoldPriceMarkersRef.current = renderSoldPriceMarkers;
+  }, [renderSoldPriceMarkers]);
 
   /** Render POI markers + flood zone polygons on the given map */
-  function renderPoisOnMap(
+  const renderPoisOnMap = useCallback((
     map: maplibregl.Map,
     poisData: GeoJSON.FeatureCollection | null | undefined,
     layers: Record<string, boolean>,
     lsoaCode?: string,
-  ) {
+  ) => {
     // Don't clear markers if no new data — keeps old markers visible during tab-switch loading
     if (!poisData?.features) return;
 
@@ -452,7 +535,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           .setLngLat([lng, lt])
           .setPopup(
             new maplibregl.Popup({ offset: 20, maxWidth: '200px' }).setHTML(
-              `<div style="font-size:12px"><strong>${esc(props.name || '')}</strong>${props.ofsted ? `<br>Ofsted: ${esc(props.ofsted)}` : ''}${props.phase ? `<br>${esc(props.phase)}` : ''}${props.operator ? `<br>${esc(props.operator)}` : ''}${props.connectors != null ? `<br>${props.connectors} connector${props.connectors !== 1 ? 's' : ''}` : ''}${props.max_kw != null ? ` · ${props.max_kw}kW` : ''}${props.dist_m ? `<br>${props.dist_m}m away` : ''}</div>`,
+              genericPoiPopupHtml(props),
             ),
           )
           .addTo(map);
@@ -482,7 +565,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     } catch (err) {
       console.error('[MapView] renderPoisOnMap error:', err);
     }
-  }
+  }, [clearSpider, renderSoldPriceMarkers]);
 
   // Reactive effect: handles tab switches on an already-loaded map
   useEffect(() => {
@@ -490,8 +573,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     if (!map) return;
     if (!map.isStyleLoaded()) return;
     applyIsochronesToMap(map, activeTab, lat, lon);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, applyIsochronesToMap, lat, lon]);
 
   // Update LSOA boundary layer when lsoaBoundary changes
   useEffect(() => {
@@ -568,8 +650,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     }
 
     renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pois, visibleLayers, searchLsoa, activeTab]);
+  }, [activeTab, clearSpider, pois, renderPoisOnMap, searchLsoa, visibleLayers]);
 
   // Choropleth rendering
   const choroplethLegendRef = useRef<HTMLDivElement | null>(null);
@@ -610,6 +691,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       const meta = choroplethData.metadata;
       const ramp = CHOROPLETH_RAMPS[meta.layer] || CHOROPLETH_RAMPS.avg_price;
       const noDataColour = '#d1d5db';
+      const legendUnit = CHOROPLETH_UNITS[meta.layer] || meta.unit || '';
 
       // Build match expression: quantile → colour
       const matchExpr: unknown[] = ['match', ['get', 'quantile']];
@@ -652,9 +734,13 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           if (!features.length) return;
           const p = features[0].properties;
           if (!p) return;
-          const unit = CHOROPLETH_UNITS[meta.layer] || '';
+          const unit = legendUnit;
           const valStr = p.value != null
-            ? (meta.layer === 'epc_score' ? `${Number(p.value).toFixed(0)} ${unit}` : `${unit}${Number(p.value).toLocaleString('en-GB')}`)
+            ? (meta.layer === 'epc_score'
+                ? `${Number(p.value).toFixed(0)} ${unit}`
+                : meta.layer === 'median_rent'
+                  ? `${unit}${Number(p.value).toLocaleString('en-GB')}/mo`
+                  : `${unit}${Number(p.value).toLocaleString('en-GB')}`)
             : 'No data';
           new maplibregl.Popup({ maxWidth: '200px' })
             .setLngLat(e.lngLat)
@@ -677,14 +763,59 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         border-radius: 8px; padding: 8px 10px; font-size: 10px;
         box-shadow: 0 1px 4px rgba(0,0,0,0.15); z-index: 5; pointer-events: none;
       `;
-      const layerLabel = meta.layer === 'avg_price' ? 'Avg Price' : meta.layer === 'price_per_sqft' ? '£/sqft' : 'EPC Score';
+      const layerLabels: Record<string, string> = {
+        avg_price: 'Average price',
+        price_per_sqft: 'Price per sqft',
+        epc_score: 'EPC score',
+        population_density: 'Population density',
+        median_age: 'Median age',
+        household_composition: 'Family households',
+        good_health: 'Good health',
+        economically_active: 'Economically active',
+        degree_educated: 'Degree educated',
+        no_car: 'No-car households',
+        born_abroad: 'Born abroad',
+        wfh: 'Works from home',
+        housing_tenure: 'Owner-occupation',
+        housing_type: 'Detached homes',
+        household_size: 'One-person households',
+        deprivation: 'Deprivation',
+        deprivation_income: 'Income deprivation',
+        deprivation_employment: 'Employment deprivation',
+        deprivation_education: 'Education deprivation',
+        deprivation_health: 'Health deprivation',
+        deprivation_crime: 'Crime deprivation',
+        deprivation_barriers: 'Barriers to housing and services',
+        deprivation_living_environment: 'Living environment deprivation',
+        broadband: 'Gigabit broadband',
+        full_fibre: 'Full fibre availability',
+        superfast_broadband: 'Superfast broadband',
+        mobile_coverage: '4G outdoor coverage',
+        mobile_4g_indoor: '4G indoor coverage',
+        mobile_5g_outdoor: '5G outdoor coverage',
+        air_quality_no2: 'NO2 pollution',
+        air_quality_pm25: 'PM2.5 pollution',
+        council_tax: 'Council tax',
+        median_earnings: 'Median earnings',
+        median_rent: 'Median rent',
+      };
+      const layerLabel = layerLabels[meta.layer] || formatLabel(meta.layer);
       const fmtVal = (v: number | null) => {
-        if (v == null) return '–';
-        if (meta.layer === 'epc_score') return v.toFixed(0);
+        if (v == null) return 'n/a';
+        if (meta.layer === 'epc_score') return `${Math.round(v)}`;
+        if (legendUnit === '%') return `${Number(v).toFixed(1)}%`;
+        if (legendUnit === 'score') return Number(v).toFixed(1);
+        if (legendUnit === 'years') return `${Number(v).toFixed(1)} years`;
+        if (legendUnit === 'people/hectare') return `${Number(v).toFixed(1)} ppl/ha`;
+        if (legendUnit === 'µg/m³') return `${Number(v).toFixed(1)} µg/m³`;
+        if (meta.layer === 'price_per_sqft') return `£${Math.round(v).toLocaleString('en-GB')}`;
+        if (meta.layer === 'median_rent') return `£${Math.round(v).toLocaleString('en-GB')}/mo`;
+        if (meta.layer === 'council_tax' || meta.layer === 'median_earnings') return `£${Math.round(v).toLocaleString('en-GB')}`;
         if (v >= 1_000_000) return `£${(v / 1_000_000).toFixed(1)}m`;
         if (v >= 1_000) return `£${Math.round(v / 1_000)}k`;
-        return `£${v}`;
+        return `£${Math.round(v).toLocaleString('en-GB')}`;
       };
+
       legend.innerHTML = `
         <div style="font-weight:600;margin-bottom:4px">${layerLabel}</div>
         <div style="display:flex;gap:0;height:10px;border-radius:3px;overflow:hidden;margin-bottom:3px">
@@ -693,6 +824,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         <div style="display:flex;justify-content:space-between;color:#666">
           <span>${fmtVal(meta.min_value)}</span><span>${fmtVal(meta.max_value)}</span>
         </div>
+        ${meta.note ? `<div style="margin-top:8px;max-width:220px;color:#64748b;line-height:1.35">${esc(String(meta.note))}</div>` : ''}
       `;
       containerRef.current?.appendChild(legend);
       choroplethLegendRef.current = legend;
@@ -713,7 +845,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       }
       cleanup();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choroplethData]);
 
   // Toggle boundary layer visibility
@@ -730,16 +861,16 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     for (const id of ['lsoa-boundary-fill', 'lsoa-boundary-line']) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', lsoaVis);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleLayers]);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     // Use restored viewport if available, otherwise default
-    const useViewport = initialViewport != null;
-    const mapCenter: [number, number] = useViewport ? initialViewport.center : [lon, lat];
-    const mapZoom = useViewport ? initialViewport.zoom : 14;
+    const restoredViewport = initialViewportRef.current;
+    const useViewport = restoredViewport != null;
+    const mapCenter: [number, number] = useViewport ? restoredViewport.center : [lon, lat];
+    const mapZoom = useViewport ? restoredViewport.zoom : 14;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -795,8 +926,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       applyIsochronesToMap(map, activeTabRef.current, lat, lon);
 
       // LSOA boundary
-      if (lsoaBoundary && lsoaBoundary.geometry) {
-        map.addSource('lsoa-boundary', { type: 'geojson', data: lsoaBoundary });
+      const liveLsoaBoundary = lsoaBoundaryRef.current;
+      if (liveLsoaBoundary && liveLsoaBoundary.geometry) {
+        map.addSource('lsoa-boundary', { type: 'geojson', data: liveLsoaBoundary });
         map.addLayer({
           id: 'lsoa-boundary-fill',
           type: 'fill',
@@ -878,8 +1010,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
   // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lat, lon, boundary]);
+  }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }
