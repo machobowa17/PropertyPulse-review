@@ -466,3 +466,258 @@ Manus added these operational scripts:
 
 ---
 
+### Frontend — types & api client (foundation)
+
+#### `frontend/src/types/index.ts` — MODIFIED (+113 / -?)
+**What Manus added:**
+1. `CoverageMetadata` interface (live/partial/planned/parked country arrays + coverage_message).
+2. `ResolveSuggestion` with `display_label`, `display_context`, `selection_value` fields.
+3. `ResolveGeo`, `ResolveGeoEntity`, `ResolveGeoComparisonScope` (geo contract v2 echoes).
+4. Extends `ResolveResponse` with `geo`, `lsoa_count`, `lsoa_codes`, `coverage`.
+5. **Registry-backed metric types**: `MetricRegistryMeta`, `MetricHeadline`, `MetricComparison`, `MetricTrend`, `MetricCapsule`, etc. — mirrors the nested contract from Manus's `build_metric_contract()`.
+6. Extends `Metric` with flat shortcut fields (`capsule_text`, `trend_direction`, `trend_value`, `trend_status`, `comparison_difference_abs`, `comparison_difference_pct`, `interpretation_direction`, `decision_question`, etc.) AND nested `comparison`, `trend`, `capsule`, `headline`, `registry`, `map_binding` sub-dicts.
+
+**Recommendation:** 🟡 SELECTIVE
+**Rationale:**
+- TAKE the `CoverageMetadata`, `ResolveSuggestion`, `ResolveGeo*`, and `ResolveResponse` extensions — these pair cleanly with the resolve.py router changes (🟢 recommended).
+- TAKE the flat shortcut fields on `Metric` (`capsule_text`, `trend_*`, `interpretation_direction`, `decision_question`) — our backend already populates most of these and the frontend sectionSummary/personalization code reads them.
+- SKIP the nested `comparison`/`trend`/`capsule`/`headline`/`registry` sub-dicts — these require `build_metric_contract()` on the backend which we've flagged as 🔴 SKIP (parallel metric_registry.py). Adding the TS types without matching backend output creates never-populated fields.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/api/client.ts` — MODIFIED (+90 / -?)
+**What Manus added:**
+1. `DataFreshnessItem` / `DataFreshnessResponse` types + `fetchDataFreshness()` endpoint wrapper.
+2. `CoverageMetadata` (duplicated from types/index.ts — could be consolidated).
+3. `SuggestionResponse` wrapping suggestions + coverage.
+4. Extends `Suggestion` with `comparison`, `secondary`, `display_label`, `display_type`, `display_context`, `selection_value`.
+5. `fetchSuggestions` now returns `SuggestionResponse` instead of `Suggestion[]`.
+
+**Recommendation:** 🟢 TAKE
+**Rationale:**
+- `fetchDataFreshness()` pairs with the new `backend/app/routers/data_freshness.py` (already in our untracked files — need to check parity).
+- Enriched suggestion shape pairs with resolve.py changes. Safe.
+- The return-shape change from `Suggestion[]` to `SuggestionResponse` is a breaking change for all call sites — need to update SearchBox.tsx (which is part of this merge bundle anyway).
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/App.tsx` — MODIFIED (+32 / -8)
+**What Manus changed:** Converts page imports to `React.lazy()` (code splitting). Adds `Suspense` wrapper with a `RouteFallback` component. Adds `/saved-areas` route to `<SavedAreas>` page.
+**Recommendation:** 🟢 TAKE
+**Rationale:** Pure performance win (each route is now a separate chunk) + enables saved areas feature. Low risk.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/utils/tabs.ts` — MODIFIED (+13 / -0)
+**What Manus changed:** Adds METRIC_ICONS entries for new metrics: `mobile_4g_indoor`, `mobile_5g_outdoor`, `full_fibre`, `superfast_broadband`, `primary_school_quality`, `secondary_school_quality`, and 7 `deprivation_*` sub-domains.
+**Recommendation:** 🟢 TAKE (bundled with backend tab_lifestyle/tab_community metric additions)
+**Rationale:** Trivial icon-table additions. Required for the new metrics' visual rendering.
+**Status:** `PENDING_REVIEW`
+
+### Frontend — new components (premium UI redesign)
+
+#### `frontend/src/components/DecisionModeSelector.tsx` — ADDED (135 lines)
+**What Manus added:** Buy / Rent / Invest three-mode selector with lucide icons, motion transitions, and dropdown chip UI. Exports `DecisionMode` type and `DECISION_MODES` array.
+**Recommendation:** 🟢 TAKE
+**Rationale:** This is the centrepiece of the "decision framing beats data depth" product philosophy. Self-contained, stylable, no backend dep. The mode selection drives tab prioritisation and metric filtering downstream.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsPageShell.tsx` — ADDED (193 lines)
+**What Manus added:** Layout shell component wrapping the Results page: sticky header with SearchBox + DecisionModeSelector + PersonaSelector + TabBar + ResultsTrustPanel; two-column grid with metrics content on left and desktop map on right; mobile map drawer. Takes ~25 props including all the saved-state handlers.
+**Recommendation:** 🟢 TAKE (bundled with all Results* components + Results.tsx rewrite)
+**Rationale:** Extracts the layout chrome from Results.tsx into a clean component. Enables re-use and makes Results.tsx body focused on data orchestration.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsTrustPanel.tsx` — ADDED (111 lines)
+**What Manus added:** "Trust, freshness, and provenance" panel showing: active source metadata (title/coverage/honesty copy + source list with licences), freshness snapshots per source, save-to-shortlist / save-to-watchlist counts.
+**Recommendation:** 🟢 TAKE
+**Rationale:** Directly addresses the "trust signals convert" insight from the end-user review. Source citation + freshness + honesty copy is exactly what's missing from our current results page.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsMetricsSection.tsx` — ADDED (154 lines)
+**What Manus added:** Renders one tab's worth of metrics with section overview, priority filtering, and per-metric map activation callbacks.
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsSectionOverview.tsx` — ADDED (255 lines)
+**What Manus added:** Section-level synthesis card with verdict (strong/mixed/weak), narrative, strengths list, concerns list, positive/mixed/concern counts. Reads from `sectionSummary.ts`.
+**Recommendation:** 🟢 TAKE
+**Rationale:** "What does this mean?" synthesis layer — another key end-user insight. Runs client-side from metric capsules.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsSupplementalPanels.tsx` — ADDED (169 lines)
+**What Manus added:** Right rail panels (persona fit card, comparable areas, saved areas quick-save, etc.).
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ResultsMapPanel.tsx` — ADDED (132 lines)
+**What Manus added:** Wraps MapView with layer priority per tab, metric-to-layer mapping, focus mode handling (section / metric / manual / metric-fallback).
+**Recommendation:** 🟢 TAKE (bundled with MapView changes + 35-layer choropleth expansion)
+**Status:** `PENDING_REVIEW`
+
+### Frontend — new utilities
+
+#### `frontend/src/utils/sectionSummary.ts` — ADDED (292 lines)
+**What Manus added:** `computeSectionSummary(metrics, persona)` returning `{verdict, narrative, strengths, concerns, stats}`. Reads metric `capsule_text` + `interpretation_direction` + `comparison_flag` to score green/amber/red and build a per-section verdict. Uses persona-aware weighting.
+**Recommendation:** 🟢 TAKE
+**Rationale:** Pure client-side utility, no backend dep beyond the metric fields we already populate (capsule_text + comparison_flag + interpretation_direction). Backbone of ResultsSectionOverview.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/utils/personalization.ts` — ADDED (260 lines)
+**What Manus added:** `buildPersonaFitSummary(metrics, persona)` returning ranked positives/concerns + score + verdict text. Shared foundation used by PersonaScoreCard + ResultsSectionOverview + SavedAreas.
+**Recommendation:** 🟢 TAKE
+**Rationale:** Shared personalization layer — the commit message "shared personalization layer" is exactly what this file is. Replaces ad-hoc per-component persona logic with a single source of truth.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/utils/savedAreas.ts` — ADDED (110 lines)
+**What Manus added:** LocalStorage-backed saved areas manager: `SavedAreaEntry` type (id / collection=shortlist|watchlist / query / areaName / parentName / sessionKey / decisionMode / persona / notes / savedAt / lastViewedAt). Max 24 per collection. Key: `propertypulse_saved_areas_v1`.
+**Recommendation:** 🟢 TAKE
+**Rationale:** "Saved areas / shortlist is table stakes" — end-user review priority. LocalStorage is correct for a first pass (upgrades to DB-backed later).
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/utils/personas.ts` — MODIFIED (+158 / -593, net -435 lines)
+**What Manus changed:** Rewrites the persona×metric takeaway matrix. Our version is the full 646-line Bible Part 5 matrix hand-coded for every metric×persona combo. Manus's version is 211 lines that reads from the registry's `decision_question` + `interpretation_direction` + persona weights and generates takeaways dynamically.
+**Recommendation:** 🔴 SKIP (at least for v1 merge)
+**Rationale:**
+- Our 646-line version is **data** — the commercial hand-crafted IP. Replacing it with a 211-line registry-driven generator loses all the nuance ("For a family buyer, a 12% crime rate is…" vs generic "crime higher than parent").
+- Manus's approach is elegant but produces blander output. The end-user review insight was "honesty is a feature" — but it was ALSO "decision framing beats data depth" — our hand-crafted matrix IS the decision framing layer.
+- SKIP for now. If we later adopt the registry-driven approach, the matrix becomes the seed data for tuning the registry entries.
+**Status:** `PENDING_REVIEW`
+
+### Frontend — new pages
+
+#### `frontend/src/pages/SavedAreas.tsx` — ADDED (172 lines)
+**What Manus added:** Page at `/saved-areas` showing shortlist + watchlist grids with per-entry metadata, delete, "open area", and persona fit summary. Reads from `savedAreas.ts` localStorage.
+**Recommendation:** 🟢 TAKE (bundled with savedAreas.ts + App.tsx route)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/pages/Home.tsx` — MODIFIED (+372 / -234, doubles in size)
+**What Manus changed:** Converts the home page into a Buy/Rent/Invest landing experience with:
+- Mode selector at top determines the rest of the page content.
+- `MODE_CONTENT` provides headline + subheading + CTA copy per mode.
+- `MODE_PATHS` provides 3 icon cards explaining what the mode does.
+- `TRUST_STRIP` of source logos (ONS / HM Land Registry / Ofsted / Ofcom / EA / NHS).
+- `<PreviewCard>` showing a mock area card for the active mode.
+- Active mode chip, search box, preview CTA flow.
+
+**Recommendation:** 🟢 TAKE
+**Rationale:** This IS the home page redesign that the end-user review called out as a Manus win. Product-grade landing experience vs our current search-only minimalist home. Zero backend dep, pure UI.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/pages/Results.tsx` — MODIFIED (+1769 / -?, our 519 → Manus 1760)
+**What Manus changed:** Full rewrite with: decision mode URL param, tab-by-mode defaulting, metric-to-map-layer bindings, freshness fetching, section summaries, saved areas integration, trust panel, priority filtering, metric highlighting, map focus modes (section/metric/manual/metric-fallback), desktop map lazy-mounting, mobile map drawer. Delegates layout to `ResultsPageShell`.
+**Recommendation:** 🟡 SELECTIVE — dependency on many Results* components + utilities
+**Rationale:** Taking Results.tsx wholesale only makes sense if ALL the Results* components and utilities it depends on are also taken. This is really one single bundle:
+- Results.tsx (1769-line rewrite)
+- ResultsPageShell.tsx
+- ResultsTrustPanel.tsx
+- ResultsMetricsSection.tsx
+- ResultsSectionOverview.tsx
+- ResultsSupplementalPanels.tsx
+- ResultsMapPanel.tsx
+- sectionSummary.ts
+- personalization.ts
+- savedAreas.ts
+- DecisionModeSelector.tsx
+- MetricCard.tsx (+332 diff)
+- PersonaScoreCard.tsx (+180 diff)
+- SearchBox.tsx (+264 diff)
+
+Frontend treated as a **single bundle decision** — either take the whole Manus results UX or keep ours. The end-user review verdict was that Manus's results experience is better, so the default recommendation is TAKE the whole bundle.
+
+Additional dependency: `utils/personas.ts` — but we flagged that as 🔴 SKIP above. Results.tsx will need the NEW personalization.ts helpers anyway, so as long as our 646-line personas.ts remains the canonical source of takeaway copy AND we also add personalization.ts alongside it (shared fit summary), the bundle works. **Verify no import conflicts.**
+**Status:** `PENDING_REVIEW` (bundle decision required)
+
+### Frontend — modified components
+
+#### `frontend/src/components/MetricCard.tsx` — MODIFIED (+332 / -?)
+**What Manus changed:**
+1. Lazy-loads detail charts (NewBuildTrendChart, AmenityRadarChart, PriceByTypeChart, DistrictPriceHistoryChart, EpcRatingChart, TransportModeChart, RentByBedroomChart).
+2. `getTrendBadge()` — reads `trend_direction`/`trend_value`/`trend_status` flat OR nested `trend.*`.
+3. `getCapabilityBadge()` — renders comparison/trend capability status badges.
+4. Adds `isHighlighted`, `highlightReason`, `onActivateMap` props for the map focus flow.
+5. Reads `capsule_text`/`decision_question`/`interpretation_direction` from the metric.
+
+**Recommendation:** 🟢 TAKE (bundled with Results bundle)
+**Rationale:** Lazy-loaded charts = meaningful perf win. Capsule/decision copy = the "what does this mean?" layer. Map activation = user can click a metric and see the corresponding choropleth.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/MapView.tsx` — MODIFIED (+255 / -?)
+**What Manus changed:**
+1. New `genericPoiPopupHtml()` helper for NHS / green space / amenity popups.
+2. Legend formatting for each of the 35 choropleth layers (unit detection, value formatter).
+3. Layer labels dictionary: median_rent, council_tax, population_density, median_age, etc.
+4. Proper rounding / currency / % formatting per layer.
+5. Renders new map sources: nhs_facility points, park / sports_recreation polygons + points, generic amenity points.
+
+**Recommendation:** 🟢 TAKE (bundled with 35-layer choropleth from area.py + MapLayerControl)
+**Rationale:** Pairs with backend area.py choropleth expansion. Meaningful legend/labels required to make the new layers interpretable.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/MapLayerControl.tsx` — MODIFIED (+415 / -?)
+**What Manus changed:** Layer list tripled in size — groups layers by tab (Property, Lifestyle, Environment, Community), by group (data/heatmap/boundary), with per-layer help tooltips. Covers all 35 new choropleth layers + existing POI layers.
+**Recommendation:** 🟢 TAKE (bundled with MapView + area.py 35-layer expansion)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/SearchBox.tsx` — MODIFIED (+264 / -?)
+**What Manus changed:**
+1. Recent-searches localStorage (`propertypulse_recent_searches_v1`, max 6).
+2. Displays recent searches when focused with empty query.
+3. Reads new `display_label`/`display_context`/`display_type` fields from enriched suggestion response.
+4. Shows breadcrumb context in dropdown (e.g., "Clapham" + "Lambeth · London").
+5. Surfaces coverage_message when user searches for an unsupported country.
+
+**Recommendation:** 🟢 TAKE (bundled with client.ts + resolve.py changes)
+**Rationale:** Recent searches = free UX win. Enriched suggestion rendering = pairs with backend enrichment. Coverage message = honesty about Wales/Scotland/NI status.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/PersonaScoreCard.tsx` — MODIFIED (+180 / -?)
+**What Manus changed:** Rewrites using `buildPersonaFitSummary()` from `personalization.ts`. Adds `CircularDial` component for score visualization. Adds `SignalPill` for positive/concern signals. Renders ranked signal lists.
+**Recommendation:** 🟢 TAKE (bundled with personalization.ts)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/CommuteEstimator.tsx` — MODIFIED (+509 / -96, full rewrite)
+**What Manus changed:** Replaces the old haversine commute form with a panel that reads `commuter_connectivity` + related DfT Connectivity Metric sub-scores from the Lifestyle tab area response. Shows employment / education / healthcare / leisure / shopping / residential scores + walking / cycling / PT / driving breakdowns. No user input (origin is implicit = resolved area centroid).
+**Recommendation:** 🟢 TAKE (bundled with DfT commuter_connectivity backend)
+**Rationale:** The component became context-driven (renders from area response) instead of interactive (user types a destination). Pairs with the honesty-pass withdrawal of the old haversine estimator.
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/CollapsibleSection.tsx` — MODIFIED (+114 / -?)
+**What Manus changed:** Richer chrome — adds header badges, tab-coloured borders, priority toggle integration, summary stats rendering.
+**Recommendation:** 🟢 TAKE (bundled with Results bundle)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/ComparableAreas.tsx` — MODIFIED (+190 / -?)
+**What Manus changed:** Supports the county-level comparable scopes from backend `find_comparable_scopes()`. Renders multi-LAD target with `lad_count` and `scope_type`. Adds "Add to watchlist" action.
+**Recommendation:** 🟢 TAKE (bundled with comparable_areas.py + savedAreas.ts)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/CouncilTaxBandGrid.tsx` — MODIFIED (+16 / -?)
+**What Manus changed:** Adds band_i row for Welsh authorities.
+**Recommendation:** 🟢 TAKE (bundled with migration 009 + council_tax ingest + tab_governance)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/DistrictPriceHistoryChart.tsx` — MODIFIED (+11 / -?)
+**What Manus changed:** Small tweaks; likely reads a new details field.
+**Recommendation:** 🟢 TAKE (trivial)
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/FloodRiskGauge.tsx` — MODIFIED (+3 / -?)
+**What Manus changed:** Trivial.
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/TabBar.tsx` — MODIFIED (+13 / -?)
+**What Manus changed:** Trivial tab summary / section summary integration.
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/TransactionTable.tsx` — MODIFIED (+2 / -?)
+**What Manus changed:** Trivial (probably a typo / label fix).
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+#### `frontend/src/components/UsefulResourcesPanel.tsx` — MODIFIED (+2 / -?)
+**What Manus changed:** Trivial.
+**Recommendation:** 🟢 TAKE
+**Status:** `PENDING_REVIEW`
+
+---
+
