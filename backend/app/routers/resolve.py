@@ -10,12 +10,66 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.geo_resolver import resolve_search
-from app.services.helpers import make_lsoa_session
+from app.services.helpers import make_lsoa_session, get_lsoa_session
 from app.cache import cache_get, cache_set
 
 router = APIRouter()
 
 POSTCODE_RE = re.compile(r"^[A-Z]{1,2}[0-9]", re.IGNORECASE)
+
+TYPE_LABELS = {
+    "postcode": "Postcode",
+    "postcode_district": "Postcode area",
+    "place": "Place",
+    "ward": "Ward",
+    "borough": "Borough",
+    "district": "District",
+    "county": "County",
+}
+
+
+def _type_label(type_name: str | None) -> str:
+    if not type_name:
+        return "Area"
+    return TYPE_LABELS.get(type_name, type_name.replace("_", " ").title())
+
+
+def _coverage_metadata() -> dict:
+    return {
+        "live_countries": ["England"],
+        "partial_countries": ["Wales"],
+        "planned_countries": ["Scotland"],
+        "parked_countries": ["Northern Ireland"],
+        "coverage_message": (
+            "England remains the only fully live end-to-end country today. Wales now has live support for council tax plus selected England-and-Wales census and market datasets, but wider Wales coverage is still partial and some search and dataset paths remain staged. "
+            "Scotland remains in an earlier staged rollout through shared geography and selected authority-level sources. Northern Ireland remains parked pending a production-safe postcode and boundary source."
+        ),
+    }
+
+
+def _format_suggestion(row: dict) -> dict:
+    label = row.get("label")
+    type_name = row.get("type")
+    area = row.get("area")
+    comparison = row.get("comparison")
+    secondary = row.get("secondary") or _type_label(type_name)
+
+    breadcrumb_parts = []
+    for part in (secondary, area, comparison):
+        if part and part not in breadcrumb_parts:
+            breadcrumb_parts.append(part)
+
+    return {
+        "label": label,
+        "type": type_name,
+        "area": area,
+        "comparison": comparison,
+        "secondary": secondary,
+        "display_label": label,
+        "display_type": _type_label(type_name),
+        "display_context": " — ".join(breadcrumb_parts),
+        "selection_value": label,
+    }
 
 
 @router.get("/resolve")
@@ -30,27 +84,33 @@ async def resolve(
         # Session is mandatory for all downstream endpoints, so this must succeed.
         if cached.get("session_key") and cached.get("resolved_codes"):
             codes = cached["resolved_codes"]
-            await _build_and_store_session(db, cached, codes)  # TTL refresh only
+            _, _, session = await _build_and_store_session(db, cached, codes)  # TTL refresh only
+            if session and session.get("geo") and not cached.get("geo"):
+                cached = {**cached, "geo": session["geo"]}
+        if not cached.get("coverage"):
+            cached = {**cached, "coverage": _coverage_metadata()}
         return cached
     result = await resolve_search(db, q)
     # Compute the LSOA set and store under a session key so every subsequent
     # data endpoint uses the exact same LSOA set, parent comparison, and
     # boundary info without re-deriving them.
     if result.get("resolved_codes"):
-        session_key, lsoa_codes = await _build_and_store_session(db, result, result["resolved_codes"])
+        session_key, lsoa_codes, session = await _build_and_store_session(db, result, result["resolved_codes"])
         lsoa_count = len(lsoa_codes)
         result = {
             **result,
             "session_key": session_key,
             "lsoa_count": lsoa_count,
             "lsoa_codes": lsoa_codes if lsoa_count <= 8 else [],
+            "geo": session.get("geo") if session else None,
         }
+    result = {**result, "coverage": _coverage_metadata()}
     await cache_set(cache_key, result, ttl=86400)
     return result
 
 
-async def _build_and_store_session(db, result: dict, codes: dict) -> str:
-    """Derive all session fields from a resolve result and call make_lsoa_session."""
+async def _build_and_store_session(db, result: dict, codes: dict) -> tuple:
+    """Derive all session fields from a resolve result, store the session, and return it."""
     lad  = codes.get("lad")  or "_"
     ward = codes.get("ward") or "_"
     lsoa = codes.get("lsoa") or "_"
@@ -85,9 +145,13 @@ async def _build_and_store_session(db, result: dict, codes: dict) -> str:
         place_name=result.get("place_name"),
         place_lad_code=result.get("place_lad_code"),
         place_type=result.get("place_type"),
+        entity_type=result.get("type"),
+        entity_name=result.get("place_name") or result.get("boundary_id") or result.get("query"),
+        query_text=result.get("query"),
         **expand_kwargs,
     )
-    return session_key, lsoa_codes
+    session = await get_lsoa_session(session_key)
+    return session_key, lsoa_codes, session
 
 
 @router.get("/search/suggest")
@@ -99,6 +163,8 @@ async def suggest(
     cache_key = f"suggest:{q.strip().lower()}"
     cached = await cache_get(cache_key)
     if cached:
+        if not cached.get("coverage"):
+            cached = {**cached, "coverage": _coverage_metadata()}
         return cached
 
     q_clean = q.strip()
@@ -149,7 +215,8 @@ async def suggest(
                         SELECT DISTINCT ON (label) label, pref, lad_name AS area
                         FROM candidates ORDER BY label, pref, cnt DESC
                     )
-                    SELECT label, 'postcode_district' AS type, area
+                    SELECT label, 'postcode_district' AS type, area,
+                           NULL AS comparison, 'Postcode area' AS secondary
                     FROM dominant
                     ORDER BY pref, label
                     LIMIT 6
@@ -169,14 +236,16 @@ async def suggest(
                         SELECT DISTINCT ON (label) label, lad_name AS area
                         FROM candidates ORDER BY label, cnt DESC
                     )
-                    SELECT label, 'postcode_district' AS type, area
+                    SELECT label, 'postcode_district' AS type, area,
+                           NULL AS comparison, 'Postcode area' AS secondary
                     FROM dominant ORDER BY label LIMIT 6
                 """)
                 res = await db.execute(sql, {"prefix": compact + "%"})
         else:
             res = await db.execute(
                 sa_text("""
-                    SELECT postcode AS label, 'postcode' AS type, lad_name AS area
+                    SELECT postcode AS label, 'postcode' AS type, lad_name AS area,
+                           NULL AS comparison, 'Postcode' AS secondary
                     FROM core_postcodes
                     WHERE postcode_compact LIKE :prefix
                     LIMIT 5
@@ -193,7 +262,9 @@ async def suggest(
             sa_text("""
                 SELECT lb.lad_name AS label,
                        CASE WHEN cl.is_london_borough THEN 'borough' ELSE 'district' END AS type,
-                       cl.parent_comparison AS area
+                       cl.parent_comparison AS area,
+                       cl.parent_comparison AS comparison,
+                       CASE WHEN cl.is_london_borough THEN 'Borough' ELSE 'District' END AS secondary
                 FROM core_lad_boundaries lb
                 JOIN core_lad_county_lookup cl ON lb.lad_code = cl.lad_code
                 WHERE LOWER(lb.lad_name) LIKE :prefix ESCAPE '\'
@@ -211,7 +282,9 @@ async def suggest(
         res = await db.execute(
             sa_text("""
                 SELECT county_name AS label, 'county' AS type,
-                       NULL AS area
+                       NULL AS area,
+                       'England' AS comparison,
+                       'County' AS secondary
                 FROM core_county_boundaries
                 WHERE LOWER(county_name) LIKE :prefix ESCAPE '\'
                 ORDER BY LENGTH(county_name) ASC
@@ -227,9 +300,12 @@ async def suggest(
             sa_text("""
                 SELECT DISTINCT ON (pn.place_name, pn.lad_code)
                        pn.place_name AS label, 'place' AS type,
-                       COALESCE(lb.lad_name, pn.lad_code) AS area
+                       COALESCE(lb.lad_name, pn.lad_code) AS area,
+                       cl.parent_comparison AS comparison,
+                       pn.place_type AS secondary
                 FROM core_place_names pn
                 LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
+                LEFT JOIN core_lad_county_lookup cl ON pn.lad_code = cl.lad_code
                 WHERE pn.place_name_lower LIKE :prefix ESCAPE '\'
                   AND pn.place_type = ANY(:types)
                   AND pn.lad_code IS NOT NULL
@@ -251,9 +327,12 @@ async def suggest(
         res = await db.execute(
             sa_text("""
                 SELECT wb.ward_name AS label, 'ward' AS type,
-                       lb.lad_name AS area
+                       lb.lad_name AS area,
+                       cl.parent_comparison AS comparison,
+                       'Ward' AS secondary
                 FROM core_ward_boundaries wb
                 JOIN core_lad_boundaries lb ON wb.lad_code = lb.lad_code
+                LEFT JOIN core_lad_county_lookup cl ON wb.lad_code = cl.lad_code
                 WHERE LOWER(wb.ward_name) LIKE :prefix ESCAPE '\'
                 ORDER BY
                     CASE WHEN LOWER(wb.ward_name) = :exact THEN 0 ELSE 1 END,
@@ -272,11 +351,14 @@ async def suggest(
         existing_contains = {(r["label"].lower(), (r.get("area") or "").lower()) for r in results}
         res = await db.execute(
             sa_text("""
-                SELECT label, type, area FROM (
+                SELECT label, type, area, comparison, secondary FROM (
                     (
                         SELECT lb2.lad_name AS label,
                                CASE WHEN cl2.is_london_borough THEN 'borough' ELSE 'district' END AS type,
-                               cl2.parent_comparison AS area, 0 AS src_rank
+                               cl2.parent_comparison AS area,
+                               cl2.parent_comparison AS comparison,
+                               CASE WHEN cl2.is_london_borough THEN 'Borough' ELSE 'District' END AS secondary,
+                               0 AS src_rank
                         FROM core_lad_boundaries lb2
                         JOIN core_lad_county_lookup cl2 ON lb2.lad_code = cl2.lad_code
                         WHERE LOWER(lb2.lad_name) LIKE :contains ESCAPE '\\'
@@ -286,9 +368,13 @@ async def suggest(
                     (
                         SELECT DISTINCT ON (pn.place_name, pn.lad_code)
                                pn.place_name AS label, 'place' AS type,
-                               COALESCE(lb.lad_name, pn.lad_code) AS area, 1 AS src_rank
+                               COALESCE(lb.lad_name, pn.lad_code) AS area,
+                               cl.parent_comparison AS comparison,
+                               pn.place_type AS secondary,
+                               1 AS src_rank
                         FROM core_place_names pn
                         LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
+                        LEFT JOIN core_lad_county_lookup cl ON pn.lad_code = cl.lad_code
                         WHERE pn.place_name_lower LIKE :contains ESCAPE '\\'
                           AND pn.place_name_lower NOT LIKE :prefix ESCAPE '\\'
                           AND pn.place_type = ANY(:types)
@@ -303,9 +389,13 @@ async def suggest(
                     UNION ALL
                     (
                         SELECT wb.ward_name AS label, 'ward' AS type,
-                               lb.lad_name AS area, 2 AS src_rank
+                               lb.lad_name AS area,
+                               cl.parent_comparison AS comparison,
+                               'Ward' AS secondary,
+                               2 AS src_rank
                         FROM core_ward_boundaries wb
                         JOIN core_lad_boundaries lb ON wb.lad_code = lb.lad_code
+                        LEFT JOIN core_lad_county_lookup cl ON wb.lad_code = cl.lad_code
                         WHERE LOWER(wb.ward_name) LIKE :contains ESCAPE '\\'
                           AND LOWER(wb.ward_name) NOT LIKE :prefix ESCAPE '\\'
                     )
@@ -319,7 +409,14 @@ async def suggest(
             key = (r["label"].lower(), (r.get("area") or "").lower())
             if key not in existing_contains:
                 existing_contains.add(key)
-                results.append({"label": r["label"], "type": r["type"], "area": r["area"], "_contains": True})
+                results.append({
+                    "label": r["label"],
+                    "type": r["type"],
+                    "area": r["area"],
+                    "comparison": r.get("comparison"),
+                    "secondary": r.get("secondary"),
+                    "_contains": True,
+                })
 
     # 7. Trigram fuzzy match (catches typos) — skip if we already have an exact name match
     has_exact = any(r["label"].lower() == q_lower for r in results)
@@ -327,9 +424,12 @@ async def suggest(
         res = await db.execute(
             sa_text("""
                 SELECT pn.place_name AS label, 'place' AS type,
-                       COALESCE(lb.lad_name, pn.lad_code) AS area
+                       COALESCE(lb.lad_name, pn.lad_code) AS area,
+                       cl.parent_comparison AS comparison,
+                       pn.place_type AS secondary
                 FROM core_place_names pn
                 LEFT JOIN core_lad_boundaries lb ON pn.lad_code = lb.lad_code
+                LEFT JOIN core_lad_county_lookup cl ON pn.lad_code = cl.lad_code
                 WHERE pn.place_name_lower % :q
                   AND pn.place_type = ANY(:types)
                 ORDER BY
@@ -366,8 +466,8 @@ async def suggest(
         if key in seen:
             continue
         seen.add(key)
-        unique.append({k: v for k, v in r.items() if k != "_contains"})
+        unique.append(_format_suggestion({k: v for k, v in r.items() if k != "_contains"}))
 
-    response = {"suggestions": unique[:8]}
+    response = {"suggestions": unique[:8], "coverage": _coverage_metadata()}
     await cache_set(cache_key, response, ttl=3600)
     return response

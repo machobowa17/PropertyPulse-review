@@ -18,20 +18,63 @@ export async function fetchAreaTab(
   return res.json();
 }
 
+export interface DataFreshnessItem {
+  source_name: string;
+  last_success: string | null;
+  rows: number | null;
+  status: 'running' | 'success' | 'failed' | 'validation_failed' | 'never_run' | string;
+}
+
+export interface DataFreshnessResponse {
+  sources: DataFreshnessItem[];
+}
+
+export async function fetchDataFreshness(): Promise<DataFreshnessResponse | null> {
+  try {
+    const res = await fetch(`${BASE}/data-freshness`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export interface CoverageMetadata {
+  live_countries: string[];
+  partial_countries?: string[];
+  planned_countries?: string[];
+  parked_countries?: string[];
+  coverage_message?: string | null;
+}
+
 export interface Suggestion {
   label: string;
   type: string;
   area: string | null;
+  comparison?: string | null;
+  secondary?: string | null;
+  display_label?: string;
+  display_type?: string;
+  display_context?: string;
+  selection_value?: string;
 }
 
-export async function fetchSuggestions(query: string): Promise<Suggestion[]> {
+export interface SuggestionResponse {
+  suggestions: Suggestion[];
+  coverage?: CoverageMetadata | null;
+}
+
+export async function fetchSuggestions(query: string): Promise<SuggestionResponse> {
   try {
     const res = await fetch(`${BASE}/search/suggest?q=${encodeURIComponent(query)}`);
-    if (!res.ok) return [];
+    if (!res.ok) return { suggestions: [] };
     const data = await res.json();
-    return data.suggestions || [];
+    return {
+      suggestions: data.suggestions || [],
+      coverage: data.coverage || null,
+    };
   } catch {
-    return [];
+    return { suggestions: [] };
   }
 }
 
@@ -95,18 +138,41 @@ export async function fetchAqHistory(sessionKey: string): Promise<AqHistoryRespo
 export interface ComparableArea {
   lad_code: string;
   lad_name: string;
-  avg_price: number;
-  median_rent: number;
-  earnings: number;
-  pm25: number;
-  hpi_yoy: number;
-  distance: number;
+  scope_name?: string;
+  scope_type?: string;
+  component_count?: number;
+  component_lads?: string[];
+  avg_price: number | null;
+  median_rent: number | null;
+  earnings: number | null;
+  pm25: number | null;
+  hpi_yoy: number | null;
+  distance: number | null;
   similarity_pct: number;
 }
 
+export interface ComparableTarget {
+  lad_name?: string;
+  scope_name?: string;
+  scope_type?: string;
+  anchor_lad_code?: string;
+  lad_count?: number;
+  component_count?: number;
+  component_lads?: string[];
+  avg_price: number | null;
+  median_rent: number | null;
+  earnings: number | null;
+  pm25?: number | null;
+  hpi_yoy?: number | null;
+  distance?: number | null;
+}
+
 export interface ComparableResponse {
-  target: { lad_name: string; avg_price: number; median_rent: number; earnings: number };
+  target: ComparableTarget;
   comparable: ComparableArea[];
+  status?: string;
+  message?: string;
+  comparison_basis?: string;
 }
 
 export async function fetchComparable(sessionKey: string): Promise<ComparableResponse | null> {
@@ -180,6 +246,8 @@ export async function fetchBoundary(
 export interface ChoroplethMetadata {
   layer: string;
   unit: string;
+  grain?: string | null;
+  note?: string | null;
   min_value: number | null;
   max_value: number | null;
   quantiles: number[];
