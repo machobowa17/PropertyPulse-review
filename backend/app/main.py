@@ -11,12 +11,13 @@ from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger("uvicorn.error")
 
+from app.config import settings
 from app.routers import resolve, area, commute, report, health, data_freshness
 
 # ---------------------------------------------------------------------------
-# Rate limiter — 60 requests/minute per IP on all endpoints
+# Rate limiter — configured centrally
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
 
 app = FastAPI(
     title="UK Property Portal API",
@@ -38,15 +39,10 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # ---------------------------------------------------------------------------
 # CORS — allow frontend origins only
-# In production set ALLOWED_ORIGINS env var to your actual domain(s)
 # ---------------------------------------------------------------------------
-import os
-_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3001")
-ALLOWED_ORIGINS = [o.strip() for o in _raw.split(",") if o.strip()]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["Accept", "Accept-Encoding", "Content-Type"],
