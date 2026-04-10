@@ -18,7 +18,7 @@ import os
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from constants import SCHEDULE_ANNUAL, TABLE_NAMES, point_in_supported_country_bbox
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -26,17 +26,13 @@ from constants import SCHEDULE_ANNUAL, TABLE_NAMES
 
 METADATA = {
     "name":               "naptan",
-    "description":        "DfT NaPTAN CSV → core_transport_stops (bus stops, rail stations, etc. for England).",
+    "description":        "DfT NaPTAN CSV → core_transport_stops for supported countries using federated geography bounds.",
     "schedule":           SCHEDULE_ANNUAL,
     "depends_on":         [],
     "tables_written":     [TABLE_NAMES["transport_stops"]],
     "cache_key_patterns": [],
     "expected_row_range": (200_000, 600_000),
 }
-
-# Rough lat bounds to keep England (and exclude Scotland / NI)
-_LAT_MIN = 49.9
-_LAT_MAX = 56.0
 
 # ---------------------------------------------------------------------------
 # Helper: resolve data file path
@@ -68,7 +64,7 @@ def run(db_url: str) -> int:
     Ingest DfT NaPTAN → core_transport_stops.
 
     Strategy:
-    1. Stream NaPTAN CSV; filter to England lat/lon range.
+    1. Stream NaPTAN CSV; keep only stops that fall within supported-country geographic bounds.
     2. Truncate core_transport_stops and bulk insert all stops.
     3. Build PostGIS geometry for all rows.
     4. Return final row count.
@@ -93,8 +89,7 @@ def run(db_url: str) -> int:
             if lat is None or lon is None:
                 continue
 
-            # England-only lat bounds (excludes Scotland and Northern Ireland)
-            if not (_LAT_MIN <= lat <= _LAT_MAX):
+            if not point_in_supported_country_bbox(lat, lon):
                 continue
 
             rows.append((
@@ -106,7 +101,7 @@ def run(db_url: str) -> int:
                 None,   # lad_code — not populated here
             ))
 
-    print(f"  Collected {len(rows):,} England stops", flush=True)
+    print(f"  Collected {len(rows):,} supported-country stops", flush=True)
 
     conn = psycopg2.connect(db_url)
     conn.autocommit = False

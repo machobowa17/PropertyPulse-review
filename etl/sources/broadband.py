@@ -25,15 +25,17 @@ import os
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from constants import SCHEDULE_ANNUAL, TABLE_NAMES, supported_country_prefixes
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
 # ---------------------------------------------------------------------------
 
+_SUPPORTED_PREFIXES = supported_country_prefixes()
+
 METADATA = {
     "name":               "broadband",
-    "description":        "Ofcom Connected Nations → core_broadband_postcode (1.7M postcodes) + core_broadband_lad (LAD-level speeds/coverage).",
+    "description":        "Ofcom Connected Nations → core_broadband_postcode (1.7M postcodes) + core_broadband_lad (supported-country LAD-level speeds/coverage).",
     "schedule":           SCHEDULE_ANNUAL,
     "depends_on":         [],
     "tables_written":     [TABLE_NAMES["broadband_postcode"], TABLE_NAMES["broadband_lad"]],
@@ -231,8 +233,7 @@ def run(db_url: str) -> int:
         reader = csv.DictReader(f)
         for r in reader:
             lad = r["laua"].strip()
-            # England and Wales only (skip Scotland / Northern Ireland)
-            if not lad.startswith("E") and not lad.startswith("W"):
+            if not lad[:1].upper() in _SUPPORTED_PREFIXES:
                 continue
 
             def flt(v):

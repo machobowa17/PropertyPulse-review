@@ -26,7 +26,7 @@ from collections import defaultdict
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import PRICE_TYPES, SCHEDULE_ANNUAL, TABLE_NAMES
+from constants import PRICE_TYPES, SCHEDULE_ANNUAL, TABLE_NAMES, SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -56,6 +56,10 @@ _ZIP_PATH    = os.environ.get("PRICE_SQM_ZIP_PATH",
 _SNAPSHOT_MIN_YEAR = 2020  # snapshot tables use 2020+ only
 _MAX_PPSM    = 50_000      # sanity cap (£/sqm)
 _PRICE_TYPES = set(PRICE_TYPES)
+_EW_LAD_PREFIXES = (
+    *SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY.get("E", ()),
+    *SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY.get("W", ()),
+)
 
 # ---------------------------------------------------------------------------
 # Main run function
@@ -139,8 +143,8 @@ def run(db_url: str) -> int:
                     if year < _SNAPSHOT_MIN_YEAR:
                         continue
 
-                    # LAD-level aggregation
-                    if lad and lad.startswith("E"):
+                    # LAD-level aggregation for England-and-Wales local authorities only.
+                    if lad and lad.startswith(_EW_LAD_PREFIXES):
                         lad_data[lad]["total"]  += ppsm
                         lad_data[lad]["count"]  += 1
                         if ptype in _PRICE_TYPES:

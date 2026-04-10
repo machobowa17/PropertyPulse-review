@@ -1,7 +1,7 @@
 """
 sources/place_names.py — OS Open Names → core_place_names
 
-Reads OS Open Names ZIP (no header CSV files) and inserts England populated
+Reads OS Open Names ZIP (no header CSV files) and inserts supported-country populated
 places into core_place_names, deduplicating by (place_name_lower, lad_code).
 
 Standard interface:
@@ -25,7 +25,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from pyproj import Transformer
 
-from constants import SCHEDULE_FOUNDATION, TABLE_NAMES
+from constants import COUNTRY_PREFIX_BY_NAME, SCHEDULE_FOUNDATION, SUPPORTED_COUNTRY_PREFIXES, TABLE_NAMES
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -132,8 +132,9 @@ def run(db_url: str) -> int:
                     place_type    = cols[_COL_PLACE_TYPE].strip()
                     place_subtype = cols[_COL_PLACE_SUBTYPE].strip()
                     country       = cols[_COL_COUNTRY].strip()
+                    country_prefix = COUNTRY_PREFIX_BY_NAME.get(country)
 
-                    if country != "England":
+                    if country_prefix not in SUPPORTED_COUNTRY_PREFIXES:
                         continue
                     if place_type not in _WANTED_TYPES:
                         continue

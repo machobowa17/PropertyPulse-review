@@ -41,6 +41,9 @@ from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ONE_TIME, TABLE_NAMES
 
+
+_EW_CENSUS_PREFIXES = ("E", "W")
+
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
 # ---------------------------------------------------------------------------
@@ -73,9 +76,9 @@ def _resolve_census_dir():
 
 
 def _read_census_csv(census_dir, filename):
-    """Load a census CSV, filter to England LSOAs/wards (starts 'E')."""
+    """Load a census CSV, filtering to England-and-Wales geographies only."""
     df = pd.read_csv(os.path.join(census_dir, filename))
-    return df[df["geography code"].str.startswith("E", na=False)]
+    return df[df["geography code"].str.startswith(_EW_CENSUS_PREFIXES, na=False)]
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +284,7 @@ def _ingest_hh_size(cur, census_dir):
         reader = csv.DictReader(f)
         for r in reader:
             lsoa = r["geography code"].strip()
-            if not lsoa.startswith("E"):
+            if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                 continue
             try:
                 total = int(r["Household size: Total: All household spaces; measures: Value"] or 0)
@@ -340,7 +343,7 @@ def _ingest_ethnicity(cur, census_dir):
         reader = csv.DictReader(f)
         for r in reader:
             ward = r["geography code"].strip()
-            if not ward.startswith("E"):
+            if not ward.startswith(_EW_CENSUS_PREFIXES):
                 continue
             try:
                 total = int(r[_COL_TOTAL] or 0)
@@ -388,7 +391,7 @@ def _ingest_commute(cur, census_dir):
         reader = csv.DictReader(f)
         for r in reader:
             lsoa = r["geography code"].strip()
-            if not lsoa.startswith("E"):
+            if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                 continue
             try:
                 total    = int(r[_COL_TOTAL] or 0)
@@ -451,7 +454,7 @@ def _ingest_extra(cur, census_dir):
         with open(ts037_path, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 lsoa = r["geography code"].strip()
-                if not lsoa.startswith("E"):
+                if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
                     total = int(r["General health: Total: All usual residents"] or 0)
@@ -481,7 +484,7 @@ def _ingest_extra(cur, census_dir):
         with open(ts045_path, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 lsoa = r["geography code"].strip()
-                if not lsoa.startswith("E"):
+                if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
                     total = int(r["Number of cars or vans: Total: All households"] or 0)
@@ -510,7 +513,7 @@ def _ingest_extra(cur, census_dir):
         with open(ts066_path, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 lsoa = r["geography code"].strip()
-                if not lsoa.startswith("E"):
+                if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
                     total = int(r["Economic activity status: Total: All usual residents aged 16 years and over"] or 0)
@@ -539,7 +542,7 @@ def _ingest_extra(cur, census_dir):
         with open(ts067_path, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 lsoa = r["geography code"].strip()
-                if not lsoa.startswith("E"):
+                if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
                     total = int(r["Highest level of qualification: Total: All usual residents aged 16 years and over"] or 0)
@@ -568,7 +571,7 @@ def _ingest_extra(cur, census_dir):
         with open(ts004_path, "r", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 lsoa = r["geography code"].strip()
-                if not lsoa.startswith("E"):
+                if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
                     total = int(r["Country of birth: Total: All usual residents"] or 0)

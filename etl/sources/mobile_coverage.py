@@ -19,15 +19,17 @@ import os
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_QUARTERLY, TABLE_NAMES
+from constants import SCHEDULE_QUARTERLY, TABLE_NAMES, supported_country_prefixes
 
 # ---------------------------------------------------------------------------
 # Module metadata
 # ---------------------------------------------------------------------------
 
+_SUPPORTED_PREFIXES = supported_country_prefixes()
+
 METADATA = {
     "name":        "mobile_coverage",
-    "description": "Ofcom Connected Nations mobile 4G/5G coverage by LAD → core_mobile_coverage_lad.",
+    "description": "Ofcom Connected Nations mobile 4G/5G coverage by supported-country LAD → core_mobile_coverage_lad.",
     "schedule":           SCHEDULE_QUARTERLY,
     "depends_on":         [],
     "tables_written":     [TABLE_NAMES["mobile_coverage_lad"]],
@@ -73,7 +75,7 @@ def run(db_url: str) -> int:
         reader = csv.DictReader(f)
         for r in reader:
             lad = r.get("laua", "").strip()
-            if not lad.startswith("E"):
+            if lad[:1].upper() not in _SUPPORTED_PREFIXES:
                 continue
             name = r.get("laua_name", "").strip()
 

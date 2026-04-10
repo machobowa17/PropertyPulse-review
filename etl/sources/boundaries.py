@@ -2,9 +2,9 @@
 sources/boundaries.py — ONS Open Geography boundary polygons → 4 boundary tables
 
 Ingests:
-    core_lsoa_boundaries  — LSOA polygons (Dec 2021, England only)
-    core_ward_boundaries  — Ward polygons (May 2025, England only)
-    core_lad_boundaries   — LAD polygons (May 2025, England only)
+    core_lsoa_boundaries  — LSOA polygons (Dec 2021, England + Wales)
+    core_ward_boundaries  — Ward polygons (May 2025, supported countries)
+    core_lad_boundaries   — LAD polygons (May 2025, supported countries)
     core_county_boundaries — County/unitary authority polygons derived via
                              ST_Union of LAD boundaries grouped by parent name
                              from core_lad_county_lookup.
@@ -23,7 +23,13 @@ import requests
 import geopandas as gpd
 from shapely.geometry import MultiPolygon
 
-from constants import SCHEDULE_FOUNDATION, TABLE_NAMES
+from constants import (
+    PLANNED_COUNTRY_PREFIXES,
+    SCHEDULE_FOUNDATION,
+    SUPPORTED_COUNTRY_PREFIXES,
+    TABLE_NAMES,
+    countries_with_counties,
+)
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -76,18 +82,21 @@ _COLUMN_MAPS = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _fetch_all_features(url, code_field):
+_COUNTY_PREFIXES = tuple(countries_with_counties())
+
+def _fetch_all_features(url, code_field, code_prefixes=("E",)):
     """
     Page through an ArcGIS FeatureServer, returning a GeoJSON FeatureCollection.
-    England codes start with 'E'.
+    Code prefixes determine which country families are included.
     """
     all_features = []
     offset    = 0
     page_size = 1000
 
     while True:
+        where_parts = [f"{code_field} LIKE '{prefix}%'" for prefix in code_prefixes]
         params = {
-            "where":             f"{code_field} LIKE 'E%'",
+            "where":             " OR ".join(where_parts),
             "outFields":         "*",
             "outSR":             "4326",
             "f":                 "geojson",
@@ -123,7 +132,7 @@ def _ensure_multipolygon(geom):
 def _ingest_lsoa_boundaries(conn):
     url  = _BOUNDARY_URLS["lsoa"]
     cols = _COLUMN_MAPS["lsoa"]
-    geojson = _fetch_all_features(url, cols["code_field"])
+    geojson = _fetch_all_features(url, cols["code_field"], ("E", "W"))
     print(f"  Fetched {len(geojson['features'])} LSOA features", flush=True)
     if not geojson["features"]:
         raise RuntimeError("No LSOA features returned — aborting to avoid truncating live data.")
@@ -177,7 +186,7 @@ def _ingest_lsoa_boundaries(conn):
 def _ingest_ward_boundaries(conn):
     url  = _BOUNDARY_URLS["ward"]
     cols = _COLUMN_MAPS["ward"]
-    geojson = _fetch_all_features(url, cols["code_field"])
+    geojson = _fetch_all_features(url, cols["code_field"], SUPPORTED_COUNTRY_PREFIXES)
     print(f"  Fetched {len(geojson['features'])} Ward features", flush=True)
     if not geojson["features"]:
         raise RuntimeError("No Ward features returned — aborting to avoid truncating live data.")
@@ -228,7 +237,7 @@ def _ingest_ward_boundaries(conn):
 def _ingest_lad_boundaries(conn):
     url  = _BOUNDARY_URLS["lad"]
     cols = _COLUMN_MAPS["lad"]
-    geojson = _fetch_all_features(url, cols["code_field"])
+    geojson = _fetch_all_features(url, cols["code_field"], SUPPORTED_COUNTRY_PREFIXES)
     print(f"  Fetched {len(geojson['features'])} LAD features", flush=True)
     if not geojson["features"]:
         raise RuntimeError("No LAD features returned — aborting to avoid truncating live data.")
@@ -296,6 +305,9 @@ def _derive_county_boundaries(conn):
             geom        GEOMETRY(MultiPolygon, 4326) NOT NULL
         )
     """)
+    county_where_clause = " OR ".join(
+        [f"lb.lad_code LIKE '{prefix}%'" for prefix in _COUNTY_PREFIXES]
+    ) or "FALSE"
     cur.execute(f"""
         INSERT INTO {TABLE_NAMES['county_boundaries']} (county_name, lad_count, geom)
         SELECT cl.parent_comparison,
@@ -305,6 +317,7 @@ def _derive_county_boundaries(conn):
         JOIN {TABLE_NAMES['lad_boundaries']} lb ON cl.lad_code = lb.lad_code
         WHERE cl.parent_comparison IS NOT NULL
           AND lb.geom IS NOT NULL
+          AND ({county_where_clause})
         GROUP BY cl.parent_comparison
     """)
     cur.execute(f"""
@@ -344,7 +357,10 @@ def run(db_url: str) -> int:
     print("  Ingesting LAD boundaries...", flush=True)
     _ingest_lad_boundaries(conn)
 
-    print("  Deriving county boundaries...", flush=True)
+    if PLANNED_COUNTRY_PREFIXES:
+        print("  Deriving county boundaries for England-only comparison parents...", flush=True)
+    else:
+        print("  Deriving county boundaries...", flush=True)
     _derive_county_boundaries(conn)
 
     conn.close()

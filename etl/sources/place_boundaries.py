@@ -17,7 +17,7 @@ import json
 import psycopg2
 import requests
 
-from constants import SCHEDULE_FOUNDATION, TABLE_NAMES
+from constants import SCHEDULE_FOUNDATION, TABLE_NAMES, supported_overpass_bboxes
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -39,17 +39,25 @@ METADATA = {
 
 _OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-# England + Wales bounding box
-_BBOX = "49.8,-6.5,56.0,2.0"
+_SUPPORTED_BBOXES = supported_overpass_bboxes()
 
-_OVERPASS_QUERY = f"""
-[out:json][timeout:600];
-(
-  relation["boundary"="place"]({_BBOX});
-  relation["boundary"="administrative"]["admin_level"="10"]({_BBOX});
-);
-out geom;
-"""
+
+def _build_overpass_query() -> str:
+    if not _SUPPORTED_BBOXES:
+        raise RuntimeError("No supported country Overpass bounding boxes configured.")
+
+    clauses = []
+    for bbox in _SUPPORTED_BBOXES:
+        clauses.append(f'  relation["boundary"="place"]({bbox});')
+        clauses.append(f'  relation["boundary"="administrative"]["admin_level"="10"]({bbox});')
+
+    return "\n".join([
+        "[out:json][timeout:600];",
+        "(",
+        *clauses,
+        ");",
+        "out geom;",
+    ])
 
 # ---------------------------------------------------------------------------
 # Geometry conversion
@@ -102,10 +110,11 @@ def run(db_url: str) -> int:
     Fetch OSM place boundaries → core_place_boundaries.
     Returns final row count.
     """
-    print("  Downloading place boundaries from Overpass API...", flush=True)
+    query = _build_overpass_query()
+    print("  Downloading place boundaries from Overpass API for supported countries...", flush=True)
     resp = requests.post(
         _OVERPASS_URL,
-        data={"data": _OVERPASS_QUERY},
+        data={"data": query},
         timeout=660,
     )
     resp.raise_for_status()

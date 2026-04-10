@@ -76,7 +76,7 @@ def run(db_url: str) -> int:
         reader = csv.DictReader(f)
         for r in reader:
             lsoa = r.get("geography code", "").strip()
-            if not lsoa.startswith("E01"):   # England LSOAs only
+            if not lsoa.startswith(("E01", "W01")):   # England and Wales LSOAs only
                 continue
 
             def _pct(key):

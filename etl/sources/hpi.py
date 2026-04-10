@@ -2,7 +2,8 @@
 sources/hpi.py — ONS/Land Registry House Price Index → core_hpi_lad
 
 Downloads the UK HPI full CSV from the Land Registry open data endpoint.
-Filters to England LAD-level records (AreaCode starts with 'E0').
+Filters to supported-country LAD / council-area records using the shared
+federated geography contract.
 
 Standard interface:
     METADATA  dict
@@ -19,7 +20,7 @@ import psycopg2
 import requests
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_MONTHLY, TABLE_NAMES
+from constants import SCHEDULE_MONTHLY, TABLE_NAMES, is_supported_lad_code
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -89,8 +90,8 @@ def run(db_url: str) -> int:
         reader = csv.DictReader(f)
         for r in reader:
             area_code = r.get("AreaCode", "").strip()
-            # England LAD-level only: E06, E07, E08, E09 (starts E0)
-            if not area_code.startswith("E0"):
+            # Supported-country LAD / council-area codes only.
+            if not is_supported_lad_code(area_code):
                 continue
 
             date_str = r.get("Date", "").strip()

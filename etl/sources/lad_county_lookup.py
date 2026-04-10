@@ -22,7 +22,15 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_FOUNDATION, TABLE_NAMES
+from constants import (
+    SCHEDULE_FOUNDATION,
+    TABLE_NAMES,
+    countries_with_counties,
+    countries_with_regions,
+    country_prefix_from_code,
+    default_parent_name_for_country,
+    supported_country_prefixes,
+)
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -31,7 +39,7 @@ from constants import SCHEDULE_FOUNDATION, TABLE_NAMES
 METADATA = {
     "name":        "lad_county_lookup",
     "description": (
-        "LAD → county/region parent mapping per Build Bible Rule 3 → core_lad_county_lookup."
+        "LAD → county/region parent mapping with federated country-aware parent-comparison rules → core_lad_county_lookup."
     ),
     "schedule":           SCHEDULE_FOUNDATION,
     "depends_on":         ["postcodes"],
@@ -41,11 +49,14 @@ METADATA = {
 }
 
 # ---------------------------------------------------------------------------
-# LAD code prefix constants (Build Bible Rule 3)
+# LAD code prefix constants (England-specific Build Bible Rule 3 handling)
 # ---------------------------------------------------------------------------
 
 _LONDON_PREFIX        = "E09"
 _METROPOLITAN_PREFIX  = "E08"
+_SUPPORTED_PREFIXES = supported_country_prefixes()
+_COUNTRIES_WITH_COUNTIES = set(countries_with_counties())
+_COUNTRIES_WITH_REGIONS = set(countries_with_regions())
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,9 +98,9 @@ def run(db_url: str) -> int:
     cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['lad_county_lookup']} CASCADE")
     conn.commit()
 
-    # Load LAD→county/unitary mapping
+    # Load LAD→county/unitary mapping for supported countries where source rows exist.
     df = pd.read_csv(lad_ctyua_path, dtype=str, encoding="utf-8-sig")
-    df = df[df["LAD25CD"].str.startswith("E", na=False)]   # England only
+    df = df[df["LAD25CD"].str[0].isin(_SUPPORTED_PREFIXES)]
 
     # Pull region codes from core_postcodes (majority vote per LAD)
     cur.execute(f"""
@@ -108,17 +119,27 @@ def run(db_url: str) -> int:
         lad_name   = r["LAD25NM"]
         ctyua_code = r["CTYUA25CD"]
         ctyua_name = r["CTYUA25NM"]
+        country_prefix = country_prefix_from_code(lad_code)
 
-        # If county code equals LAD code it's a unitary authority — no separate county
-        county_code = ctyua_code if ctyua_code != lad_code else None
-        county_name = ctyua_name if ctyua_code != lad_code else None
+        # County and region handling is country-aware. England keeps the
+        # existing county/region hierarchy, while countries without those
+        # layers fall back to their country default parent label.
+        if country_prefix in _COUNTRIES_WITH_COUNTIES and ctyua_code != lad_code:
+            county_code = ctyua_code
+            county_name = ctyua_name
+        else:
+            county_code = None
+            county_name = None
 
         region_code, region_name = lad_region.get(lad_code, (None, None))
+        if country_prefix not in _COUNTRIES_WITH_REGIONS:
+            region_code = None
+            region_name = None
 
         is_london = lad_code.startswith(_LONDON_PREFIX)
         is_metro  = lad_code.startswith(_METROPOLITAN_PREFIX)
 
-        # Determine parent_comparison per Build Bible Rule 3
+        # Determine parent_comparison per federated geography rules.
         if is_london:
             parent_comparison = "Greater London"
         elif county_name:
@@ -126,7 +147,7 @@ def run(db_url: str) -> int:
         elif region_name:
             parent_comparison = region_name
         else:
-            parent_comparison = "England"
+            parent_comparison = default_parent_name_for_country(country_prefix, fallback=lad_name)
 
         rows.append((
             lad_code, lad_name,

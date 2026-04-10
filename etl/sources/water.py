@@ -124,7 +124,17 @@ def run(db_url: str) -> int:
             cur.execute(
                 """
                 INSERT INTO _tmp_water_companies (company, acronym, co_type, geom)
-                VALUES (%s, %s, %s, ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326))
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)),
+                            3
+                        )
+                    )
+                )
                 """,
                 (company, acronym, co_type, geom_json),
             )
@@ -151,8 +161,10 @@ def run(db_url: str) -> int:
             w.company,
             w.co_type
         FROM {TABLE_NAMES['lad_boundaries']} l
-        JOIN _tmp_water_companies w ON ST_Intersects(l.geom, w.geom)
-        ORDER BY l.lad_code, ST_Area(ST_Intersection(l.geom, w.geom)) DESC
+        JOIN _tmp_water_companies w
+          ON NOT ST_IsEmpty(w.geom)
+         AND ST_Intersects(l.geom, w.geom)
+        ORDER BY l.lad_code, ST_Area(ST_Intersection(l.geom, ST_MakeValid(w.geom))) DESC
         """
     )
     conn.commit()

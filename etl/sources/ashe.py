@@ -17,7 +17,7 @@ import os
 import psycopg2
 from psycopg2.extras import execute_values
 
-from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from constants import SCHEDULE_ANNUAL, TABLE_NAMES, is_supported_lad_code
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -64,7 +64,7 @@ def run(db_url: str) -> int:
         reader = csv.DictReader(f)
         for r in reader:
             lad_code = r.get("GEOGRAPHY_CODE", "").strip()
-            if not lad_code.startswith("E"):
+            if not is_supported_lad_code(lad_code):
                 continue
             val = r.get("OBS_VALUE", "").strip()
             if not val or val == "..":
