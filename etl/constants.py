@@ -111,8 +111,292 @@ AMENITY_OSM_TAGS = [
     ("doctors",     "amenity",  "doctors"),
 ]
 
-# England bounding box for Overpass API queries
-ENGLAND_BBOX = "49.9,-6.5,55.9,2.0"
+# Country rollout metadata for federated geography support
+#
+# Keep this block as the single source of truth for country coverage assumptions.
+# Older tuple constants are preserved below for backwards compatibility while the
+# rest of the ETL and API layers migrate to the richer metadata model.
+COUNTRY_GEOGRAPHY = {
+    "E": {
+        "name": "England",
+        "status": "live",
+        "overpass_bbox": "49.9,-6.5,55.9,2.0",
+        "has_regions": True,
+        "has_counties": True,
+        "default_parent_name": "England",
+    },
+    "S": {
+        "name": "Scotland",
+        "status": "planned",
+        "overpass_bbox": "54.6,-8.0,60.9,-0.5",
+        "has_regions": False,
+        "has_counties": False,
+        "default_parent_name": "Scotland",
+    },
+    "W": {
+        "name": "Wales",
+        "status": "partial",
+        "overpass_bbox": "51.3,-5.7,53.6,-2.5",
+        "has_regions": False,
+        "has_counties": False,
+        "default_parent_name": "Wales",
+    },
+    "N": {
+        "name": "Northern Ireland",
+        "status": "parked",
+        "overpass_bbox": None,
+        "has_regions": False,
+        "has_counties": False,
+        "default_parent_name": "Northern Ireland",
+    },
+}
+
+LIVE_COUNTRY_PREFIXES = tuple(
+    prefix for prefix, meta in COUNTRY_GEOGRAPHY.items() if meta["status"] == "live"
+)
+PARTIAL_COUNTRY_PREFIXES = tuple(
+    prefix for prefix, meta in COUNTRY_GEOGRAPHY.items() if meta["status"] == "partial"
+)
+PLANNED_COUNTRY_PREFIXES = tuple(
+    prefix for prefix, meta in COUNTRY_GEOGRAPHY.items() if meta["status"] == "planned"
+)
+PARKED_COUNTRY_PREFIXES = tuple(
+    prefix for prefix, meta in COUNTRY_GEOGRAPHY.items() if meta["status"] == "parked"
+)
+SUPPORTED_COUNTRY_PREFIXES = tuple(
+    prefix for prefix, meta in COUNTRY_GEOGRAPHY.items() if meta["status"] in {"live", "partial", "planned"}
+)
+
+# Supported LAD / council-area code families by country prefix.
+# Keep this aligned with ONS UK local-authority district and council-area code families.
+SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY = {
+    "E": ("E06", "E07", "E08", "E09"),
+    "W": ("W06",),
+    "S": ("S12",),
+}
+SUPPORTED_LAD_CODE_PREFIXES = tuple(
+    prefix
+    for country_prefix in SUPPORTED_COUNTRY_PREFIXES
+    for prefix in SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY.get(country_prefix, ())
+)
+
+LIVE_COUNTRIES = tuple(COUNTRY_GEOGRAPHY[prefix]["name"] for prefix in LIVE_COUNTRY_PREFIXES)
+PARTIAL_COUNTRIES = tuple(COUNTRY_GEOGRAPHY[prefix]["name"] for prefix in PARTIAL_COUNTRY_PREFIXES)
+PLANNED_COUNTRIES = tuple(COUNTRY_GEOGRAPHY[prefix]["name"] for prefix in PLANNED_COUNTRY_PREFIXES)
+PARKED_COUNTRIES = tuple(COUNTRY_GEOGRAPHY[prefix]["name"] for prefix in PARKED_COUNTRY_PREFIXES)
+
+COUNTRY_NAME_BY_PREFIX = {
+    prefix: meta["name"]
+    for prefix, meta in COUNTRY_GEOGRAPHY.items()
+}
+
+COUNTRY_PREFIX_BY_NAME = {
+    meta["name"]: prefix
+    for prefix, meta in COUNTRY_GEOGRAPHY.items()
+}
+
+COUNTRY_STATUS_BY_PREFIX = {
+    prefix: meta["status"]
+    for prefix, meta in COUNTRY_GEOGRAPHY.items()
+}
+
+COUNTRY_DEFAULT_PARENT_BY_PREFIX = {
+    prefix: meta["default_parent_name"]
+    for prefix, meta in COUNTRY_GEOGRAPHY.items()
+}
+
+# Backwards-compatible named bounding boxes used by existing ETL modules.
+ENGLAND_BBOX = COUNTRY_GEOGRAPHY["E"]["overpass_bbox"]
+SCOTLAND_BBOX = COUNTRY_GEOGRAPHY["S"]["overpass_bbox"]
+GB_BBOX = "49.9,-8.0,60.9,2.0"
+
+
+def country_prefix_from_code(code: str | None) -> str | None:
+    if not code:
+        return None
+    prefix = str(code).strip()[:1].upper()
+    return prefix or None
+
+
+def country_name_from_code(code: str | None, default: str | None = None) -> str | None:
+    prefix = country_prefix_from_code(code)
+    if not prefix:
+        return default
+    return COUNTRY_NAME_BY_PREFIX.get(prefix, default)
+
+
+def country_meta(prefix_or_code: str | None) -> dict | None:
+    prefix = country_prefix_from_code(prefix_or_code)
+    if not prefix:
+        return None
+    return COUNTRY_GEOGRAPHY.get(prefix)
+
+
+def is_supported_country_prefix(prefix_or_code: str | None) -> bool:
+    prefix = country_prefix_from_code(prefix_or_code)
+    return bool(prefix and prefix in SUPPORTED_COUNTRY_PREFIXES)
+
+
+def supported_overpass_bboxes() -> tuple[str, ...]:
+    return tuple(
+        meta["overpass_bbox"]
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if prefix in SUPPORTED_COUNTRY_PREFIXES and meta.get("overpass_bbox")
+    )
+
+
+def supported_country_names() -> tuple[str, ...]:
+    return tuple(COUNTRY_NAME_BY_PREFIX[prefix] for prefix in SUPPORTED_COUNTRY_PREFIXES)
+
+
+def partial_country_names() -> tuple[str, ...]:
+    return tuple(COUNTRY_NAME_BY_PREFIX[prefix] for prefix in PARTIAL_COUNTRY_PREFIXES)
+
+
+def planned_country_names() -> tuple[str, ...]:
+    return tuple(COUNTRY_NAME_BY_PREFIX[prefix] for prefix in PLANNED_COUNTRY_PREFIXES)
+
+
+def parked_country_names() -> tuple[str, ...]:
+    return tuple(COUNTRY_NAME_BY_PREFIX[prefix] for prefix in PARKED_COUNTRY_PREFIXES)
+
+
+def live_country_names() -> tuple[str, ...]:
+    return tuple(COUNTRY_NAME_BY_PREFIX[prefix] for prefix in LIVE_COUNTRY_PREFIXES)
+
+
+def countries_with_regions() -> tuple[str, ...]:
+    return tuple(
+        prefix
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if prefix in SUPPORTED_COUNTRY_PREFIXES and meta.get("has_regions")
+    )
+
+
+def countries_with_counties() -> tuple[str, ...]:
+    return tuple(
+        prefix
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if prefix in SUPPORTED_COUNTRY_PREFIXES and meta.get("has_counties")
+    )
+
+
+def default_parent_name_for_country(prefix_or_code: str | None, fallback: str | None = None) -> str | None:
+    prefix = country_prefix_from_code(prefix_or_code)
+    if not prefix:
+        return fallback
+    return COUNTRY_DEFAULT_PARENT_BY_PREFIX.get(prefix, fallback)
+
+
+def country_status(prefix_or_code: str | None, default: str | None = None) -> str | None:
+    prefix = country_prefix_from_code(prefix_or_code)
+    if not prefix:
+        return default
+    return COUNTRY_STATUS_BY_PREFIX.get(prefix, default)
+
+
+def supported_country_prefixes() -> tuple[str, ...]:
+    return SUPPORTED_COUNTRY_PREFIXES
+
+
+def supported_lad_code_prefixes() -> tuple[str, ...]:
+    return SUPPORTED_LAD_CODE_PREFIXES
+
+
+def is_supported_lad_code(code: str | None) -> bool:
+    if not code:
+        return False
+    normalized = str(code).strip().upper()
+    return any(normalized.startswith(prefix) for prefix in SUPPORTED_LAD_CODE_PREFIXES)
+
+
+def partial_country_prefixes() -> tuple[str, ...]:
+    return PARTIAL_COUNTRY_PREFIXES
+
+
+def planned_country_prefixes() -> tuple[str, ...]:
+    return PLANNED_COUNTRY_PREFIXES
+
+
+def live_country_prefixes() -> tuple[str, ...]:
+    return LIVE_COUNTRY_PREFIXES
+
+
+def parked_country_prefixes() -> tuple[str, ...]:
+    return PARKED_COUNTRY_PREFIXES
+
+
+def country_prefixes_for_status(*statuses: str) -> tuple[str, ...]:
+    allowed = {status for status in statuses if status}
+    return tuple(
+        prefix
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if meta["status"] in allowed
+    )
+
+
+def country_names_for_status(*statuses: str) -> tuple[str, ...]:
+    return tuple(
+        COUNTRY_NAME_BY_PREFIX[prefix]
+        for prefix in country_prefixes_for_status(*statuses)
+    )
+
+
+def country_names_with_overpass_bbox() -> tuple[str, ...]:
+    return tuple(
+        meta["name"]
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if prefix in SUPPORTED_COUNTRY_PREFIXES and meta.get("overpass_bbox")
+    )
+
+
+def is_live_country_prefix(prefix_or_code: str | None) -> bool:
+    prefix = country_prefix_from_code(prefix_or_code)
+    return bool(prefix and prefix in LIVE_COUNTRY_PREFIXES)
+
+
+def is_partial_country_prefix(prefix_or_code: str | None) -> bool:
+    prefix = country_prefix_from_code(prefix_or_code)
+    return bool(prefix and prefix in PARTIAL_COUNTRY_PREFIXES)
+
+
+def is_planned_country_prefix(prefix_or_code: str | None) -> bool:
+    prefix = country_prefix_from_code(prefix_or_code)
+    return bool(prefix and prefix in PLANNED_COUNTRY_PREFIXES)
+
+
+def is_parked_country_prefix(prefix_or_code: str | None) -> bool:
+    prefix = country_prefix_from_code(prefix_or_code)
+    return bool(prefix and prefix in PARKED_COUNTRY_PREFIXES)
+
+
+def all_country_prefixes() -> tuple[str, ...]:
+    return tuple(COUNTRY_GEOGRAPHY.keys())
+
+
+def overpass_bbox_for_country(prefix_or_code: str | None, default: str | None = None) -> str | None:
+    meta = country_meta(prefix_or_code)
+    if not meta:
+        return default
+    return meta.get("overpass_bbox") or default
+
+
+def bbox_contains_point(bbox: str | None, lat: float | None, lon: float | None) -> bool:
+    if not bbox or lat is None or lon is None:
+        return False
+    try:
+        south, west, north, east = [float(part) for part in bbox.split(",")]
+    except (TypeError, ValueError):
+        return False
+    return south <= lat <= north and west <= lon <= east
+
+
+def point_in_supported_country_bbox(lat: float | None, lon: float | None) -> bool:
+    return any(
+        bbox_contains_point(meta.get("overpass_bbox"), lat, lon)
+        for prefix, meta in COUNTRY_GEOGRAPHY.items()
+        if prefix in SUPPORTED_COUNTRY_PREFIXES
+    )
 
 # ---------------------------------------------------------------------------
 # Core table names
@@ -155,6 +439,7 @@ TABLE_NAMES = {
     "mobile_coverage_lad":      "core_mobile_coverage_lad",
     "ptal_lsoa":                "core_ptal_lsoa",
     "cycling_lsoa":             "core_cycling_lsoa",
+    "connectivity_lsoa":        "core_connectivity_lsoa",
     "flood_zones":              "core_flood_zones",
     "flood_lsoa":               "core_flood_lsoa",
     "air_quality":              "core_air_quality",

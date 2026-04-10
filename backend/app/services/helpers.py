@@ -3,6 +3,72 @@ import hashlib
 import json as _json
 
 from app.constants import TABLE_NAMES
+from app.metric_registry import METRIC_REGISTRY
+
+
+def _normalize_scalar(value, fallback="_"):
+    """Return a stable scalar placeholder for cache/session storage."""
+    return fallback if value in (None, "") else value
+
+
+COUNTRY_COVERAGE = {
+    "live": ["England"],
+    "partial": ["Wales"],
+    "planned": ["Scotland"],
+    "parked": ["Northern Ireland"],
+}
+
+COUNTRY_STATUS = {
+    "England": "live",
+    "Scotland": "planned",
+    "Wales": "partial",
+    "Northern Ireland": "parked",
+}
+
+COUNTRY_CODE_PREFIXES = {
+    "E": "England",
+    "S": "Scotland",
+    "W": "Wales",
+    "N": "Northern Ireland",
+}
+
+NATIONAL_PARENT_NAMES = frozenset(COUNTRY_STATUS)
+
+
+def infer_country_from_geo_codes(*codes, fallback: str = "England") -> tuple[str, str]:
+    """Infer country/status from resolved geography codes.
+
+    This is intentionally additive and conservative. Existing England sessions keep
+    their current behaviour, while future federated-country rollouts can pass
+    Scotland or Northern Ireland coded identifiers through the same canonical geo
+    contract before full downstream data coverage is available.
+    """
+    for raw_code in codes:
+        code = str(raw_code).strip().upper() if raw_code not in (None, "") else ""
+        if not code or code == "_":
+            continue
+        country = COUNTRY_CODE_PREFIXES.get(code[:1])
+        if country:
+            return country, COUNTRY_STATUS.get(country, "live")
+    return fallback, COUNTRY_STATUS.get(fallback, "live")
+
+
+def build_country_metadata(selected_country: str = "England", status: str = "live") -> dict:
+    """Return stable country coverage metadata for geo/session contracts.
+
+    The live platform currently treats England as fully live, Wales as partial,
+    Scotland as planned, and Northern Ireland as parked. The session contract is
+    kept additive so richer country metadata can evolve without breaking existing
+    cached sessions or frontend assumptions.
+    """
+    return {
+        "selected": selected_country,
+        "status": status,
+        "live": COUNTRY_COVERAGE["live"],
+        "partial": COUNTRY_COVERAGE["partial"],
+        "planned": COUNTRY_COVERAGE["planned"],
+        "parked": COUNTRY_COVERAGE["parked"],
+    }
 
 
 def comparison_flag(local, parent):
@@ -17,7 +83,34 @@ def comparison_flag(local, parent):
 
 
 def metric(id: str, name: str, local_value, parent_value, unit: str, details=None):
-    """Build a single metric dict matching Bible Section 6.1 response shape."""
+    """Build a single metric dict matching Bible Section 6.1 response shape.
+
+    Enriches the response with comparison_status, trend_status, and map_binding
+    from the formal metric registry (metric_registry.py).
+    """
+    reg = METRIC_REGISTRY.get(id, {})
+
+    # Comparison status: runtime truth + registry intent
+    if parent_value is not None:
+        comp_status = "comparable"
+    elif not reg.get("supports_parent", True):
+        comp_status = "not_comparable"
+    else:
+        comp_status = "not_modelled_yet"
+
+    # Trend status: check if details contain trend data
+    has_trend = bool(details and (
+        "trend" in details
+        or "yoy_change_pct" in details
+        or "nb_trend" in details
+    ))
+    if has_trend:
+        trend_status = "trended"
+    elif not reg.get("supports_trend", False):
+        trend_status = "no_history"
+    else:
+        trend_status = "not_modelled_yet"
+
     return {
         "id": id,
         "name": name,
@@ -25,6 +118,12 @@ def metric(id: str, name: str, local_value, parent_value, unit: str, details=Non
         "parent_value": parent_value,
         "unit": unit,
         "comparison_flag": comparison_flag(local_value, parent_value),
+        "comparison_status": comp_status,
+        "trend_status": trend_status,
+        "map_binding": reg.get("map_binding", "none"),
+        "decision_question": reg.get("decision_question"),
+        "interpretation_direction": reg.get("interpretation_direction", "neutral"),
+        "quality_notes": reg.get("quality_notes"),
         "details": details,
     }
 
@@ -226,6 +325,8 @@ async def make_lsoa_session(
     place_name: str | None = None,
     place_lad_code: str | None = None,
     place_type: str | None = None,
+    display_name: str = "",
+    display_lad_name: str | None = None,
     **expand_kwargs,
 ) -> tuple:
     """Call expand_lsoa_codes and store comprehensive session in Redis.
@@ -251,6 +352,18 @@ async def make_lsoa_session(
     primary_lad = lad_code if lad_code and lad_code != "_" else (local_lads[0] if local_lads else "_")
     parent_lad_codes, parent_name = await get_parent_lad_info(db, primary_lad)
 
+    # County self-comparison fix: when the search IS a county, get_parent_lad_info
+    # returns the same county's LADs (county compares to itself → ratio ~1.0x).
+    # Escalate to all-England comparison so the benchmark is meaningful.
+    county_name_kwarg = expand_kwargs.get("county_name")
+    if county_name_kwarg and parent_name and parent_name.lower() == county_name_kwarg.lower():
+        from sqlalchemy import text as sa_text
+        all_lads_result = await db.execute(
+            sa_text("SELECT lad_code FROM core_lad_county_lookup")
+        )
+        parent_lad_codes = sorted({r["lad_code"] for r in all_lads_result.mappings().all()})
+        parent_name = "England"
+
     # Deterministic session key
     key_parts = {"lad": lad_code, "ward": ward_code, "lsoa": lsoa_code}
     key_parts.update({k: v for k, v in expand_kwargs.items() if v is not None})
@@ -263,6 +376,13 @@ async def make_lsoa_session(
     session_key = hashlib.sha256(
         _json.dumps(key_parts, sort_keys=True).encode()
     ).hexdigest()[:20]
+
+    # Build breadcrumbs: [search_label, LAD_name, parent_name]
+    breadcrumbs = [display_name] if display_name else []
+    if display_lad_name and display_lad_name.lower() != (display_name or "").lower():
+        breadcrumbs.append(display_lad_name)
+    if parent_name and parent_name not in breadcrumbs:
+        breadcrumbs.append(parent_name)
 
     from app.cache import cache_set
     await cache_set(f"lsoa_sess:{session_key}", {
@@ -288,6 +408,9 @@ async def make_lsoa_session(
         "place_name": place_name,
         "place_lad_code": place_lad_code,
         "place_type": place_type,
+        # Display context
+        "display_name": display_name,
+        "display_breadcrumbs": breadcrumbs,
     }, ttl=86400)
 
     return lsoa_codes, lat, lon, mode, local_lads, session_key

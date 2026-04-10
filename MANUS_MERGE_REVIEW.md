@@ -16,6 +16,29 @@
 4. No code changes are made until all PENDING_REVIEW entries are either APPROVED or REJECTED by user.
 5. Every actual merge commit references its entry in this file.
 
+---
+
+## Merge Execution Log (Bundles A–J)
+
+Tracks what has been physically merged into `main`. Survives compaction.
+
+| Bundle | Title | Commit | Status |
+|---|---|---|---|
+| A | Country metadata foundation | _in progress_ | 🟢 MERGED (pending commit) |
+| B | ETL country-aware refactor | — | ⏳ PENDING |
+| C | DfT Connectivity Metric phase-two | — | ⏳ PENDING |
+| D | Honesty pass (heuristic withdrawals) | — | ⏳ PENDING |
+| E | Map layer expansion (35 choropleth) | — | ⏳ PENDING |
+| F | Crime Wales crosswalk | — | ⏳ PENDING |
+| G | Resolve/Search UX | — | ⏳ PENDING |
+| H | Config cleanup | — | ⏳ PENDING |
+| I | Operational run scripts | — | ⏳ PENDING |
+| J | Frontend Results UX bundle | — | ⏳ PENDING |
+
+**Branch:** `main` (renamed from `redesign/premium-ui` per reflog HEAD@{8}).
+**Baseline pre-merge:** `e0166af` (merge review final plan commit).
+**Execution rule:** each bundle is committed as its own commit referencing this log. On session resume, read this table first to know what's done.
+
 **Constraints (from prior sessions — do not override):**
 - Our DB has `core_epc_domestic` (29.2M rows) + EPC-backfilled 14M transactions with floor_area_sqm — Manus does NOT have this.
 - Our `core_census_lsoa` is the consolidated wide table — Manus still uses older split tables in some places.

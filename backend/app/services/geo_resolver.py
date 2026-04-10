@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import TABLE_NAMES
+from app.services.helpers import build_country_metadata, infer_country_from_geo_codes
 
 # Regex patterns for classifying search input
 POSTCODE_RE = re.compile(
@@ -26,6 +27,11 @@ DISTRICT_POSTCODE_RE = re.compile(
 AREA_PLACE_TYPES = (
     'City', 'Town', 'Suburban Area', 'Village', 'Other Settlement', 'Hamlet'
 )
+
+
+def _resolved_country_metadata(*codes, fallback: str = "England") -> dict:
+    selected_country, status = infer_country_from_geo_codes(*codes, fallback=fallback)
+    return build_country_metadata(selected_country, status)
 
 
 async def resolve_search(db: AsyncSession, query: str) -> dict:
@@ -133,6 +139,7 @@ async def _resolve_postcode(db: AsyncSession, query: str) -> dict:
         },
         "boundary_source": "ward_lsoa",
         "boundary_id": row["ward_code"],
+        "country": _resolved_country_metadata(row["lsoa_code"], row["ward_code"], row["lad_code"]),
     }
 
 
@@ -212,6 +219,7 @@ async def _resolve_district_postcode(db: AsyncSession, query: str) -> dict:
         },
         "boundary_source": "lad",
         "boundary_id": row["lad_code"],
+        "country": _resolved_country_metadata(row["lad_code"]),
     }
 
 
@@ -292,6 +300,7 @@ async def _try_county(db: AsyncSession, q_lower: str) -> dict | None:
         "coordinates": {"lat": float(row["lat"]), "lon": float(row["lon"])},
         "boundary_source": "county",
         "boundary_id": row["county_name"],
+        "country": build_country_metadata("England", "live"),
     }
 
 
@@ -342,6 +351,7 @@ async def _try_lad(db: AsyncSession, q_lower: str, query: str) -> dict | None:
         "coordinates": {"lat": float(row["lat"]), "lon": float(row["lon"])},
         "boundary_source": "lad",
         "boundary_id": row["lad_code"],
+        "country": _resolved_country_metadata(row["lad_code"]),
     }
 
 
@@ -465,6 +475,7 @@ async def _try_place_name(db: AsyncSession, q_lower: str, query: str) -> dict | 
         "place_name": place_name,
         "place_lad_code": lad_code,
         "place_type": place_type,
+        "country": _resolved_country_metadata(lad_code),
     }
 
 
@@ -518,6 +529,7 @@ async def _try_ward(db: AsyncSession, q_lower: str, query: str, *, exact_only: b
         "coordinates": {"lat": float(row["lat"]), "lon": float(row["lon"])},
         "boundary_source": "ward",
         "boundary_id": row["ward_code"],
+        "country": _resolved_country_metadata(row["ward_code"], row["lad_code"]),
     }
 
 
