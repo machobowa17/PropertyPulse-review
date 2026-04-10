@@ -161,6 +161,125 @@ Sessions/docs/logs files are NOT reviewed — they're historical artifacts, not 
 Manus chose (a) AND built (c) partway via `connectivity_metric.py` + `tab_lifestyle.commuter_connectivity`. Bundle this with the DfT connectivity decision.
 **Status:** `PENDING_REVIEW` (bundled with DfT connectivity decision)
 
+#### `backend/app/routers/report.py` — MODIFIED (+519 / -216, massive PDF rewrite)
+**What Manus changed:**
+1. Geo contract v2 accessors (same pattern as area.py).
+2. New constants: `TAB_COLOURS`, `PERSONA_LABELS`, `MODE_LABELS`, `SKIP_METRICS = {"demographics_overview", "area_persona"}` (consistent with heuristic withdrawal).
+3. HTML escape via `_safe()` on all user-provided strings going into PDF paragraphs.
+4. Metric helpers that read Manus's richer metric contract: `_metric_name` (reads `registry.headline_label`), `_metric_priority` (reads `registry.display_priority`), `_metric_capsule` (reads `capsule.text`), `_metric_source`, `_metric_licence`, `_metric_quality_notes`.
+5. New section helpers: `_prioritised_metrics` (sorts by display_priority), `_comparison_badge`, `_section_overview`, `_decision_lens_text` (persona + buy/rent/invest framing), `_executive_recommendations`, `_collect_source_rows` (provenance table).
+6. `_build_pdf()` signature now accepts `decision_mode` and `persona` kwargs — the report becomes personalised.
+7. Endpoint body heavily refactored.
+
+**Recommendation:** 🔴 SKIP (for now) — requires dependency chain
+**Rationale:** The entire rewrite assumes Manus's richer metric contract (capsule, registry.headline_label, etc.) which comes from their `metric_registry.py` + `helpers.metric()` rewrite. Taking report.py without those dependencies means every `_metric_name`/`_metric_capsule` returns fallback values and the report becomes pointlessly rewritten. Also depends on persona engine v2 and buy/rent/invest decision mode.
+**Alternative:** If we decide later to adopt Manus's metric contract + persona engine + decision modes as a bundle, revisit this. Until then our existing report.py works correctly and shows real content.
+**Status:** `PENDING_REVIEW`
+
+### Backend — services
+
+#### `backend/app/services/comparable_areas.py` — MODIFIED (+211 / -108, refactor)
+**What Manus changed:** Refactors single-LAD comparable logic into shared helpers (`FEATURES_SQL`, `_normalise_rows`, `_feature_means`). Adds new function `find_comparable_scopes(db, *, target_lad_codes, target_name, scope_type, limit)` for multi-LAD (county/custom scope) comparison: builds a LAD-level feature matrix, aggregates target LADs into a single "scope vector" (weighted mean), then finds the most similar OTHER scopes in the same comparison space.
+**Recommendation:** 🟢 TAKE (bundled with area.py comparable county support)
+**Rationale:** Genuine new capability — counties can now be compared to other counties instead of being unsupported. No dependency on metric contract v2 or persona engine. Pure SQL + Python refactor. SAFE.
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/services/geo_resolver.py` — MODIFIED (+12 / -0)
+**What Manus changed:** Adds `_resolved_country_metadata()` helper and attaches a `country` dict (from `build_country_metadata` + `infer_country_from_geo_codes` in helpers.py) to EVERY resolve result: postcode, district, county, lad, place, ward. Enables downstream code to see if the result is in a "live" / "partial" / "planned" / "parked" country.
+**Recommendation:** 🟢 TAKE
+**Rationale:** Trivial, additive, and aligns with UK-wide coverage plans in MEMORY.md. Dependencies: `build_country_metadata` and `infer_country_from_geo_codes` from helpers.py (also recommended as TAKE). If those are imported, this is a 12-line win.
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/services/tab_property.py` — MODIFIED (+1181 / -739, huge diff, mostly formatting)
+**What Manus changed:**
+1. **Same 14 metric IDs on both sides** (affordability, avg_price, epc_energy_score, epc_rating_c_plus, freehold_leasehold, gross_yield, investment_grade, median_earnings, median_price, median_rent, new_build_proportion, price_per_sqft, price_trend_yoy, transaction_volume). No net metric additions or removals.
+2. **Formatting-only churn**: renames `_local_txn_filter`/`_local_txn_params` → `local_txn_filter`/`local_txn_params`, splits SQL across multiple lines, splits function signatures across multiple lines. Accounts for ~900 of the 1181 diff lines.
+3. **Substantive adds**:
+   - New Census 2021 housing-stock context query against `core_census_lsoa` (pct_owned, pct_private_rent, pct_social_rent, pct_detached, pct_semi, pct_terraced, pct_flat). Attached as `housing_stock` details on the `freehold_leasehold` metric to contrast recent-sales tenure with resident stock tenure.
+   - New `stock_note` explanation: "Housing-stock context uses Census 2021 LSOA aggregates for the resolved area rather than the currently empty LAD bedroom-price table."
+   - Refined `data_note` copy across ~8 metrics (price_per_sqft, transaction_volume, freehold_leasehold, price_trend_yoy, median_rent, gross_yield, affordability, median_earnings, investment_grade). Shorter, clearer, more honest about scope ("withheld for postcode, place, and ward searches because…").
+4. **Adds `local_txn_filter_plain`** variant (no `t.` alias) so the second "price by property_type" query can reuse the same LSOA-code filter from the tighter search mode — currently our version used a hardcoded `lsoa_code = ANY(:codes)` which ignored `is_lad_or_coarser` mode and could return wrong data for LAD+ searches.
+
+**Recommendation:** 🟡 SELECTIVE
+**Rationale:**
+- TAKE the Census housing-stock context additions + `stock_note` — pure enrichment, reads from our `core_census_lsoa` table, no dependency on metric contract v2.
+- TAKE the `local_txn_filter_plain` fix — this is actually a **latent bug fix** on our side where the property-type breakdown query was hardcoded to `lsoa_code = ANY(:codes)` regardless of `is_lad_or_coarser`. Verify our side has the same bug before merging.
+- TAKE the refined `data_note` copy — cleaner UX language, no behaviour change.
+- SKIP the pure formatting churn (rename underscores, SQL splits, signature splits). It's diff noise that would make future diffs harder to read.
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/services/tab_lifestyle.py` — MODIFIED (+167 / -?, substantive)
+**What Manus changed:**
+1. **REMOVED** `fifteen_min_score` metric (heuristic composite = `types_present * 10`). Honesty pass.
+2. **REMOVED** `connectivity_index` metric (heuristic composite of rail + bus + broadband + amenities for non-London areas). Honesty pass.
+3. **ADDED** `commuter_connectivity` metric sourced from `core_connectivity_lsoa` (DfT Connectivity Metric 2025). Replaces the heuristic composite with a source-backed alternative.
+4. **ADDED** `full_fibre` metric from Ofcom Connected Nations `fttp` column (full-fibre coverage %).
+5. **ADDED** `superfast_broadband` metric from Ofcom Connected Nations `sfbb` column (superfast coverage %).
+6. Enriches existing `broadband` metric details with `full_fibre_pct` and `parent_full_fibre_pct`.
+7. Adds `source_note` on superfast metric explaining it shares the Ofcom postcode-to-area dataset.
+
+**Recommendation:** 🟢 TAKE (bundled with DfT connectivity decision + Ofcom fftp/sfbb availability check)
+**Rationale:**
+- Honesty-pass removals (`fifteen_min_score`, `connectivity_index`) are correct — both were pure heuristics with no source citation. TAKE.
+- `commuter_connectivity` requires `core_connectivity_lsoa` table, which requires ETL migration 008 + `etl/sources/connectivity_metric.py`. Bundle as one decision.
+- `full_fibre` / `superfast_broadband` require `fttp` and `sfbb` columns on `core_broadband_lsoa`. **MUST VERIFY** our ingest already captures these (it should — Ofcom Connected Nations publishes both). If yes, this is a pure enrichment win; if no, bundle with broadband ingest update.
+- Net metric count: -2 removed, +3 added → users gain honesty + two extra broadband dimensions.
+
+**Status:** `PENDING_REVIEW` (dependency on DfT connectivity ingest + broadband column availability)
+
+#### `backend/app/services/tab_environment.py` — MODIFIED (+63 / -?)
+**What Manus changed:**
+1. **REMOVED** `esg_score` composite metric (EPC + air-quality + flood-risk + green-space heuristic average, all equally weighted). Honesty pass — no source methodology.
+2. **ADDED** `epc_rating_c_plus` metric in this tab (combines `pct_rating_a_b + pct_rating_c` from `core_epc_lsoa`). Note: `epc_rating_c_plus` already exists in tab_property — this is a *duplicate* surfacing of the same metric ID in the Environment tab for better discoverability.
+3. Extends EPC local/parent SELECT to also fetch `pct_rating_c` alongside `pct_rating_a_b`.
+
+**Recommendation:** 🟢 TAKE (mostly) + one question
+**Rationale:**
+- `esg_score` removal is the correct honesty call. TAKE.
+- EPC C-plus in Environment tab: genuinely useful (Environment tab is where energy-efficiency context belongs). BUT we need to decide whether the same `epc_rating_c_plus` metric ID appears twice across tabs (once in Property, once in Environment). Frontend metric rendering typically keys on `id` — having the same id in two tabs may cause duplicate React keys or weird dedup behaviour. Either:
+  (a) Keep ID unique and only surface in one tab (our current state — Property tab).
+  (b) Use a different ID like `epc_rating_c_plus_environment` in the second tab.
+  (c) Allow the frontend to render the same metric object in both tabs deliberately.
+- Manus chose option (c) implicitly. Need to confirm frontend handles it cleanly before merging.
+
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/services/tab_community.py` — MODIFIED (+238 / -?)
+**What Manus changed:**
+1. **REMOVED** `area_persona` metric (heuristic single-label area personality like "Family suburb" / "Student quarter"). Honesty pass.
+2. **ADDED 7 new sub-domain deprivation metrics**: `deprivation_income`, `deprivation_employment`, `deprivation_education`, `deprivation_health`, `deprivation_crime`, `deprivation_barriers`, `deprivation_living_environment`. Each sources from existing `core_imd_lsoa` domain score columns — no new ingest required. Adds parent comparison via AVG across parent LAD LSOAs.
+3. Adds data_note copy explaining each deprivation sub-domain.
+
+**Recommendation:** 🟢 TAKE
+**Rationale:**
+- `area_persona` withdrawal is correct honesty pass. TAKE.
+- 7 deprivation sub-domains: pure enrichment with zero ingest cost — our `core_imd_lsoa` already stores all 7 domain scores. The data is sitting there unused. Surfacing it is a free UX win and gives users much richer deprivation context than the single headline IMD score.
+- Compatible with our flat registry (just add 7 new entries with `interpretation_direction='lower_is_better'`, `section='community'`, `source_tables=['core_imd_lsoa']`).
+
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/services/tab_governance.py` — MODIFIED (+363 / -?)
+**What Manus changed:**
+1. **REMOVED** `financial_health` (S114 notice) metric. Our current file header already has a comment explaining intentional withdrawal pending source-backed replacement — Manus did the same withdrawal in their branch.
+2. **Multi-authority refactor**: `fetch_local_governance` now accepts `local_lads` and `parent_lads` lists instead of a single `lad_code`. Aggregates council-tax / controlling-party / water-company / local-authority across multiple LADs (counties, custom scopes). Reports `authority_count` and `multi_authority` flag in details.
+3. **ADDED `band_i`** (9th council-tax band) to both local and parent SELECTs — requires `band_i` column on `core_council_tax_lad` (Manus migration 009).
+4. Adds `authority_label` with smart formatting: single authority name, "{county} county area", or "{N} local authorities" fallback.
+5. Controlling-party: Counter of party across constituent authorities, "Mixed control" label if >1 distinct party, per-authority breakdown in details.
+6. Water-company: deduped provider list, "Multiple providers" label if >1, per-authority provider in details.
+
+**Status note:** Our WORKING TREE tab_governance.py already matches the Manus multi-LAD refactor (confirmed via diff), but `main` branch does NOT — meaning a partial Manus merge was done in an earlier session but never committed. Need to decide whether to:
+- (a) Commit our current working tree first (which is functionally identical to Manus minus `band_i` and minor formatting) and then only cherry-pick `band_i` from Manus.
+- (b) Reset our working tree and take Manus's version wholesale.
+
+**Recommendation:** 🟡 SELECTIVE
+**Rationale:**
+- The multi-LAD refactor is correct and matches our working tree. TAKE in some form.
+- `band_i` council tax support: TAKE (bundled with migration 009 + our council_tax ingest needing to populate band_i — verify).
+- Formatting differences (docstring, SQL multi-line style): irrelevant — keep our working-tree version.
+- **Action required:** user must decide whether to commit our working tree governance changes now or roll them into the Manus merge.
+
+**Status:** `PENDING_REVIEW` + `ACTION_REQUIRED` (working-tree reconciliation)
+
 #### `backend/app/routers/resolve.py` — MODIFIED (+113 / -21)
 **What Manus changed:**
 1. Adds `_coverage_metadata()` returning `live_countries`, `partial_countries`, `planned_countries`, `parked_countries`, and a long `coverage_message` describing UK-wide rollout status.
