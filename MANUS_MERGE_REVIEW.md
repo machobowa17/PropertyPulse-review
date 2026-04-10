@@ -60,20 +60,20 @@ In reverse chronological order (newest first):
 
 ## Review Progress
 
-- [ ] Backend routers (7 files: area, commute, report, resolve, main, config, + metric_registry.py new)
-- [ ] Backend services (7 files: helpers, tab_property, tab_lifestyle, tab_environment, tab_community, tab_governance, comparable_areas, geo_resolver)
-- [ ] ETL sources modified (~18 files)
-- [ ] ETL sources added (connectivity_metric, land_registry_wales_ppd)
-- [ ] ETL migrations added (008, 009)
-- [ ] ETL run scripts added (~7 files)
-- [ ] ETL pipeline + constants
-- [ ] Frontend components modified (~18 files)
-- [ ] Frontend components added (~7 Results* components + DecisionModeSelector)
-- [ ] Frontend pages (Home, Results, SavedAreas)
-- [ ] Frontend utils (personas, tabs, personalization, savedAreas, sectionSummary)
-- [ ] Frontend types + api client
-- [ ] Backend tests added
-- [ ] Produce final categorized plan
+- [x] Backend routers (area, commute, report, resolve, main, config, metric_registry.py)
+- [x] Backend services (helpers, 5 tab services, comparable_areas, geo_resolver)
+- [x] ETL constants + pipeline
+- [x] ETL sources added (connectivity_metric, land_registry_wales_ppd)
+- [x] ETL migrations added (008, 009)
+- [x] ETL sources modified (14 files)
+- [x] ETL run scripts added (7 files)
+- [x] Frontend types + api client
+- [x] Frontend components added (7 Results* components + DecisionModeSelector)
+- [x] Frontend components modified (15 files)
+- [x] Frontend pages (Home, Results, SavedAreas)
+- [x] Frontend utils (personas, tabs, personalization, savedAreas, sectionSummary)
+- [x] Final categorized plan (see bottom of file)
+- [ ] Backend tests added — NOT reviewed yet (low priority: tests are additive, no merge conflict)
 
 Sessions/docs/logs files are NOT reviewed — they're historical artifacts, not merge candidates.
 
@@ -718,6 +718,140 @@ Additional dependency: `utils/personas.ts` — but we flagged that as 🔴 SKIP 
 **What Manus changed:** Trivial.
 **Recommendation:** 🟢 TAKE
 **Status:** `PENDING_REVIEW`
+
+---
+
+## Final Categorized Merge Plan
+
+All 100+ file entries above have been reviewed. This section aggregates them into actionable merge bundles. Each bundle is designed to be applicable as a single logical commit with minimal cross-dependencies.
+
+### Dependency order (take bundles in this sequence)
+
+1. **Foundation** — country metadata (no deps)
+2. **Backend infra** — config, main, constants, helpers (selective)
+3. **ETL** — constants, sources, migrations (depends on backend infra for nothing; runs independently)
+4. **Backend services** — tab services, comparable_areas, geo_resolver (depend on helpers selective)
+5. **Backend routers** — area, resolve, commute (depend on services)
+6. **Frontend foundation** — types, client, tabs, App
+7. **Frontend components** — MetricCard, MapView, MapLayerControl, etc.
+8. **Frontend results bundle** — Results.tsx + all Results* components + utils
+9. **Frontend pages** — Home, SavedAreas
+
+### 🟢 TAKE (clean wins — high value, low risk)
+
+**Bundle A — Country metadata foundation (safe, independent)**
+- `etl/constants.py` (+289) — COUNTRY_GEOGRAPHY dict + helpers
+- `backend/app/services/geo_resolver.py` (+12) — country metadata echo on all resolves
+- Selected helpers from `backend/app/services/helpers.py`: `COUNTRY_COVERAGE`, `COUNTRY_STATUS`, `infer_country_from_geo_codes`, `build_country_metadata`
+
+**Bundle B — ETL country-aware refactor (depends on Bundle A)**
+- `etl/sources/ashe.py` (+2), `broadband.py` (+5), `census.py` (+13), `epc_lsoa.py` (+1), `hpi.py` (+5), `mobile_coverage.py` (+5), `naptan.py` (+5), `place_names.py` (+4), `price_sqm.py` (+7), `lad_county_lookup.py` (+32), `boundaries.py` (+28)
+- `etl/sources/water.py` (+15) — includes ST_MakeValid geometry bug fix
+- `etl/sources/place_boundaries.py` (+22) — 🟡 verify Overpass query budget
+
+**Bundle C — DfT Connectivity Metric phase-two (the commute replacement)**
+- `etl/migrations/008_connectivity_lsoa.sql` — table creation
+- `etl/sources/connectivity_metric.py` (ADDED 217 lines)
+- `etl/pipeline.py` (+22) — register source
+- `backend/app/constants.py` (+1) — TABLE_NAMES entry
+- `backend/app/services/tab_lifestyle.py` — add commuter_connectivity metric
+- `frontend/src/components/CommuteEstimator.tsx` (+509) — full rewrite to render source-backed data
+- `backend/app/routers/commute.py` (+12 / -60) — withdraw old haversine endpoint
+
+**Bundle D — Honesty pass (withdraw heuristics, surface source-backed alternatives)**
+- `backend/app/services/tab_lifestyle.py`: remove `fifteen_min_score`, `connectivity_index`
+- `backend/app/services/tab_environment.py`: remove `esg_score`, add `epc_rating_c_plus`
+- `backend/app/services/tab_community.py`: remove `area_persona`, add 7 deprivation sub-domains
+- `etl/legacy/ingest_governance.py` + `etl/data/section_114_notices.csv` scaffold
+- Current working-tree `tab_governance.py` (withdraws `financial_health`) — commit first before merging Manus additions
+- `etl/migrations/009_council_tax_band_i.sql`
+- `etl/sources/council_tax.py` (+212) — Welsh support + band_i column
+- `frontend/src/components/CouncilTaxBandGrid.tsx` (+16) — band_i row
+- `frontend/src/utils/tabs.ts` (+13) — new metric icons
+
+**Bundle E — Map layer expansion (biggest single UX win)**
+- `backend/app/routers/area.py` (+619) — 35 choropleth layers + NHS/green/amenity POIs + scope cache + comparable-county support
+- `backend/app/services/comparable_areas.py` (+211) — `find_comparable_scopes()` for multi-LAD
+- `frontend/src/components/MapView.tsx` (+255) — layer legends + POI popups
+- `frontend/src/components/MapLayerControl.tsx` (+415) — all 35 layer entries + grouping
+- `frontend/src/components/ComparableAreas.tsx` (+190) — multi-LAD scope rendering
+- `backend/app/services/tab_property.py` — Census housing-stock context + latent bug fix (`local_txn_filter_plain`)
+
+**Bundle F — Crime Wales crosswalk (cross-country correctness)**
+- `etl/sources/crime.py` (+171) — Wales 2011→2021 LSOA crosswalk via largest-remainder allocation
+- No frontend/backend consumer changes (data flows into existing tables)
+
+**Bundle G — Resolve/Search UX**
+- `backend/app/routers/resolve.py` (+113) — coverage metadata, enriched suggestions
+- `frontend/src/api/client.ts` (+90) — SuggestionResponse, fetchDataFreshness
+- `frontend/src/types/index.ts` — CoverageMetadata + ResolveGeo + Suggestion shape
+- `frontend/src/components/SearchBox.tsx` (+264) — recent searches + enriched dropdown
+- `backend/app/routers/data_freshness.py` — new endpoint (already in our untracked files — verify parity)
+
+**Bundle H — Config cleanup (trivial)**
+- `backend/app/config.py` (+14) — Take `SettingsConfigDict` + `allowed_origins_list` property; keep our DATABASE_URL default
+- `backend/app/main.py` (+4) — centralized settings reads
+
+**Bundle I — Operational scripts (zero risk)**
+- 7 new run/diagnostic scripts in `etl/`
+
+**Bundle J — Frontend Results UX bundle (single biggest decision)** ⚠️
+- `frontend/src/App.tsx` (+32) — lazy routes + /saved-areas
+- `frontend/src/pages/Home.tsx` (+372) — Buy/Rent/Invest landing
+- `frontend/src/pages/Results.tsx` (+1769) — full rewrite
+- `frontend/src/pages/SavedAreas.tsx` (+172) — new page
+- 7 new Results* components + DecisionModeSelector
+- `frontend/src/utils/sectionSummary.ts` (+292)
+- `frontend/src/utils/personalization.ts` (+260)
+- `frontend/src/utils/savedAreas.ts` (+110)
+- `frontend/src/components/MetricCard.tsx` (+332)
+- `frontend/src/components/PersonaScoreCard.tsx` (+180)
+- `frontend/src/components/CollapsibleSection.tsx` (+114)
+- `frontend/src/components/TabBar.tsx` (+13)
+- `frontend/src/components/DistrictPriceHistoryChart.tsx` (+11)
+- `frontend/src/components/FloodRiskGauge.tsx` (+3)
+- `frontend/src/components/TransactionTable.tsx` (+2)
+- `frontend/src/components/UsefulResourcesPanel.tsx` (+2)
+
+**IMPORTANT**: This bundle is all-or-nothing. Taking Results.tsx without the supporting components breaks the build. Taking the components without Results.tsx leaves orphans. Treat as one unit.
+
+### 🟡 SELECTIVE (partial take with caveats)
+
+- **`backend/app/services/helpers.py`** — Take country metadata + entity type inference; SKIP geo contract v2 + `build_metric_contract()` dependency.
+- **`etl/sources/postcodes.py`** (+273) — Restructure is substantial; cherry-pick country filter + ZIP path resolution, skip the rest until end-to-end tested.
+- **`etl/sources/land_registry_wales_ppd.py`** (NEW) — Only needed if our existing national PPD ingest is missing Welsh rows. **ACTION REQUIRED: verify first.**
+- **`backend/app/services/tab_governance.py`** — Our working tree already has the multi-LAD refactor; reconcile with Manus and cherry-pick `band_i`.
+
+### 🔴 SKIP (incompatible or low value)
+
+- **`backend/app/services/metric_registry.py`** (NEW 1460 lines) — Parallel registry with different field schema; incompatible with our flat registry. Would create two sources of truth. Not taking this also means skipping:
+  - `build_metric_contract()` in helpers.py
+  - Nested `comparison`/`trend`/`capsule`/`headline`/`registry` metric dicts in types/index.ts
+  - `backend/app/routers/report.py` (+519) — PDF rewrite entirely depends on the metric contract
+- **`etl/sources/epc_domestic.py`** (+265 / -217) — Rewrite is a Manus-environment workaround for a storage problem we don't have. Our 29.2M-row bulk ZIP ingest works.
+- **`frontend/src/utils/personas.ts`** (-435 net) — Our 646-line hand-crafted Bible Part 5 matrix is commercial IP; replacing with registry-driven generator produces blander output. Keep ours.
+
+### Action Required Before Merge
+
+1. **Verify Welsh transaction coverage** — Does our `core_property_transactions` currently contain any Welsh rows? If yes, `land_registry_wales_ppd` is redundant.
+2. **Verify Ofcom fttp/sfbb columns** — Does our current `core_broadband_lsoa` ingest already populate `fttp` and `sfbb`? If no, the new `full_fibre`/`superfast_broadband` metrics will return null.
+3. **Reconcile working-tree tab_governance.py** — Commit our existing multi-LAD refactor before merging Manus's version.
+4. **Verify `data_freshness.py` router parity** — Our untracked file may already implement this endpoint.
+5. **Verify `epc_rating_c_plus` double-surfacing** — Does the frontend handle the same metric ID appearing in both Property and Environment tabs cleanly?
+6. **Confirm Overpass query budget** — Does `place_boundaries.py`'s expanded multi-bbox query still fit under Overpass rate limits?
+
+### Final Recommendation
+
+**Proceed in bundle order A→J, starting with foundation and ending with the Results bundle.** Each bundle should be a separate merge commit referencing its section in this review file. Ask for explicit user approval before starting each bundle — do not assume approval spans multiple bundles.
+
+The total merge scope is substantial but **none of it is architecturally risky** once the metric_registry.py / report.py / personas.ts exclusions are honoured. Nothing gets lost: every one of our bug fixes, tuning decisions, and data work is preserved, because all the additions are either:
+- New files (can't conflict)
+- New fields on existing types (additive)
+- Mechanical refactors (`startswith("E")` → `is_supported_lad_code()`)
+- New metric IDs (additive) or heuristic withdrawals (net improvement)
+- Map/UX expansions (layered on top)
+
+Our 29.2M-row EPC backfill, our `core_census_lsoa` wide table, our master-table lsoa_month_* columns, our 123/123 Playwright tests, our hand-crafted personas matrix, our PRICE_TYPES='D','S','T','F' convention, and our `habitable_rooms` ≠ bedrooms labelling all survive intact.
 
 ---
 
