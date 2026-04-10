@@ -3,8 +3,9 @@ sources/crime.py — Police.uk crime data → core_crime_lsoa
 
 Two-phase ingestion:
   Phase 1 — National bulk ZIP (all forces except GMP, Sussex, Gwent, BTP)
-             Reads all months from the local police_latest.zip.
-  Phase 2 — GMP via police.uk API
+             Reads all months from the local police_latest.zip and normalizes
+             Welsh legacy 2011 LSOA codes to the live 2021 LSOA geography.
+  Phase 2 — GMP via API
              Greater Manchester Police is excluded from the national ZIP;
              we query the crimes-street API per LSOA polygon.
 
@@ -14,6 +15,11 @@ Standard interface:
 
 Data files required in etl/data/ (or set CRIME_ZIP_PATH env var):
     police_latest.zip — national bulk ZIP from https://data.police.uk/data/
+
+Optional cached support files in etl/data/:
+    wales_lsoa_2011_to_2021_lookup.csv — cached ONS England-and-Wales 2011→2021
+                                         LSOA exact-fit lookup used to normalize
+                                         legacy Welsh police geography codes.
 
 GMP data is fetched live from the police.uk API.
 """
@@ -30,7 +36,7 @@ import psycopg2
 import requests
 from psycopg2.extras import execute_values
 
-from constants import GMP_LAD_CODES, SCHEDULE_MONTHLY, TABLE_NAMES
+from constants import GMP_LAD_CODES, SCHEDULE_MONTHLY, SUPPORTED_COUNTRY_PREFIXES, TABLE_NAMES
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -56,17 +62,157 @@ _DATA_DIR      = os.path.join(os.path.dirname(__file__), "..", "data")
 _ZIP_PATH      = os.environ.get("CRIME_ZIP_PATH",
                                 os.path.join(_DATA_DIR, "police_latest.zip"))
 _API_BASE      = "https://data.police.uk/api"
+_WALES_LOOKUP_URL = (
+    "https://open-geography-portalx-ons.hub.arcgis.com/api/download/v1/items/"
+    "cbfe64cc03d74af982c1afec639bafd1/csv?layers=0"
+)
+_WALES_LOOKUP_PATH = os.environ.get(
+    "WALES_LSOA_LOOKUP_PATH",
+    os.path.join(_DATA_DIR, "wales_lsoa_2011_to_2021_lookup.csv"),
+)
 
 
 # ---------------------------------------------------------------------------
 # Phase 1 — National bulk ZIP
 # ---------------------------------------------------------------------------
 
+def _ensure_wales_lookup_csv(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+
+    print("  Downloading ONS Wales LSOA 2011→2021 lookup...", flush=True)
+    resp = requests.get(_WALES_LOOKUP_URL, timeout=120)
+    resp.raise_for_status()
+    with open(path, "wb") as f:
+        f.write(resp.content)
+    return path
+
+
+
+def _postcode_weights_for_lsoas(conn, lsoa_codes):
+    if not lsoa_codes:
+        return {}
+
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT lsoa_code, COUNT(*)::int AS postcode_count
+        FROM {TABLE_NAMES['postcodes']}
+        WHERE lsoa_code = ANY(%s)
+        GROUP BY lsoa_code
+        """,
+        (sorted(lsoa_codes),),
+    )
+    weights = {code: count for code, count in cur.fetchall()}
+    cur.close()
+    return weights
+
+
+
+def _largest_remainder_allocation(total, weighted_targets):
+    if total <= 0 or not weighted_targets:
+        return []
+
+    total_weight = sum(weight for _, weight in weighted_targets)
+    if total_weight <= 0:
+        weighted_targets = [(target, 1) for target, _ in weighted_targets]
+        total_weight = len(weighted_targets)
+
+    allocations = []
+    remainder_rank = []
+    allocated = 0
+    for target, weight in weighted_targets:
+        raw_share = total * weight / total_weight
+        base_share = int(raw_share)
+        allocations.append([target, base_share])
+        remainder_rank.append((raw_share - base_share, target))
+        allocated += base_share
+
+    remaining = total - allocated
+    for _, target in sorted(remainder_rank, key=lambda item: (-item[0], item[1]))[:remaining]:
+        for allocation in allocations:
+            if allocation[0] == target:
+                allocation[1] += 1
+                break
+
+    return [(target, count) for target, count in allocations if count > 0]
+
+
+
+def _load_wales_lsoa_crosswalk(conn):
+    lookup_path = _ensure_wales_lookup_csv(_WALES_LOOKUP_PATH)
+    with open(lookup_path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise RuntimeError("Welsh LSOA lookup CSV has no header row.")
+
+        upper_fields = {field.lstrip("\ufeff").upper(): field for field in reader.fieldnames}
+        required = {"LSOA11CD", "LSOA21CD"}
+        missing = required.difference(upper_fields)
+        if missing:
+            raise RuntimeError(
+                f"Welsh LSOA lookup CSV is missing expected columns: {sorted(missing)}"
+            )
+
+        raw_mappings = defaultdict(set)
+        target_codes = set()
+        for row in reader:
+            source_code = row[upper_fields["LSOA11CD"]].strip().upper()
+            target_code = row[upper_fields["LSOA21CD"]].strip().upper()
+            if not source_code.startswith("W") or not target_code.startswith("W"):
+                continue
+            raw_mappings[source_code].add(target_code)
+            target_codes.add(target_code)
+
+    postcode_weights = _postcode_weights_for_lsoas(conn, target_codes)
+    crosswalk = {}
+    for source_code, targets in raw_mappings.items():
+        ordered_targets = sorted(targets)
+        weighted_targets = [
+            (target, max(postcode_weights.get(target, 0), 0))
+            for target in ordered_targets
+        ]
+        if sum(weight for _, weight in weighted_targets) <= 0:
+            weighted_targets = [(target, 1) for target in ordered_targets]
+        crosswalk[source_code] = weighted_targets
+
+    print(
+        f"  Loaded Welsh LSOA crosswalk for {len(crosswalk):,} source codes",
+        flush=True,
+    )
+    return crosswalk
+
+
+
+def _normalize_bulk_counts(counts, wales_crosswalk):
+    normalized = defaultdict(int)
+    remapped_sources = 0
+    split_sources = 0
+
+    for (lsoa_code, crime_type), count in counts.items():
+        weighted_targets = wales_crosswalk.get(lsoa_code)
+        if not weighted_targets:
+            normalized[(lsoa_code, crime_type)] += count
+            continue
+
+        remapped_sources += 1
+        if len(weighted_targets) > 1:
+            split_sources += 1
+        for target_code, allocated_count in _largest_remainder_allocation(count, weighted_targets):
+            normalized[(target_code, crime_type)] += allocated_count
+
+    return normalized, remapped_sources, split_sources
+
+
+
 def _ingest_bulk(conn, zip_path):
     """Truncate crime table and load all months from the bulk ZIP."""
     cur = conn.cursor()
     cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['crime_lsoa']} CASCADE")
     conn.commit()
+
+    wales_crosswalk = _load_wales_lsoa_crosswalk(conn)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         all_street    = [n for n in zf.namelist() if n.endswith("-street.csv")]
@@ -75,6 +221,8 @@ def _ingest_bulk(conn, zip_path):
               f"({target_months[0]} → {target_months[-1]})", flush=True)
 
         all_rows = []
+        total_remapped_sources = 0
+        total_split_sources = 0
         for target in target_months:
             target_files = [n for n in all_street if n.startswith(target + "/")]
             counts = defaultdict(int)
@@ -84,15 +232,26 @@ def _ingest_bulk(conn, zip_path):
                         io.TextIOWrapper(f, encoding="utf-8", errors="replace")
                     )
                     for r in reader:
-                        lsoa       = r.get("LSOA code", "").strip()
+                        lsoa       = r.get("LSOA code", "").strip().upper()
                         crime_type = r.get("Crime type", "").strip()
-                        if lsoa.startswith("E") and crime_type:
+                        if lsoa[:1] in SUPPORTED_COUNTRY_PREFIXES and crime_type:
                             counts[(lsoa, crime_type)] += 1
 
+            normalized_counts, remapped_sources, split_sources = _normalize_bulk_counts(
+                counts,
+                wales_crosswalk,
+            )
+            total_remapped_sources += remapped_sources
+            total_split_sources += split_sources
+
             month_date = target + "-01"
-            for (lsoa, crime_type), cnt in counts.items():
+            for (lsoa, crime_type), cnt in normalized_counts.items():
                 all_rows.append((lsoa, month_date, crime_type, cnt))
-            print(f"    {target}: {len(counts):,} LSOA×type combos", flush=True)
+            print(
+                f"    {target}: {len(normalized_counts):,} normalized LSOA×type combos"
+                f" ({remapped_sources:,} Welsh legacy remaps, {split_sources:,} split-source allocations)",
+                flush=True,
+            )
 
     if all_rows:
         execute_values(
@@ -107,7 +266,11 @@ def _ingest_bulk(conn, zip_path):
         conn.commit()
 
     cur.close()
-    print(f"  Bulk load complete: {len(all_rows):,} rows inserted", flush=True)
+    print(
+        f"  Bulk load complete: {len(all_rows):,} rows inserted "
+        f"({total_remapped_sources:,} Welsh legacy remaps, {total_split_sources:,} split-source allocations)",
+        flush=True,
+    )
 
 
 # ---------------------------------------------------------------------------
