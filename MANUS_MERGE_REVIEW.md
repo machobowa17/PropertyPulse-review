@@ -300,3 +300,169 @@ Manus chose (a) AND built (c) partway via `connectivity_metric.py` + `tab_lifest
 
 **Status:** `PENDING_REVIEW`
 
+---
+
+### ETL — foundation (country metadata)
+
+#### `etl/constants.py` — MODIFIED (+289 / -?, huge addition)
+**What Manus changed:**
+1. Adds `COUNTRY_GEOGRAPHY` dict — single source of truth for country rollout: England (live) / Wales (partial) / Scotland (planned) / Northern Ireland (parked). Each entry has `name`, `status`, `overpass_bbox`, `has_regions`, `has_counties`, `default_parent_name`.
+2. Derives prefix tuples: `LIVE_COUNTRY_PREFIXES`, `PARTIAL_COUNTRY_PREFIXES`, `PLANNED_COUNTRY_PREFIXES`, `PARKED_COUNTRY_PREFIXES`, `SUPPORTED_COUNTRY_PREFIXES`.
+3. Adds `SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY` mapping (E→E06/E07/E08/E09, W→W06, S→S12).
+4. Helper functions: `country_prefix_from_code()`, `country_name_from_code()`, `country_status_from_code()`, `default_parent_name_for_country()`, `is_supported_lad_code()`, `supported_country_prefixes()`, `supported_overpass_bboxes()`, `point_in_supported_country_bbox()`.
+5. Preserves `ENGLAND_BBOX` (now derived from dict) + adds `SCOTLAND_BBOX`, `GB_BBOX` for Overpass queries.
+
+**Recommendation:** 🟢 TAKE
+**Rationale:** This is the foundation for the entire Wales/Scotland/NI rollout which is already flagged in our MEMORY.md as planned. Every other ETL source file that uses country filtering now imports from this module. Pure additive — our existing `ENGLAND_BBOX` usage keeps working via the derived constant. **Must be taken first** before any other ETL source diff.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/pipeline.py` — MODIFIED (+22 / -0)
+**What Manus changed:** Adds two new entries to `SOURCE_REGISTRY`:
+1. `land_registry_wales_ppd` — staged Welsh PPD CSV backfill, depends_on postcodes.
+2. `connectivity_metric` — DfT connectivity metric 2025, no deps.
+
+**Recommendation:** 🟢 TAKE (bundled with new source files)
+**Rationale:** Trivial registry additions with no behaviour change for existing sources. Only useful if we take the corresponding `sources/*.py` files.
+**Status:** `PENDING_REVIEW` (bundled with connectivity_metric + land_registry_wales_ppd decisions)
+
+### ETL — new sources
+
+#### `etl/sources/connectivity_metric.py` — ADDED (217 lines)
+**What Manus added:** New source for DfT Transport Connectivity Metric 2025 (official ODS workbook). Downloads from GOV.UK if missing. Parses ODS XML, extracts LSOA-level scores for overall connectivity + walking/cycling/PT/driving breakdowns + employment/education/healthcare/leisure/shopping/residential sub-scores + PT-specific breakdowns. Inserts into `core_connectivity_lsoa`.
+**Recommendation:** 🟢 TAKE (bundled with migration 008 + tab_lifestyle commuter_connectivity)
+**Rationale:** Source-backed, official DfT data, 30k–36k expected rows (one per LSOA). Replaces our withdrawn heuristic `connectivity_index`. No external API dependency (direct HTTPS download from GOV.UK asset). Clean self-contained implementation.
+**Status:** `PENDING_REVIEW` (bundled with migration 008 + backend tab_lifestyle)
+
+#### `etl/sources/land_registry_wales_ppd.py` — ADDED (284 lines)
+**What Manus added:** Wales-only PPD CSV backfill that:
+- Reads from `etl/data/land_registry_wales/*.csv` (or `LAND_REGISTRY_WALES_GLOB`).
+- Filters to rows where the postcode joins to a Welsh LSOA (via `core_postcodes`).
+- Upserts into `core_property_transactions` on `transaction_id`, WITHOUT truncating existing national data.
+- Uses the official HM Land Registry PPD report-builder CSV schema (`unique_id,price_paid,deed_date,postcode,property_type,new_build,estate_type,saon,paon,street,locality,town,district,county,transaction_category,linked_data_uri`).
+
+**Recommendation:** 🟡 SELECTIVE — user decision
+**Rationale:** This is a targeted fix for a storage problem Manus was hitting. Our environment has the full national `pp-complete.csv` ingest working. The Welsh PPD row-export path is useful as a fallback but not strictly needed if we already have Welsh data in our main ingest. **Need to verify**: do our `core_property_transactions` currently contain Welsh rows? If yes, this source is redundant; if no, it's the cleanest backfill path.
+**Status:** `PENDING_REVIEW` + `ACTION_REQUIRED` (check existing Welsh transaction coverage)
+
+#### `etl/data/section_114_notices.csv` — ADDED (1 line, header only)
+**What Manus added:** Empty CSV with columns `lad_code,council_name,notice_date,source_url,document_url,source_type,verification_status,last_checked_at,notes`. Used by `etl/legacy/ingest_governance.py` to replace the hardcoded S114 list.
+**Recommendation:** 🟢 TAKE (bundled with governance legacy update)
+**Rationale:** Proper provenance schema for when S114 data becomes available. Zero rows = zero behaviour change, but the schema is correct. TAKE as a scaffold.
+**Status:** `PENDING_REVIEW`
+
+### ETL — migrations
+
+#### `etl/migrations/008_connectivity_lsoa.sql` — ADDED
+**What Manus added:** Creates `core_connectivity_lsoa` table (lsoa_code PK + 17 NUMERIC columns + source_release). Required by `sources/connectivity_metric.py`.
+**Recommendation:** 🟢 TAKE (bundled with connectivity source + tab_lifestyle)
+**Rationale:** Simple DDL. Verified the column set matches the DfT Connectivity Metric schema.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/migrations/009_council_tax_band_i.sql` — ADDED (2 lines)
+**What Manus added:** `ALTER TABLE core_council_tax_lad ADD COLUMN IF NOT EXISTS band_i NUMERIC(8,2);`
+**Recommendation:** 🟢 TAKE (bundled with council_tax ingest update + tab_governance)
+**Rationale:** Needed to support Welsh 9-band council-tax schedule. IF NOT EXISTS makes it idempotent. TAKE.
+**Status:** `PENDING_REVIEW`
+
+### ETL — modified sources (country-aware refactor)
+
+These files all share the same refactor pattern: replace hardcoded `startswith("E")` / bbox literal with helpers from the new `etl/constants.py` (`is_supported_lad_code`, `supported_country_prefixes`, `SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY`, `supported_overpass_bboxes`). All depend on `etl/constants.py` being taken first.
+
+#### `etl/sources/ashe.py` — MODIFIED (+2 / -2) 🟢 TAKE
+#### `etl/sources/broadband.py` — MODIFIED (+5 / -4) 🟢 TAKE — supports E+W via prefix check
+#### `etl/sources/census.py` — MODIFIED (+13 / -10) 🟢 TAKE — adds W census geography filter
+#### `etl/sources/epc_lsoa.py` — MODIFIED (+1 / -1) 🟢 TAKE — trivial import
+#### `etl/sources/hpi.py` — MODIFIED (+5 / -4) 🟢 TAKE — uses `is_supported_lad_code`
+#### `etl/sources/mobile_coverage.py` — MODIFIED (+5 / -3) 🟢 TAKE
+#### `etl/sources/naptan.py` — MODIFIED (+5 / -10) 🟢 TAKE — replaces `_LAT_MIN/_LAT_MAX` literals with `point_in_supported_country_bbox`
+#### `etl/sources/place_names.py` — MODIFIED (+4 / -3) 🟢 TAKE — uses `COUNTRY_PREFIX_BY_NAME`
+#### `etl/sources/price_sqm.py` — MODIFIED (+7 / -3) 🟢 TAKE — E+W LAD prefix union
+
+**Rationale for all 9 files above:** All are mechanical "replace literal filter with shared helper" changes. Each opens the door to Welsh data flowing through the ingest. Net behaviour preserved for England; Welsh rows now accepted where the data exists. Safe, low-risk, high-leverage. TAKE as one batch after `etl/constants.py`.
+**Status:** `PENDING_REVIEW` (all 9 bundled)
+
+#### `etl/sources/water.py` — MODIFIED (+15 / -3) 🟢 TAKE
+**What Manus changed:** (1) Country-aware imports. (2) **Geometry fix**: wraps the incoming GeoJSON with `ST_Multi(ST_CollectionExtract(ST_MakeValid(ST_SetSRID(...)), 3))` to handle invalid multipolygons from the Defra water-company boundary source. Prevents `invalid geometry` errors at insert time.
+**Rationale:** The ST_MakeValid fix is a genuine bug fix independent of country-awareness. TAKE.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/lad_county_lookup.py` — MODIFIED (+32 / -11) 🟢 TAKE
+**What Manus changed:** Country-aware filter on `LAD25CD[0].isin(_SUPPORTED_PREFIXES)` instead of `startswith('E')`. No other logic change.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/place_boundaries.py` — MODIFIED (+22 / -13) 🟡 SELECTIVE
+**What Manus changed:** Replaces single `ENGLAND_BBOX` Overpass query with a multi-bbox query iterating `supported_overpass_bboxes()`. Larger Overpass payload.
+**Rationale:** Works, but increases Overpass API load. We should verify the Overpass query still fits under rate limits and query timeout when expanded to include Wales + Scotland bboxes.
+**Status:** `PENDING_REVIEW` (verify Overpass query budget)
+
+#### `etl/sources/boundaries.py` — MODIFIED (+28 / -12) 🟢 TAKE
+**What Manus changed:** `_fetch_all_features` helper now accepts `code_prefixes` tuple and filters the ONS Geography Portal feature collection accordingly. Called with `SUPPORTED_COUNTRY_PREFIXES` for both LAD and ward fetches. Builds `core_county_boundaries` by unioning LAD polygons for supported countries.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/governance.py` — MODIFIED (+51 / -24) 🟢 TAKE
+**What Manus changed:** Adds `_load_s114_rows()` helper reading from `etl/data/section_114_notices.csv` (provenance-backed) instead of hardcoded list. If the CSV is empty or missing, the table is cleared and tab_governance correctly reports "no data available" (instead of a stale hardcoded list).
+**Status:** `PENDING_REVIEW` (bundled with section_114_notices.csv scaffold + tab_governance withdrawal)
+
+### ETL — modified sources (feature-rich, non-trivial)
+
+#### `etl/sources/council_tax.py` — MODIFIED (+212 / -46) 🟢 TAKE
+**What Manus changed:**
+1. Adds Welsh StatsWales council-tax CSV path (`COUNCIL_TAX_WALES_PATH`, defaults to `etl/data/council/statswales_council_tax.csv`).
+2. Adds `_WELSH_BAND_MAP` with 9 bands (A–I) — Wales has band I which England doesn't.
+3. Splits ingest into `_read_england_rows()` + `_read_wales_rows()` and merges results.
+4. Validates Welsh authority codes via `is_supported_lad_code()` + W prefix check.
+5. Final table TRUNCATE + bulk insert combined rows.
+
+**Rationale:** Proper multi-country council tax support. Requires migration 009 (band_i column). If the Welsh CSV isn't present, the loader prints a message and leaves Wales unchanged — graceful degradation. TAKE.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/crime.py` — MODIFIED (+171 / -8) 🟢 TAKE
+**What Manus changed:**
+1. Adds ONS Wales 2011→2021 LSOA lookup download (`_WALES_LOOKUP_URL` from ONS hub).
+2. `_largest_remainder_allocation()` for splitting crime counts across multiple target LSOAs when one 2011 LSOA maps to multiple 2021 LSOAs (uses postcode weights from `core_postcodes`).
+3. `_load_wales_lsoa_crosswalk()` builds the per-source-code list of weighted targets.
+4. `_normalize_bulk_counts()` rewrites incoming police data from Welsh 2011 LSOA codes to the current 2021 LSOA geography using the crosswalk.
+5. Rest of the ingest loop unchanged but now normalises each row through the crosswalk.
+
+**Rationale:** Solves a genuine technical problem — the police data still uses 2011 LSOA codes for Wales, while our master boundary tables use 2021 LSOAs. Without crosswalk, Welsh crime rows get orphaned. The largest-remainder allocation is the correct method for integer count redistribution (standard technique). Dependencies: requires the lookup CSV download path to work and to be cached under `etl/data/`. TAKE.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/postcodes.py` — MODIFIED (+273 / -154) 🟡 SELECTIVE
+**What Manus changed:**
+1. Adds `_resolve_onspd_path()` — searches `~/.cache/onspd/`, `etl/data/`, ONSPD_PATH env var for an existing ZIP/CSV.
+2. Adds `_load_catchment_names()` and `_load_county_lookup()` helpers.
+3. Adds `_normalise_columns()` to handle both old and new ONSPD column names.
+4. Restructures the ingest loop around the resolved ONSPD source (ZIP vs extracted CSV).
+5. Supports `SUPPORTED_COUNTRY_PREFIXES` for country filtering.
+
+**Rationale:** The core-function is the same (stream ONSPD → insert postcodes), but the restructure is substantial. Our version has been heavily tuned. Need careful line-by-line comparison before merging — risk of regression in the foundational table. **RECOMMEND SELECTIVE**: cherry-pick the country filter + ZIP/CSV path resolution, skip the rest until tested end-to-end on our infra.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/sources/epc_domestic.py` — MODIFIED (+265 / -217) 🔴 SKIP
+**What Manus changed:** Rewrites the ingest path to support three modes: local ZIP (our current path), archive directory (year-sliced ZIPs), token-authenticated remote download from the official portal. Adds session management, discovery of year-sliced download links, retry/resume logic.
+**Recommendation:** 🔴 SKIP
+**Rationale:** Our version already ingests the full 29.2M-row bulk ZIP successfully. The year-sliced + token-auth paths are Manus-environment workarounds for a storage problem we don't have. The rewrite touches the core COPY loop and would risk regressing an ingest that took hours to get right. SKIP.
+**Status:** `PENDING_REVIEW`
+
+#### `etl/legacy/ingest_governance.py` — MODIFIED (+39 / -?)
+**What Manus changed:** Replaces hardcoded S114 notice list with CSV reader from `SECTION_114_PATH`. Empty CSV = empty table = honesty pass.
+**Recommendation:** 🟢 TAKE (bundled with section_114_notices.csv scaffold + governance.py provenance change + tab_governance withdrawal)
+**Status:** `PENDING_REVIEW`
+
+### ETL — new diagnostic/run scripts (7 files)
+
+Manus added these operational scripts:
+- `etl/run_boundaries_from_live_postcodes.py` — rebuild boundaries from live postcode table
+- `etl/run_crime_from_police_zip.py` — rerun crime ingest from cached police.uk ZIP
+- `etl/run_land_registry_wales_only.py` — run the new Welsh PPD source in isolation
+- `etl/run_postcodes_from_onspd.py` — run postcodes ingest from a specific ONSPD path
+- `etl/audit_wales_ppd_char_fields.py` — diagnostic: audit max field widths in Welsh PPD CSV to detect TEXT column overflow
+- `etl/diagnose_wales_ppd_failure.py` — diagnostic: replay a failing Welsh PPD batch with verbose logging
+- `etl/inspect_police_zip_coverage.py` — diagnostic: report LSOA coverage per month inside the police ZIP
+
+**Recommendation:** 🟢 TAKE (operational utilities, no risk)
+**Rationale:** These are dev-ops helpers, not ingest code. They don't change any ETL source behaviour. Taking them gives us quick rerun paths for Welsh + boundary + crime debugging. Zero risk.
+**Status:** `PENDING_REVIEW`
+
+---
+
