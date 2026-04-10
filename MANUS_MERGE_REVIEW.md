@@ -845,7 +845,7 @@ All 100+ file entries above have been reviewed. This section aggregates them int
 - **`backend/app/services/helpers.py`** — Take country metadata + entity type inference; SKIP geo contract v2 + `build_metric_contract()` dependency.
 - **`etl/sources/postcodes.py`** (+273) — Restructure is substantial; cherry-pick country filter + ZIP path resolution, skip the rest until end-to-end tested.
 - **`etl/sources/land_registry_wales_ppd.py`** (NEW) — Only needed if our existing national PPD ingest is missing Welsh rows. **ACTION REQUIRED: verify first.**
-- **`backend/app/services/tab_governance.py`** — Our working tree already has the multi-LAD refactor; reconcile with Manus and cherry-pick `band_i`.
+- ~~**`backend/app/services/tab_governance.py`** — Our working tree already has the multi-LAD refactor; reconcile with Manus and cherry-pick `band_i`.~~ ✅ **RESOLVED in Bundle D (`225cdd9`)** — took Manus version which is a superset (multi-LAD aggregation + scope-aware comparison + `band_i` column). Our working-tree multi-LAD refactor was equivalent; Manus additionally supported Welsh 9-band, so we took that.
 
 ### 🔴 SKIP (incompatible or low value)
 
@@ -860,8 +860,8 @@ All 100+ file entries above have been reviewed. This section aggregates them int
 
 1. **Verify Welsh transaction coverage** — Does our `core_property_transactions` currently contain any Welsh rows? If yes, `land_registry_wales_ppd` is redundant.
 2. **Verify Ofcom fttp/sfbb columns** — Does our current `core_broadband_lsoa` ingest already populate `fttp` and `sfbb`? If no, the new `full_fibre`/`superfast_broadband` metrics will return null.
-3. **Reconcile working-tree tab_governance.py** — Commit our existing multi-LAD refactor before merging Manus's version.
-4. **Verify `data_freshness.py` router parity** — Our untracked file may already implement this endpoint.
+3. ~~**Reconcile working-tree tab_governance.py** — Commit our existing multi-LAD refactor before merging Manus's version.~~ ✅ **RESOLVED in Bundle D (`225cdd9`)** — Manus version taken as superset; our multi-LAD refactor was equivalent and was replaced rather than merged (no work lost).
+4. ~~**Verify `data_freshness.py` router parity** — Our untracked file may already implement this endpoint.~~ ✅ **RESOLVED** — HEAD copy of `backend/app/routers/data_freshness.py` is byte-identical to `manus/main` (confirmed via `diff`). Already wired into `backend/app/main.py`.
 5. **Verify `epc_rating_c_plus` double-surfacing** — Does the frontend handle the same metric ID appearing in both Property and Environment tabs cleanly?
 6. **Confirm Overpass query budget** — Does `place_boundaries.py`'s expanded multi-bbox query still fit under Overpass rate limits?
 
