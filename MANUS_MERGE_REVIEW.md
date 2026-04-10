@@ -24,16 +24,18 @@ Tracks what has been physically merged into `main`. Survives compaction.
 
 | Bundle | Title | Commit | Status |
 |---|---|---|---|
-| A | Country metadata foundation | _in progress_ | 🟢 MERGED (pending commit) |
-| B | ETL country-aware refactor | — | ⏳ PENDING |
-| C | DfT Connectivity Metric phase-two | — | ⏳ PENDING |
-| D | Honesty pass (heuristic withdrawals) | — | ⏳ PENDING |
-| E | Map layer expansion (35 choropleth) | — | ⏳ PENDING |
-| F | Crime Wales crosswalk | — | ⏳ PENDING |
-| G | Resolve/Search UX | — | ⏳ PENDING |
-| H | Config cleanup | — | ⏳ PENDING |
-| I | Operational run scripts | — | ⏳ PENDING |
-| J | Frontend Results UX bundle | — | ⏳ PENDING |
+| A | Country metadata foundation | `7839e26` | ✅ MERGED |
+| B | ETL country-aware refactor | `9721233` | ✅ MERGED |
+| C | DfT Connectivity Metric phase-two | `3449838` | ✅ MERGED (incl. lifestyle heuristic withdrawals from D) |
+| D | Honesty pass (heuristic withdrawals) | `225cdd9` | ✅ MERGED |
+| E | Map layer expansion (35 choropleth) | `e9bb171` | ✅ MERGED |
+| F | Crime Wales crosswalk | `5f4a7a0` | ✅ MERGED |
+| G | Resolve/Search UX | `c37cdd6` | ✅ MERGED |
+| H | Config cleanup | `a9d590d` | ✅ MERGED |
+| I | Operational run scripts | `a4dd998` | ✅ MERGED |
+| J | Frontend Results UX bundle | `8412155` | ✅ MERGED (additive only — see note below) |
+
+**Bundle J scope note:** The "all-or-nothing" assumption in Bundle J was invalidated by the SKIP decision on `metric_registry.py`. Manus's `Results.tsx` / `MetricCard.tsx` / `Home.tsx` rewrite reads nested fields (`metric.registry`, `metric.capsule`, `metric.comparison`) which don't exist in our flat `Metric` interface. Resolution: take only the schema-neutral additive components (`DecisionModeSelector`, `SavedAreas` page+utility, `personalization.ts` adapted to our flat schema, `sectionSummary.ts` reading flat fields) plus the in-place enhancements to our existing `Results.tsx` / `MetricCard.tsx` / `PersonaScoreCard.tsx` / `App.tsx` that were already adapted in the previous session. Manus's `Results*` helper components (ResultsMapPanel/Shell/Section/Trust) were NOT taken — they depend on the nested schema. TypeScript `tsc --noEmit` clean.
 
 **Branch:** `main` (renamed from `redesign/premium-ui` per reflog HEAD@{8}).
 **Baseline pre-merge:** `e0166af` (merge review final plan commit).
