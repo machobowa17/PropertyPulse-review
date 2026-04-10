@@ -1,7 +1,7 @@
 """ETL: Tab 5 governance datasets → council control, S114, water companies.
 Sources:
-  - Open Council Data UK (CC-BY-SA) → core_council_control_lad
-  - Manual S114 notices (public record) → core_s114_notices
+  - Open Council Data UK source CSV → core_council_control_lad
+  - Provenance-backed Section 114 registry CSV → core_s114_notices
 """
 import os, csv, psycopg2
 from collections import defaultdict
@@ -9,6 +9,7 @@ from psycopg2.extras import execute_values
 
 DB = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty")
 DATA_DIR = os.path.expanduser("~/Desktop/Manus Take 2/etl/data")
+SECTION_114_PATH = os.environ.get("SECTION_114_PATH", os.path.join(DATA_DIR, "section_114_notices.csv"))
 
 def ingest_council_control():
     """Derive controlling party from councillor-level data."""
@@ -93,20 +94,25 @@ def ingest_council_control():
 
 
 def ingest_s114():
-    """Manual list of S114 notices (from IfG / public record)."""
+    """Load Section 114 notices from a provenance-backed registry CSV."""
     print("Ingesting S114 notices...")
-    # Hardcoded list — these are the only councils that have issued S114 notices
-    s114_data = [
-        ("E09000017", "Hillingdon", "2000-01-01"),
-        ("E09000012", "Hackney", "2000-10-17"),
-        ("E10000021", "Northamptonshire", "2018-02-01"),
-        ("E09000008", "Croydon", "2020-11-11"),
-        ("E06000039", "Slough", "2021-07-01"),
-        ("E06000034", "Thurrock", "2022-12-01"),
-        ("E07000217", "Woking", "2023-06-07"),
-        ("E08000025", "Birmingham", "2023-09-01"),
-        ("E06000018", "Nottingham", "2023-11-29"),
-    ]
+
+    s114_data = []
+    if os.path.exists(SECTION_114_PATH):
+        with open(SECTION_114_PATH, "r", encoding="utf-8", errors="replace") as f:
+            reader = csv.DictReader(f)
+            required = {"lad_code", "council_name", "notice_date"}
+            missing = required.difference(reader.fieldnames or [])
+            if missing:
+                raise ValueError("Section 114 registry missing required columns: " + ", ".join(sorted(missing)))
+            for row in reader:
+                lad_code = (row.get("lad_code") or "").strip()
+                council_name = (row.get("council_name") or "").strip()
+                notice_date = (row.get("notice_date") or "").strip()
+                if lad_code and council_name and notice_date:
+                    s114_data.append((lad_code, council_name, notice_date))
+    else:
+        print(f"  Section 114 registry not found at {SECTION_114_PATH}; loading 0 rows.")
 
     conn = psycopg2.connect(DB)
     cur = conn.cursor()
@@ -118,7 +124,8 @@ def ingest_s114():
         )
     """)
     cur.execute("TRUNCATE TABLE core_s114_notices")
-    execute_values(cur, "INSERT INTO core_s114_notices (lad_code, council_name, notice_date) VALUES %s", s114_data)
+    if s114_data:
+        execute_values(cur, "INSERT INTO core_s114_notices (lad_code, council_name, notice_date) VALUES %s", s114_data)
     conn.commit()
     cur.execute("SELECT COUNT(*) FROM core_s114_notices")
     print(f"  core_s114_notices: {cur.fetchone()[0]:,} rows")

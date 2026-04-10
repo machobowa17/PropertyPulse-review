@@ -405,6 +405,28 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     PARK_TYPES = ('Public Park Or Garden',)
     SPORT_TYPES = ('Golf Course', 'Tennis Court', 'Bowling Green', 'Other Sports Facility', 'Play Space', 'Playing Field')
 
+    # Parent averages for spatial metrics (pre-computed in core_lsoa_green_space)
+    parent_green = None
+    if parent_lads:
+        parent_green_res = await db.execute(
+            text("""
+                SELECT AVG(g.nearest_park_m) AS avg_park_m,
+                       AVG(g.parks_1km) AS avg_parks,
+                       AVG(g.green_cover_pct) AS avg_cover,
+                       AVG(g.sports_rec_1km) AS avg_sports
+                FROM core_lsoa_green_space g
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = g.lsoa_code
+                WHERE l.lad_code = ANY(:parent_lads)
+            """),
+            {"parent_lads": parent_lads},
+        )
+        parent_green = parent_green_res.mappings().first()
+
+    parent_park_m = round(float(parent_green["avg_park_m"])) if parent_green and parent_green["avg_park_m"] else None
+    parent_parks_1km = round(float(parent_green["avg_parks"]), 1) if parent_green and parent_green["avg_parks"] else None
+    parent_cover_pct = round(float(parent_green["avg_cover"]), 1) if parent_green and parent_green["avg_cover"] else None
+    parent_sports = round(float(parent_green["avg_sports"]), 1) if parent_green and parent_green["avg_sports"] else None
+
     if is_area:
         # Area mode: parks + sports within LSOA boundaries
         gs_within = await db.execute(
@@ -433,7 +455,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         ]
         metrics.append(metric(
             "green_spaces", "Parks & Gardens in Area",
-            len(park_rows), None, "count",
+            len(park_rows), parent_parks_1km, "count",
             details={
                 "total_hectares": round(park_ha, 1),
                 "parks": parks_list,
@@ -448,7 +470,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             sport_type_counts[st] = sport_type_counts.get(st, 0) + 1
         metrics.append(metric(
             "sports_recreation", "Sports & Recreation in Area",
-            len(sport_rows), None, "count",
+            len(sport_rows), parent_sports, "count",
             details={
                 "total_hectares": round(sport_ha, 1),
                 **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
@@ -502,7 +524,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
         metrics.append(metric(
             "green_cover", "Park Cover (1km)",
-            green_cover_pct, None, "%",
+            green_cover_pct, parent_cover_pct, "%",
             details={
                 "total_hectares": round(park_ha, 1),
                 "parks_within_1km": park_count,
@@ -511,7 +533,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
         metrics.append(metric(
             "nearest_park", "Nearest Park",
-            nearest_dist, None, "metres",
+            nearest_dist, parent_park_m, "metres",
             details={
                 "park_name": park_row["site_name"] if park_row else None,
                 "park_area_ha": round(float(park_row["area_ha"]), 1) if park_row and park_row["area_ha"] else None,
@@ -520,7 +542,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
         metrics.append(metric(
             "parks_1km", "Parks Within 1km",
-            park_count, None, "count",
+            park_count, parent_parks_1km, "count",
             details={"parks": parks_list} if parks_list else None,
         ))
 
@@ -550,7 +572,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         ]
         metrics.append(metric(
             "sports_recreation", "Sports & Recreation (1km)",
-            len(sport_rows), None, "count",
+            len(sport_rows), parent_sports, "count",
             details={
                 **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
                 "facilities": sport_list,
@@ -581,7 +603,9 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     # Parent EPC average (parent comparison group)
     epc_parent = await db.execute(
         text("""
-            SELECT AVG(avg_energy_score) as avg_score, AVG(pct_rating_a_b) as avg_ab
+            SELECT AVG(avg_energy_score) as avg_score,
+                   AVG(pct_rating_a_b) as avg_ab,
+                   AVG(pct_rating_c) as avg_c
             FROM core_epc_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -616,43 +640,26 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             details=epc_details,
         ))
 
-    # --- ESG Score (Composite 0-100) ---
-    # Computed from: EPC score (0-100, weight 25%), Air Quality (WHO compliance, 25%),
-    # Flood Risk (25%), Green Space accessibility (25%)
-    esg_components = []
-
-    # EPC component: score already 0-100 (higher = better)
-    if epc_row and epc_row["avg_energy_score"]:
-        esg_components.append(("epc", min(float(epc_row["avg_energy_score"]), 100)))
-
-    # Air quality: NO2 score (10 µg/m³ WHO limit → 100 at 0, 0 at 20+)
-    if 'local_no2' in locals():
-        aq_score = max(0, min(100, (20 - local_no2) / 20 * 100)) if local_no2 else 50
-        esg_components.append(("air_quality", round(aq_score, 1)))
-
-    # Flood risk: Very Low=100, Low=75, Medium=50, High=25
-    flood_scores = {"Very Low": 100, "Low": 75, "Medium": 50, "High": 25}
-    if 'flood_level' in locals():
-        esg_components.append(("flood_risk", flood_scores.get(flood_level, 50)))
-
-    # Green space: park within 500m=100, 1km=75, 2km=50, else 25
-    if 'nearest_dist' in locals() and nearest_dist is not None:
-        if nearest_dist <= 500:
-            gs_score = 100
-        elif nearest_dist <= 1000:
-            gs_score = 75
-        elif nearest_dist <= 2000:
-            gs_score = 50
-        else:
-            gs_score = 25
-        esg_components.append(("green_space", gs_score))
-
-    if esg_components:
-        esg_score = round(sum(s for _, s in esg_components) / len(esg_components), 1)
-        metrics.append(metric(
-            "esg_score", "ESG Score",
-            esg_score, None, "score /100",
-            details={k: v for k, v in esg_components},
-        ))
+        epc_c_plus_local = None
+        if epc_row["pct_rating_a_b"] is not None or epc_row["pct_rating_c"] is not None:
+            epc_c_plus_local = round(
+                float(epc_row["pct_rating_a_b"] or 0) + float(epc_row["pct_rating_c"] or 0),
+                1,
+            )
+        epc_c_plus_parent = None
+        if epc_parent_row and (epc_parent_row["avg_ab"] is not None or epc_parent_row["avg_c"] is not None):
+            epc_c_plus_parent = round(
+                float(epc_parent_row["avg_ab"] or 0) + float(epc_parent_row["avg_c"] or 0),
+                1,
+            )
+        if epc_c_plus_local is not None:
+            metrics.append(metric(
+                "epc_rating_c_plus", "EPC Rated C or Above",
+                epc_c_plus_local, epc_c_plus_parent, "%",
+                details={
+                    "pct_a_b": epc_details.get("pct_a_b"),
+                    "pct_c": epc_details.get("pct_c"),
+                },
+            ))
 
     return metrics

@@ -394,12 +394,43 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             for r in primary_list.mappings().all()
         ]
 
+        primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
+        primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
+
         metrics.append(metric(
             "primary_schools", "Primary Schools in Area",
-            int(prim_row["good_count"]) if prim_row else 0,
+            primary_good_count,
             None, "Outstanding/Good count",
-            details={"total_in_area": int(prim_row["total"]) if prim_row else 0, "schools": prim_list},
+            details={"total_in_area": primary_total, "schools": prim_list},
         ))
+
+        primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
+        if primary_quality is not None:
+            primary_parent_quality_result = await db.execute(
+                text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
+                        NULLIF(COUNT(*), 0) * 100 AS good_share
+                    FROM core_schools s
+                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                    WHERE s.phase = 'Primary' AND s.is_open = TRUE
+                      AND lb.lad_code = ANY(:parent_lads)
+                """),
+                {"parent_lads": parent_lads},
+            )
+            primary_parent_quality_row = primary_parent_quality_result.mappings().first()
+            metrics.append(metric(
+                "primary_school_quality",
+                "Primary School Quality",
+                primary_quality,
+                _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None,
+                "% Outstanding/Good",
+                details={
+                    "good_count": primary_good_count,
+                    "total_count": primary_total,
+                    "basis": "share of in-area primary schools rated Outstanding or Good",
+                },
+            ))
 
         # Secondary: within LSOA boundaries
         secondary = await db.execute(
@@ -436,12 +467,43 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             for r in secondary_list.mappings().all()
         ]
 
+        secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
+        secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
+
         metrics.append(metric(
             "secondary_schools", "Secondary Schools in Area",
-            int(sec_row["good_count"]) if sec_row else 0,
+            secondary_good_count,
             None, "Outstanding/Good count",
-            details={"total_in_area": int(sec_row["total"]) if sec_row else 0, "schools": sec_list},
+            details={"total_in_area": secondary_total, "schools": sec_list},
         ))
+
+        secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
+        if secondary_quality is not None:
+            secondary_parent_quality_result = await db.execute(
+                text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
+                        NULLIF(COUNT(*), 0) * 100 AS good_share
+                    FROM core_schools s
+                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                    WHERE s.phase = 'Secondary' AND s.is_open = TRUE
+                      AND lb.lad_code = ANY(:parent_lads)
+                """),
+                {"parent_lads": parent_lads},
+            )
+            secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
+            metrics.append(metric(
+                "secondary_school_quality",
+                "Secondary School Quality",
+                secondary_quality,
+                _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None,
+                "% Outstanding/Good",
+                details={
+                    "good_count": secondary_good_count,
+                    "total_count": secondary_total,
+                    "basis": "share of in-area secondary schools rated Outstanding or Good",
+                },
+            ))
 
     elif lat is not None:
         # Postcode mode: distance-based
@@ -480,12 +542,43 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             for r in primary_list.mappings().all()
         ]
 
+        primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
+        primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
+
         metrics.append(metric(
             "primary_schools", "Primary Schools (1 mile)",
-            int(prim_row["good_count"]) if prim_row else 0,
+            primary_good_count,
             None, "Outstanding/Good count",
-            details={"total_within_1mi": int(prim_row["total"]) if prim_row else 0, "schools": prim_list},
+            details={"total_within_1mi": primary_total, "schools": prim_list},
         ))
+
+        primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
+        if primary_quality is not None:
+            primary_parent_quality_result = await db.execute(
+                text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
+                        NULLIF(COUNT(*), 0) * 100 AS good_share
+                    FROM core_schools s
+                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                    WHERE s.phase = 'Primary' AND s.is_open = TRUE
+                      AND lb.lad_code = ANY(:parent_lads)
+                """),
+                {"parent_lads": parent_lads},
+            )
+            primary_parent_quality_row = primary_parent_quality_result.mappings().first()
+            metrics.append(metric(
+                "primary_school_quality",
+                "Primary School Quality",
+                primary_quality,
+                _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None,
+                "% Outstanding/Good",
+                details={
+                    "good_count": primary_good_count,
+                    "total_count": primary_total,
+                    "basis": "share of primary schools within 1 mile rated Outstanding or Good",
+                },
+            ))
 
         # Secondary: within 3 miles (4828m)
         secondary = await db.execute(
@@ -522,12 +615,43 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             for r in secondary_list.mappings().all()
         ]
 
+        secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
+        secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
+
         metrics.append(metric(
             "secondary_schools", "Secondary Schools (3 miles)",
-            int(sec_row["good_count"]) if sec_row else 0,
+            secondary_good_count,
             None, "Outstanding/Good count",
-            details={"total_within_3mi": int(sec_row["total"]) if sec_row else 0, "schools": sec_list},
+            details={"total_within_3mi": secondary_total, "schools": sec_list},
         ))
+
+        secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
+        if secondary_quality is not None:
+            secondary_parent_quality_result = await db.execute(
+                text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
+                        NULLIF(COUNT(*), 0) * 100 AS good_share
+                    FROM core_schools s
+                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                    WHERE s.phase = 'Secondary' AND s.is_open = TRUE
+                      AND lb.lad_code = ANY(:parent_lads)
+                """),
+                {"parent_lads": parent_lads},
+            )
+            secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
+            metrics.append(metric(
+                "secondary_school_quality",
+                "Secondary School Quality",
+                secondary_quality,
+                _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None,
+                "% Outstanding/Good",
+                details={
+                    "good_count": secondary_good_count,
+                    "total_count": secondary_total,
+                    "basis": "share of secondary schools within 3 miles rated Outstanding or Good",
+                },
+            ))
 
     # --- IMD Deprivation ---
     imd_local = await db.execute(
@@ -550,8 +674,15 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     imd_parent = await db.execute(
         text("""
-            SELECT AVG(imd_score) as avg_score, AVG(imd_decile) as avg_decile,
-                   AVG(crime_score) as avg_crime
+            SELECT AVG(imd_score) as avg_score,
+                   AVG(imd_decile) as avg_decile,
+                   AVG(income_score) as avg_income,
+                   AVG(employment_score) as avg_employment,
+                   AVG(education_score) as avg_education,
+                   AVG(health_score) as avg_health,
+                   AVG(crime_score) as avg_crime,
+                   AVG(barriers_score) as avg_barriers,
+                   AVG(living_env_score) as avg_living_environment
             FROM core_imd_lsoa i
             JOIN core_lsoa_boundaries l ON l.lsoa_code = i.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -579,6 +710,34 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 "living_environment": _r(imd_row["living_env_score"]),
             },
         ))
+
+        deprivation_domains = [
+            ("deprivation_income", "Income Deprivation", "income_score", "avg_income"),
+            ("deprivation_employment", "Employment Deprivation", "employment_score", "avg_employment"),
+            ("deprivation_education", "Education Deprivation", "education_score", "avg_education"),
+            ("deprivation_health", "Health Deprivation", "health_score", "avg_health"),
+            ("deprivation_crime", "Crime Deprivation", "crime_score", "avg_crime"),
+            ("deprivation_barriers", "Barriers to Housing and Services", "barriers_score", "avg_barriers"),
+            ("deprivation_living_environment", "Living Environment Deprivation", "living_env_score", "avg_living_environment"),
+        ]
+        for metric_id, label, local_key, parent_key in deprivation_domains:
+            local_value = _r(imd_row[local_key])
+            parent_value = _r(imd_parent_row[parent_key]) if imd_parent_row else None
+            if local_value is None:
+                continue
+            metrics.append(metric(
+                metric_id,
+                label,
+                local_value,
+                parent_value,
+                "domain score (lower=less deprived)",
+                details={
+                    "domain": label,
+                    "overall_imd_score": _r(imd_row["imd_score"]),
+                    "overall_imd_decile": int(imd_row["imd_decile"]) if imd_row["imd_decile"] else None,
+                    "parent_avg_imd_decile": round(float(imd_parent_row["avg_decile"]), 1) if imd_parent_row and imd_parent_row["avg_decile"] else None,
+                },
+            ))
 
     # --- NHS Facilities nearby / in area ---
     if is_area:
@@ -700,65 +859,6 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 "type_summary": type_summary,
                 "facilities": nhs_list,
             } if (nhs_counts or nhs_list) else None,
-        ))
-
-    # --- Area Persona / Top Match ---
-    # Bible: classify area based on demographics, housing, density
-    demo = await db.execute(
-        text("""
-            SELECT AVG(population_density) as population_density,
-                   AVG(median_age) as median_age,
-                   AVG(pct_families) as pct_families,
-                   AVG(pct_singles) as pct_singles,
-                   AVG(pct_age_0_15) as pct_age_0_15,
-                   AVG(pct_age_16_64) as pct_age_16_64,
-                   AVG(pct_age_65_plus) as pct_age_65_plus,
-                   AVG(pct_owned) as pct_owned,
-                   AVG(pct_private_rent) as pct_private_rent,
-                   AVG(pct_detached) as pct_detached,
-                   AVG(pct_flat) as pct_flat
-            FROM core_census_lsoa
-            WHERE lsoa_code = ANY(:codes)
-        """),
-        {"codes": lsoa_codes},
-    )
-    demo_row = demo.mappings().first()
-    if demo_row:
-        density = float(demo_row["population_density"] or 0)
-        med_age = float(demo_row["median_age"] or 35)
-        pct_fam = float(demo_row["pct_families"] or 0)
-        pct_singles = float(demo_row["pct_singles"] or 0)
-        pct_owned = float(demo_row["pct_owned"] or 0)
-        pct_rent = float(demo_row["pct_private_rent"] or 0)
-        pct_flat = float(demo_row["pct_flat"] or 0)
-        pct_65 = float(demo_row["pct_age_65_plus"] or 0)
-        pct_0_15 = float(demo_row["pct_age_0_15"] or 0)
-
-        # Scoring: compute scores for each persona type
-        scores = {}
-        scores["Urban Professional Hub"] = (
-            min(density / 100, 10) + (10 if pct_singles > 40 else pct_singles / 5)
-            + (10 if pct_rent > 40 else pct_rent / 5) + (10 if pct_flat > 50 else pct_flat / 6)
-        )
-        scores["Family Suburb"] = (
-            (10 if pct_fam > 70 else pct_fam / 8) + (10 if pct_owned > 70 else pct_owned / 8)
-            + (10 if pct_0_15 > 20 else pct_0_15 / 2.5) + (10 if density < 3000 else max(0, 10 - density / 1000))
-        )
-        scores["Retirement Haven"] = (
-            (10 if pct_65 > 30 else pct_65 / 3.5) + (10 if med_age > 55 else med_age / 6)
-            + (10 if pct_owned > 70 else pct_owned / 8) + (10 if density < 2000 else max(0, 10 - density / 800))
-        )
-        scores["Student Quarter"] = (
-            (10 if pct_rent > 50 else pct_rent / 6) + (10 if pct_singles > 50 else pct_singles / 6)
-            + (10 if med_age < 28 else max(0, 10 - (med_age - 20) / 3)) + min(density / 150, 10)
-        )
-        scores["Mixed Community"] = 20  # baseline for areas that don't strongly match
-
-        top_persona = max(scores, key=scores.get)
-        metrics.append(metric(
-            "area_persona", "Area Persona",
-            top_persona, None, "persona",
-            details={k: round(v, 1) for k, v in sorted(scores.items(), key=lambda x: -x[1])},
         ))
 
     return metrics
