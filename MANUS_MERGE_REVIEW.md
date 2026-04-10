@@ -126,3 +126,58 @@ Sessions/docs/logs files are NOT reviewed — they're historical artifacts, not 
 **Rationale:** This is Manus's alternative registry schema. Adopting it creates two sources of truth (theirs at `services/metric_registry.py`, ours at `metric_registry.py`) with incompatible field names. Our flat registry already has `decision_question`, `interpretation_direction`, `quality_notes`, `metric_family`, `source_tables`, `supports_parent`, `supports_trend`, `map_binding`. The features `build_metric_contract` adds (nested capsule copy, structured trend summary, quality_flags) can be added directly to our existing registry and helpers.metric() if we want them — without adopting the whole parallel file.
 **Status:** `PENDING_REVIEW`
 
+### Backend — routers
+
+#### `backend/app/routers/area.py` — MODIFIED (+619 / -25, massive)
+**What Manus changed:**
+1. **`AREA_CACHE_VERSION = "v8"` + `MAP_CACHE_VERSION = "v2"`** — adds explicit cache versioning so schema changes invalidate caches automatically.
+2. **Geo contract v2 accessor helpers**: `_geo`, `_geo_entity`, `_geo_local_scope`, `_geo_comparison_scope`, `_geo_display_geometry`, `_session_centroid`, `_session_boundary_source`, `_session_boundary_id`, `_session_local_scope_type`, `_session_entity_name`, `_session_parent_name`, `_session_parent_lads`. These read from the new `geo` dict on sessions with fallback to flat session fields.
+3. **Scope-based cache key** (`_area_scope_cache_key`): hashes local_scope + comparison_scope + display_geometry + lsoa_codes_hash → shared cache key so multiple sessions pointing at the same logical scope reuse each other's cached tab results. **Real performance win.**
+4. **AQ-history county aggregation**: `WHERE lad_code = ANY(:lads)` + `GROUP BY year` + `AVG(...)` when `boundary_source == "county"`. (Already in our version of this file from prior partial merge.)
+5. **Comparable areas county support**: uses new `find_comparable_scopes()` when `len(local_lads) > 1` instead of just returning `unsupported_scope`. Actually computes county-level similarity. Adds `lad_count`, `scope_name`, `scope_type`, `anchor_lad_code` to the target dict.
+6. **Map POIs expansion** (HUGE): adds NHS facilities point layer (Community tab), green space / parks / sports recreation (Environment tab), OSM amenities (Lifestyle tab). All three support both area mode (intersect with lsoa_codes) and radius mode (2km NHS, 1500m green/amenities).
+7. **Choropleth layers expansion** (HUGE): goes from 3 layers (`avg_price`, `price_per_sqft`, `epc_score`) to **35 layers**. New layers: `population_density`, `median_age`, `household_composition`, `good_health`, `economically_active`, `degree_educated`, `no_car`, `born_abroad`, `wfh`, `housing_tenure`, `housing_type`, `household_size`, `deprivation` (+ 7 domain breakdowns), `broadband`, `full_fibre`, `superfast_broadband`, `mobile_coverage`, `mobile_4g_indoor`, `mobile_5g_outdoor`, `air_quality_no2`, `air_quality_pm25`, `council_tax`, `median_earnings`, `median_rent`. Each has its own SQL, unit, grain metadata, and optional note.
+8. **Metadata on choropleth response**: `grain` ("lsoa" / "lad_proxy" / "grid_to_lsoa") and `note` (caveat string) — honesty about when a LSOA-level heatmap is actually a LAD-level value repeated.
+
+**Recommendation:** 🟢 TAKE (mostly) — but with a dependency chain
+**Rationale:**
+- Scope-based cache key: pure performance win, independent of other changes. TAKE.
+- AQ-history county aggregation: already in our codebase; keep ours.
+- Comparable areas county support: richer than our "unsupported_scope" fallback. TAKE (requires `find_comparable_scopes` from `comparable_areas.py`).
+- Map POIs expansion (NHS, green space, OSM amenities): pure enrichment, no dependencies. TAKE.
+- Choropleth 35 layers: **biggest single UX win in the entire Manus diff.** 35 layers vs our 3. Strongly TAKE. All SQL is straightforward and reads from tables we already have. Requires frontend MapLayerControl to expose them.
+- Choropleth grain/note metadata: honesty-pass, clean win. TAKE.
+- Geo contract v2 accessor helpers: required iff we take helpers.py geo contract v2; otherwise replace with our flat session reads. The helpers fall back to flat fields gracefully, so taking area.py without helpers.py works BUT misses the richer entity/scope data.
+
+**Status:** `PENDING_REVIEW`
+
+#### `backend/app/routers/commute.py` — MODIFIED (+12 / -60, total withdrawal)
+**What Manus changed:** Removes the entire haversine-based commute estimator (modes, speeds, wait times, route factor heuristics). Endpoint now returns `503 COMMUTE_ESTIMATOR_WITHDRAWN` with a message that a source-backed replacement is being built. Part of the "honesty pass."
+**Recommendation:** 🟡 SELECTIVE — user decision
+**Rationale:** This is a product decision, not a code decision. The haversine estimator IS heuristic (fixed speeds × straight-line × road factor + wait time). But it provides a useful rough number users value. Three options:
+  (a) Withdraw it like Manus did (honesty pass)
+  (b) Keep it with a big "approximate" disclaimer in the UI
+  (c) Replace with DfT Connectivity Metric 2025 + live TfL/Transport APIs (bigger scope)
+Manus chose (a) AND built (c) partway via `connectivity_metric.py` + `tab_lifestyle.commuter_connectivity`. Bundle this with the DfT connectivity decision.
+**Status:** `PENDING_REVIEW` (bundled with DfT connectivity decision)
+
+#### `backend/app/routers/resolve.py` — MODIFIED (+113 / -21)
+**What Manus changed:**
+1. Adds `_coverage_metadata()` returning `live_countries`, `partial_countries`, `planned_countries`, `parked_countries`, and a long `coverage_message` describing UK-wide rollout status.
+2. Adds `TYPE_LABELS` dict mapping `postcode`/`ward`/`borough`/etc. → human-readable labels.
+3. Adds `_format_suggestion()` that enriches each raw suggestion row with `display_label`, `display_type`, `display_context` (joined breadcrumb), `selection_value`, and normalized `secondary` field.
+4. Enriches SQL for all suggestion queries (postcode, postcode_district, lad, county, place, ward, contains, trigram) to return `comparison` and `secondary` columns for breadcrumb rendering.
+5. `resolve` endpoint now includes `coverage` metadata in every response and also includes `geo` dict when session was built.
+6. `_build_and_store_session` now returns `(session_key, lsoa_codes, session)` tuple (was 2-tuple), so the resolve endpoint can echo the canonical geo contract back to the client.
+7. Passes `entity_type`, `entity_name`, `query_text` to `make_lsoa_session`.
+
+**Recommendation:** 🟢 TAKE (mostly)
+**Rationale:**
+- `_coverage_metadata()` and coverage-in-response: pure additive, good UX. TAKE.
+- `_format_suggestion()` + display fields + comparison/secondary columns: makes suggestion dropdown much richer (breadcrumbs visible in the autocomplete). Pure win. TAKE.
+- TYPE_LABELS helper: TAKE.
+- Session 3-tuple return + `geo` echo: dependent on helpers.py geo contract v2. If we take helpers.py partially, the geo echo degrades gracefully (returns `None`). Safe to TAKE.
+- entity_type/entity_name/query_text params: same dependency on helpers.py. Safe to TAKE.
+
+**Status:** `PENDING_REVIEW`
+
