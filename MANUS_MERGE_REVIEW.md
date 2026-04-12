@@ -842,9 +842,9 @@ All 100+ file entries above have been reviewed. This section aggregates them int
 
 ### 🟡 SELECTIVE (partial take with caveats)
 
-- **`backend/app/services/helpers.py`** — Take country metadata + entity type inference; SKIP geo contract v2 + `build_metric_contract()` dependency.
-- **`etl/sources/postcodes.py`** (+273) — Restructure is substantial; cherry-pick country filter + ZIP path resolution, skip the rest until end-to-end tested.
-- **`etl/sources/land_registry_wales_ppd.py`** (NEW) — Only needed if our existing national PPD ingest is missing Welsh rows. **ACTION REQUIRED: verify first.**
+- ~~**`backend/app/services/helpers.py`** — Take country metadata + entity type inference; SKIP geo contract v2 + `build_metric_contract()` dependency.~~ ✅ **RESOLVED (`b407a78`)** — Cherry-picked: infer_country_from_geo_codes fallback in get_parent_lad_info + core_lad_boundaries for county comparison. Skipped: metric() rewrite (metric_registry dep) + geo contract v2.
+- ~~**`etl/sources/postcodes.py`** (+273) — Restructure is substantial; cherry-pick country filter + ZIP path resolution, skip the rest until end-to-end tested.~~ ✅ **RESOLVED (`2944301`)** — Took full Manus rewrite (working tree was already identical). ZIP support, flexible column names, SUPPORTED_COUNTRY_PREFIXES filter, ON CONFLICT DO UPDATE.
+- ~~**`etl/sources/land_registry_wales_ppd.py`** (NEW) — Only needed if our existing national PPD ingest is missing Welsh rows. **ACTION REQUIRED: verify first.**~~ ✅ **SKIPPED** — AR1 confirmed national PPD covers E+W. land_registry_full.py has no country filter; Welsh rows land once core_postcodes has Welsh entries. This incremental loader is redundant for our pipeline.
 - ~~**`backend/app/services/tab_governance.py`** — Our working tree already has the multi-LAD refactor; reconcile with Manus and cherry-pick `band_i`.~~ ✅ **RESOLVED in Bundle D (`225cdd9`)** — took Manus version which is a superset (multi-LAD aggregation + scope-aware comparison + `band_i` column). Our working-tree multi-LAD refactor was equivalent; Manus additionally supported Welsh 9-band, so we took that.
 
 ### 🔴 SKIP (incompatible or low value)
