@@ -359,9 +359,9 @@ async def make_lsoa_session(
     if county_name_kwarg and parent_name and parent_name.lower() == county_name_kwarg.lower():
         from sqlalchemy import text as sa_text
         all_lads_result = await db.execute(
-            sa_text("SELECT lad_code FROM core_lad_county_lookup")
+            sa_text("SELECT lad_code FROM core_lad_boundaries WHERE lad_code IS NOT NULL")
         )
-        parent_lad_codes = sorted({r["lad_code"] for r in all_lads_result.mappings().all()})
+        parent_lad_codes = sorted({r["lad_code"] for r in all_lads_result.mappings().all() if r["lad_code"]})
         parent_name = "England"
 
     # Deterministic session key
@@ -432,7 +432,8 @@ async def get_parent_lad_info(db, lad_code: str):
     """
     from sqlalchemy import text
     if not lad_code or lad_code == "_":
-        return [], "England"
+        fallback_country, _ = infer_country_from_geo_codes(lad_code, fallback="England")
+        return [], fallback_country
     result = await db.execute(
         text("""
             SELECT l2.lad_code, l1.parent_comparison
@@ -444,7 +445,8 @@ async def get_parent_lad_info(db, lad_code: str):
     )
     rows = result.mappings().all()
     if not rows:
-        return [], "England"
+        fallback_country, _ = infer_country_from_geo_codes(lad_code, fallback="England")
+        return [], fallback_country
     parent_name = rows[0]["parent_comparison"]
     parent_lad_codes = [r["lad_code"] for r in rows]
     return parent_lad_codes, parent_name
