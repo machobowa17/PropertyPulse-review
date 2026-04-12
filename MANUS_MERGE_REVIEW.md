@@ -858,12 +858,12 @@ All 100+ file entries above have been reviewed. This section aggregates them int
 
 ### Action Required Before Merge
 
-1. **Verify Welsh transaction coverage** — Does our `core_property_transactions` currently contain any Welsh rows? If yes, `land_registry_wales_ppd` is redundant.
-2. **Verify Ofcom fttp/sfbb columns** — Does our current `core_broadband_lsoa` ingest already populate `fttp` and `sfbb`? If no, the new `full_fibre`/`superfast_broadband` metrics will return null.
+1. ~~**Verify Welsh transaction coverage** — Does our `core_property_transactions` currently contain any Welsh rows? If yes, `land_registry_wales_ppd` is redundant.~~ ✅ **RESOLVED** — DB is England-only (28.9M E-prefix rows, 0 Welsh). National PPD covers E+W but Welsh rows are dropped at ingest because `core_postcodes` is E-only. Post-Bundle-B code includes W+S in SUPPORTED_COUNTRY_PREFIXES — just needs re-ingest. `land_registry_wales_ppd.py` is redundant (national PPD already covers Wales).
+2. ~~**Verify Ofcom fttp/sfbb columns** — Does our current `core_broadband_lsoa` ingest already populate `fttp` and `sfbb`? If no, the new `full_fibre`/`superfast_broadband` metrics will return null.~~ ✅ **RESOLVED** — `core_broadband_postcode` has `fttp_pct` and `superfast_pct` (1.73M rows, 100% non-null). `core_broadband_lad` has `full_fibre_pct` and `superfast_pct`. `tab_lifestyle.py` queries both correctly. Metrics will render.
 3. ~~**Reconcile working-tree tab_governance.py** — Commit our existing multi-LAD refactor before merging Manus's version.~~ ✅ **RESOLVED in Bundle D (`225cdd9`)** — Manus version taken as superset; our multi-LAD refactor was equivalent and was replaced rather than merged (no work lost).
 4. ~~**Verify `data_freshness.py` router parity** — Our untracked file may already implement this endpoint.~~ ✅ **RESOLVED** — HEAD copy of `backend/app/routers/data_freshness.py` is byte-identical to `manus/main` (confirmed via `diff`). Already wired into `backend/app/main.py`.
-5. **Verify `epc_rating_c_plus` double-surfacing** — Does the frontend handle the same metric ID appearing in both Property and Environment tabs cleanly?
-6. **Confirm Overpass query budget** — Does `place_boundaries.py`'s expanded multi-bbox query still fit under Overpass rate limits?
+5. ~~**Verify `epc_rating_c_plus` double-surfacing** — Does the frontend handle the same metric ID appearing in both Property and Environment tabs cleanly?~~ ✅ **RESOLVED** — Each tab fetched independently per `activeTab`. Same metric ID in two tabs means it renders in both views — correct UX (EPC relevant to both property valuation and environment). Environment tab includes `pct_a_b`/`pct_c` breakdown in details; Property tab doesn't. No dedup needed.
+6. ~~**Confirm Overpass query budget** — Does `place_boundaries.py`'s expanded multi-bbox query still fit under Overpass rate limits?~~ ✅ **RESOLVED** — 3 bboxes (E/W/S) × 2 clauses each = 6 union clauses in one query with `[timeout:600]`. England ~15-25k relations + Wales/Scotland ~3-5k more. Well under Overpass limits. `pipeline.py` runs sources sequentially so no concurrent Overpass conflicts.
 
 ### Final Recommendation
 
