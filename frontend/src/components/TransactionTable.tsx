@@ -12,16 +12,16 @@ const TYPE_LABELS: Record<string, string> = {
   D: 'Detached', S: 'Semi', T: 'Terraced', F: 'Flat',
 };
 
-const SORT_COLUMNS = [
-  { key: 'date', label: 'Date', align: 'left' as const },
-  { key: 'address', label: 'Address', align: 'left' as const, sortable: false },
-  { key: 'price', label: 'Price', align: 'right' as const },
-  { key: 'type', label: 'Type', align: 'center' as const },
-  { key: 'beds', label: 'Beds (est.)\u00B9', align: 'center' as const },
-  { key: 'size', label: 'Size', align: 'right' as const },
-  { key: 'tenure', label: 'Tenure', align: 'center' as const },
-  { key: 'epc', label: 'EPC', align: 'center' as const },
-] as const;
+const SORT_COLUMNS: ReadonlyArray<{ key: string; label: string; align: 'left' | 'right' | 'center'; sortable?: boolean }> = [
+  { key: 'date', label: 'Date', align: 'left' },
+  { key: 'address', label: 'Address', align: 'left', sortable: false },
+  { key: 'price', label: 'Price', align: 'right' },
+  { key: 'type', label: 'Type', align: 'center' },
+  { key: 'beds', label: 'Beds (est.)\u00B9', align: 'center' },
+  { key: 'size', label: 'Size', align: 'right' },
+  { key: 'tenure', label: 'Tenure', align: 'center' },
+  { key: 'epc', label: 'EPC', align: 'center' },
+];
 
 interface Props {
   sessionKey: string;

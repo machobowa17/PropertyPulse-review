@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.errors import http_error
-from app.services.helpers import get_lsoa_session
+from app.services.session_helpers import require_session
 
 router = APIRouter()
 
@@ -25,12 +25,10 @@ async def commute(
     del destination
     del db
 
-    sess = await get_lsoa_session(session_key)
-    if not sess:
-        raise http_error(410, "SESSION_EXPIRED", "Session expired — please search again")
+    sess = await require_session(session_key)
 
     raise http_error(
-        503,
+        501,
         "COMMUTE_ESTIMATOR_WITHDRAWN",
-        "The commute estimator is temporarily unavailable while a source-backed replacement is implemented.",
+        "The commute estimator is not yet implemented. A source-backed replacement is planned.",
     )

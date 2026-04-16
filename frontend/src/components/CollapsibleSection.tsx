@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 interface Props {
@@ -10,6 +9,7 @@ interface Props {
 
 export default function CollapsibleSection({ title, defaultOpen = true, children }: Props) {
   const [open, setOpen] = useState(defaultOpen);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
@@ -26,22 +26,16 @@ export default function CollapsibleSection({ title, defaultOpen = true, children
         />
       </button>
 
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="content"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-1 border-t border-divider/50">
-              {children}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div
+        className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+        style={{ gridTemplateRows: open ? '1fr' : '0fr', opacity: open ? 1 : 0 }}
+      >
+        <div ref={contentRef} className="overflow-hidden">
+          <div className="px-4 pb-4 pt-1 border-t border-divider/50">
+            {children}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

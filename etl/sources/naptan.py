@@ -19,6 +19,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES, point_in_supported_country_bbox
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -107,14 +108,14 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['transport_stops']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['transport_stops']}_new (LIKE {TABLE_NAMES['transport_stops']} INCLUDING ALL)")
     conn.commit()
 
     if rows:
         execute_values(
             cur,
             f"""
-            INSERT INTO {TABLE_NAMES['transport_stops']}
+            INSERT INTO {TABLE_NAMES['transport_stops']}_new
                 (atco_code, stop_name, stop_type, latitude, longitude, lad_code)
             VALUES %s
             ON CONFLICT DO NOTHING
@@ -127,12 +128,14 @@ def run(db_url: str) -> int:
     # Build PostGIS geometry
     cur.execute(
         f"""
-        UPDATE {TABLE_NAMES['transport_stops']}
+        UPDATE {TABLE_NAMES['transport_stops']}_new
         SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
         WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND geom IS NULL
         """
     )
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['transport_stops'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['transport_stops']}")
     count = cur.fetchone()[0]

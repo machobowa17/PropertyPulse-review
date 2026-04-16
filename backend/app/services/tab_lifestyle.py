@@ -276,7 +276,7 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
         band_num = int(band[0]) if band and band[0].isdigit() else 0
         metrics.append(metric(
             "ptal_score", "Public Transport Accessibility (PTAL)",
-            band, None, "level",
+            band, parent_ptai, "level",
             details={
                 "ptai_score": round(ptai_val, 1) if ptai_val else None,
                 "band": band,

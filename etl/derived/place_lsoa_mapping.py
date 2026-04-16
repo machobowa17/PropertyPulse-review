@@ -25,6 +25,7 @@ Expected row count (verify after rebuild):
 import psycopg2
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -35,7 +36,7 @@ METADATA = {
     "description":    "Spatial join core_place_names × core_lsoa_boundaries → core_place_lsoa_mapping + _town.",
     "schedule":       SCHEDULE_ANNUAL,
     "depends_on":     ["place_names", "boundaries"],
-    "tables_written": [TABLE_NAMES["place_lsoa_mapping"], TABLE_NAMES["place_lsoa_mapping_town"]],
+    "tables_written": [TABLE_NAMES["place_lsoa_mapping"], TABLE_NAMES["place_lsoa_mapping_town"], TABLE_NAMES["place_boundaries_union"]],
     "cache_key_patterns": ["lsoa_sess:*", "area:*", "resolve:*"],
     "expected_row_range": (45_000, 65_000),
 }
@@ -53,22 +54,25 @@ def run(db_url: str) -> int:
     Rebuild core_place_lsoa_mapping and core_place_lsoa_mapping_town.
 
     Steps:
-    1. Truncate both tables.
+    1. Create _new staging tables for place_lsoa_mapping and place_lsoa_mapping_town.
     2. Containment pass: LSOA centroids within core_place_boundaries polygons → method='containment'.
     3. Voronoi pass: nearest core_place_names entry per LSOA in same LAD → method='voronoi'.
     4. Town table: nearest City/Town per LSOA in same LAD.
-    5. Return row count in core_place_lsoa_mapping.
+    5. Blue/green swap mapping tables into place.
+    6. Create and populate place_boundaries_union_new from the swapped live data.
+    7. Blue/green swap place_boundaries_union.
+    8. Return row count in core_place_lsoa_mapping.
     """
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
     cur  = conn.cursor()
 
     # ------------------------------------------------------------------
-    # Truncate
+    # Create staging tables for blue/green swap
     # ------------------------------------------------------------------
-    print("  Truncating place LSOA mapping tables...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['place_lsoa_mapping']}")
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['place_lsoa_mapping_town']}")
+    print("  Creating place LSOA mapping staging tables...", flush=True)
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['place_lsoa_mapping']}_new (LIKE {TABLE_NAMES['place_lsoa_mapping']} INCLUDING ALL)")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['place_lsoa_mapping_town']}_new (LIKE {TABLE_NAMES['place_lsoa_mapping_town']} INCLUDING ALL)")
     conn.commit()
 
     # ------------------------------------------------------------------
@@ -77,7 +81,7 @@ def run(db_url: str) -> int:
     print("  Containment pass (LSOA centroid within OSM place polygon)...", flush=True)
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['place_lsoa_mapping']} (place_name, place_type, lad_code, lsoa_code, method)
+        INSERT INTO {TABLE_NAMES['place_lsoa_mapping']}_new (place_name, place_type, lad_code, lsoa_code, method)
         SELECT DISTINCT
             pb.place_name,
             COALESCE(pn.place_type, pb.place_type)  AS place_type,
@@ -106,7 +110,7 @@ def run(db_url: str) -> int:
     print("  Voronoi pass (nearest place in LAD per LSOA)...", flush=True)
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['place_lsoa_mapping']} (place_name, place_type, lad_code, lsoa_code, method)
+        INSERT INTO {TABLE_NAMES['place_lsoa_mapping']}_new (place_name, place_type, lad_code, lsoa_code, method)
         SELECT DISTINCT ON (lb.lsoa_code)
             pn.place_name,
             pn.place_type,
@@ -137,7 +141,7 @@ def run(db_url: str) -> int:
     print("  Building town/city LSOA mapping (core_place_lsoa_mapping_town)...", flush=True)
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['place_lsoa_mapping_town']} (lsoa_code, lad_code, place_name, place_type)
+        INSERT INTO {TABLE_NAMES['place_lsoa_mapping_town']}_new (lsoa_code, lad_code, place_name, place_type)
         SELECT DISTINCT ON (lb.lsoa_code)
             lb.lsoa_code,
             lb.lad_code,
@@ -160,6 +164,33 @@ def run(db_url: str) -> int:
     town_count = cur.rowcount
     conn.commit()
     print(f"    Inserted {town_count:,} town mapping rows", flush=True)
+
+    # Swap mapping tables into place so boundaries_union SELECT reads live data
+    blue_green_swap(conn, TABLE_NAMES['place_lsoa_mapping'])
+    blue_green_swap(conn, TABLE_NAMES['place_lsoa_mapping_town'])
+
+    # ------------------------------------------------------------------
+    # Pre-compute ST_Union per (place_name, lad_code) for fast boundary lookup.
+    # Eliminates on-the-fly ST_Union on the /boundary endpoint under load.
+    # ------------------------------------------------------------------
+    print("  Pre-computing place boundary unions...", flush=True)
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['place_boundaries_union']}_new (LIKE {TABLE_NAMES['place_boundaries_union']} INCLUDING ALL)")
+    conn.commit()
+    cur.execute(
+        f"""
+        INSERT INTO {TABLE_NAMES['place_boundaries_union']}_new (place_name, lad_code, geom)
+        SELECT m.place_name, m.lad_code,
+               ST_Union(lb.geom) AS geom
+        FROM {TABLE_NAMES['place_lsoa_mapping']} m
+        JOIN {TABLE_NAMES['lsoa_boundaries']} lb ON lb.lsoa_code = m.lsoa_code
+        GROUP BY m.place_name, m.lad_code
+        """
+    )
+    union_count = cur.rowcount
+    conn.commit()
+    print(f"    Inserted {union_count:,} place boundary union rows", flush=True)
+
+    blue_green_swap(conn, TABLE_NAMES['place_boundaries_union'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['place_lsoa_mapping']}")
     count = cur.fetchone()[0]

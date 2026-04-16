@@ -21,6 +21,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -117,7 +118,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['voa_rents_lad']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['voa_rents_lad']}_new (LIKE {TABLE_NAMES['voa_rents_lad']} INCLUDING ALL)")
     conn.commit()
 
     rows = [
@@ -135,7 +136,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['voa_rents_lad']} (
+            f"""INSERT INTO {TABLE_NAMES['voa_rents_lad']}_new (
                     lad_code, period,
                     median_rent_all, median_rent_1bed, median_rent_2bed,
                     median_rent_3bed, median_rent_4bed
@@ -144,6 +145,8 @@ def run(db_url: str) -> int:
             rows,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['voa_rents_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['voa_rents_lad']}")
     count = cur.fetchone()[0]

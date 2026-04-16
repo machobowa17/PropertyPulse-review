@@ -12,6 +12,7 @@ from app.database import get_db
 from app.services.geo_resolver import resolve_search
 from app.services.helpers import make_lsoa_session, get_lsoa_session
 from app.cache import cache_get, cache_set
+from app.rate_limit import limiter
 
 router = APIRouter()
 
@@ -155,6 +156,7 @@ async def _build_and_store_session(db, result: dict, codes: dict) -> tuple:
 
 
 @router.get("/search/suggest")
+@limiter.exempt
 async def suggest(
     q: str = Query(..., min_length=2, max_length=100, description="Partial search query"),
     db: AsyncSession = Depends(get_db),
@@ -198,49 +200,54 @@ async def suggest(
             if ends_in_digit:
                 # Prefer districts where input is followed by a LETTER (SW1A not SW10).
                 # Fall back to numeric-suffix districts (M1, LS1 etc.) if no letter-suffix found.
-                letter_pat = f"^{compact}[A-Z]"
-                digit_pat  = f"^{compact}[0-9]"
-                sql = sa_text(f"""
-                    WITH candidates AS (
-                        SELECT
-                            SUBSTRING(postcode_compact FROM 1 FOR {dist_len}) AS label,
-                            CASE WHEN postcode_compact SIMILAR TO '{compact}[A-Z]%' THEN 0 ELSE 1 END AS pref,
-                            lad_name,
-                            COUNT(*) AS cnt
-                        FROM core_postcodes
-                        WHERE postcode_compact SIMILAR TO '{compact}[A-Z0-9]%'
-                        GROUP BY 1, 2, lad_name
-                    ),
-                    dominant AS (
-                        SELECT DISTINCT ON (label) label, pref, lad_name AS area
-                        FROM candidates ORDER BY label, pref, cnt DESC
-                    )
-                    SELECT label, 'postcode_district' AS type, area,
-                           NULL AS comparison, 'Postcode area' AS secondary
-                    FROM dominant
-                    ORDER BY pref, label
-                    LIMIT 6
-                """)
-                res = await db.execute(sql)
+                # Build SIMILAR TO patterns as bind params (never interpolate user input into SQL)
+                letter_prefix = compact + "[A-Z]%"
+                alnum_prefix = compact + "[A-Z0-9]%"
+                res = await db.execute(
+                    sa_text("""
+                        WITH candidates AS (
+                            SELECT
+                                SUBSTRING(postcode_compact FROM 1 FOR :dist_len) AS label,
+                                CASE WHEN postcode_compact SIMILAR TO :letter_prefix THEN 0 ELSE 1 END AS pref,
+                                lad_name,
+                                COUNT(*) AS cnt
+                            FROM core_postcodes
+                            WHERE postcode_compact SIMILAR TO :alnum_prefix
+                            GROUP BY 1, 2, lad_name
+                        ),
+                        dominant AS (
+                            SELECT DISTINCT ON (label) label, pref, lad_name AS area
+                            FROM candidates ORDER BY label, pref, cnt DESC
+                        )
+                        SELECT label, 'postcode_district' AS type, area,
+                               NULL AS comparison, 'Postcode area' AS secondary
+                        FROM dominant
+                        ORDER BY pref, label
+                        LIMIT 6
+                    """),
+                    {"dist_len": dist_len, "letter_prefix": letter_prefix, "alnum_prefix": alnum_prefix},
+                )
             else:
-                sql = sa_text(f"""
-                    WITH candidates AS (
-                        SELECT
-                            SUBSTRING(postcode_compact FROM 1 FOR {dist_len}) AS label,
-                            lad_name, COUNT(*) AS cnt
-                        FROM core_postcodes
-                        WHERE postcode_compact LIKE :prefix
-                        GROUP BY 1, lad_name
-                    ),
-                    dominant AS (
-                        SELECT DISTINCT ON (label) label, lad_name AS area
-                        FROM candidates ORDER BY label, cnt DESC
-                    )
-                    SELECT label, 'postcode_district' AS type, area,
-                           NULL AS comparison, 'Postcode area' AS secondary
-                    FROM dominant ORDER BY label LIMIT 6
-                """)
-                res = await db.execute(sql, {"prefix": compact + "%"})
+                res = await db.execute(
+                    sa_text("""
+                        WITH candidates AS (
+                            SELECT
+                                SUBSTRING(postcode_compact FROM 1 FOR :dist_len) AS label,
+                                lad_name, COUNT(*) AS cnt
+                            FROM core_postcodes
+                            WHERE postcode_compact LIKE :prefix
+                            GROUP BY 1, lad_name
+                        ),
+                        dominant AS (
+                            SELECT DISTINCT ON (label) label, lad_name AS area
+                            FROM candidates ORDER BY label, cnt DESC
+                        )
+                        SELECT label, 'postcode_district' AS type, area,
+                               NULL AS comparison, 'Postcode area' AS secondary
+                        FROM dominant ORDER BY label LIMIT 6
+                    """),
+                    {"dist_len": dist_len, "prefix": compact + "%"},
+                )
         else:
             res = await db.execute(
                 sa_text("""
@@ -287,7 +294,10 @@ async def suggest(
                        'County' AS secondary
                 FROM core_county_boundaries
                 WHERE LOWER(county_name) LIKE :prefix ESCAPE '\'
-                ORDER BY LENGTH(county_name) ASC
+                   OR LOWER(county_name) LIKE 'greater ' || :prefix ESCAPE '\'
+                ORDER BY
+                    CASE WHEN LOWER(county_name) LIKE :prefix ESCAPE '\' THEN 0 ELSE 1 END,
+                    LENGTH(county_name) ASC
                 LIMIT :lim
             """),
             {"prefix": q_like + "%", "lim": 8 - len(results)},

@@ -24,6 +24,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES, is_supported_lad_code
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -182,6 +183,7 @@ def _read_wales_rows(src_path: str | None) -> dict[str, dict[str, float | None]]
     authority_col = "Authority_reference"
     year_ref_col = "Year_reference"
     value_col = "Data values"
+    value_sort_col = "Data values_sort"    # clean numeric column from StatsWales
     band_col = "Band_reference"
     description_col = "Data description"
 
@@ -197,7 +199,12 @@ def _read_wales_rows(src_path: str | None) -> dict[str, dict[str, float | None]]
     working[authority_col] = working[authority_col].astype(str).str.strip().str.upper()
     working[band_col] = working[band_col].astype(str).str.strip().str.upper()
     working[year_ref_col] = pd.to_numeric(working[year_ref_col], errors="coerce")
-    working[value_col] = pd.to_numeric(working[value_col], errors="coerce")
+    # StatsWales CSV has formatted "Data values" (e.g. "1,255.961") that fails
+    # to_numeric. Prefer the clean "Data values_sort" column when present.
+    if value_sort_col in working.columns:
+        working[value_col] = pd.to_numeric(working[value_sort_col], errors="coerce")
+    else:
+        working[value_col] = pd.to_numeric(working[value_col], errors="coerce")
 
     working = working[
         working[authority_col].map(lambda code: code.startswith("W") and is_supported_lad_code(code))
@@ -270,14 +277,14 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['council_tax_lad']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['council_tax_lad']}_new (LIKE {TABLE_NAMES['council_tax_lad']} INCLUDING ALL)")
     conn.commit()
 
     if rows:
         execute_values(
             cur,
             f"""
-            INSERT INTO {TABLE_NAMES['council_tax_lad']}
+            INSERT INTO {TABLE_NAMES['council_tax_lad']}_new
                 (lad_code, band_a, band_b, band_c, band_d, band_e, band_f, band_g, band_h, band_i)
             VALUES %s
             ON CONFLICT (lad_code) DO UPDATE SET
@@ -294,6 +301,8 @@ def run(db_url: str) -> int:
             rows,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['council_tax_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['council_tax_lad']}")
     count = cur.fetchone()[0]

@@ -24,6 +24,7 @@ import psycopg2
 from shapely.geometry import MultiPolygon
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -99,7 +100,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['green_space']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['green_space']}_new (LIKE {TABLE_NAMES['green_space']} INCLUDING ALL)")
     conn.commit()
 
     count = 0
@@ -121,7 +122,7 @@ def run(db_url: str) -> int:
 
         cur.execute(
             f"""
-            INSERT INTO {TABLE_NAMES['green_space']}
+            INSERT INTO {TABLE_NAMES['green_space']}_new
                 (site_name, site_type, area_hectares, latitude, longitude, geom)
             VALUES (%s, %s, %s, %s, %s, ST_GeomFromText(%s, 4326))
             """,
@@ -134,6 +135,7 @@ def run(db_url: str) -> int:
 
     conn.commit()
 
+    blue_green_swap(conn, TABLE_NAMES['green_space'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['green_space']}")
     final = cur.fetchone()[0]
     cur.close()

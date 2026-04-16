@@ -27,6 +27,7 @@ from constants import (
     SCHEDULE_MONTHLY,
     TABLE_NAMES,
 )
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -247,13 +248,25 @@ def run(db_url: str) -> int:
     buf    = io.BufferedReader(stream, buffer_size=65_536)
 
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['property_transactions']}")
+    # Create staging table; COPY into it so the live table stays intact during load.
+    # If COPY fails, just drop the staging table — no data loss.
+    staging = f"{TABLE_NAMES['property_transactions']}_new"
+    cur.execute(f"DROP TABLE IF EXISTS {staging}")
+    cur.execute(f"CREATE UNLOGGED TABLE {staging} (LIKE {TABLE_NAMES['property_transactions']} INCLUDING ALL)")
     conn.commit()
-    print(f"  Truncated {TABLE_NAMES['property_transactions']}", flush=True)
+    print(f"  Created staging table {staging}", flush=True)
 
-    cur.copy_expert(_COPY_SQL, buf)
+    copy_sql = (
+        f"COPY {staging} "
+        f"({', '.join(_TXN_COLS)}) "
+        f"FROM STDIN WITH (FORMAT TEXT, DELIMITER E'\\t', NULL '\\\\N')"
+    )
+    cur.copy_expert(copy_sql, buf)
     conn.commit()
+    print(f"  COPY committed successfully", flush=True)
     cur.close()
+
+    blue_green_swap(conn, TABLE_NAMES['property_transactions'])
 
     print(f"  Streamed {stream.count:,} rows, skipped {stream.skipped:,}", flush=True)
 

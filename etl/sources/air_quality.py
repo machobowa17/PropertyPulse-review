@@ -23,6 +23,7 @@ from psycopg2.extras import execute_values
 import psycopg2
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -199,7 +200,7 @@ def run(db_url: str) -> int:
     # Part 1: core_air_quality — current year grid points
     # ------------------------------------------------------------------
     print(f"  Loading current year ({current_year}) grid → core_air_quality...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['air_quality']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['air_quality']}_new (LIKE {TABLE_NAMES['air_quality']} INCLUDING ALL)")
     conn.commit()
 
     pollutants = _load_pollutants_for_year(current_year, aq_dir)
@@ -222,7 +223,7 @@ def run(db_url: str) -> int:
     execute_values(
         cur,
         f"""
-        INSERT INTO {TABLE_NAMES['air_quality']}
+        INSERT INTO {TABLE_NAMES['air_quality']}_new
             (grid_x, grid_y, no2_ugm3, pm25_ugm3, pm10_ugm3, year)
         VALUES %s
         """,
@@ -232,7 +233,7 @@ def run(db_url: str) -> int:
 
     # Build PostGIS geometry from BNG (EPSG:27700) → WGS84 (EPSG:4326)
     cur.execute(f"""
-        UPDATE {TABLE_NAMES['air_quality']}
+        UPDATE {TABLE_NAMES['air_quality']}_new
         SET geom = ST_Transform(ST_SetSRID(ST_MakePoint(grid_x, grid_y), 27700), 4326)
         WHERE geom IS NULL
     """)
@@ -341,6 +342,7 @@ def run(db_url: str) -> int:
     conn.commit()
 
     # Return final row count in core_air_quality
+    blue_green_swap(conn, TABLE_NAMES['air_quality'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['air_quality']}")
     count = cur.fetchone()[0]
     cur.close()

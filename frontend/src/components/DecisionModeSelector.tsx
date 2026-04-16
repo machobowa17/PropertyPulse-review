@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Home, KeyRound, LineChart, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 export type DecisionMode = 'buy' | 'rent' | 'invest';
 
@@ -69,15 +68,9 @@ export default function DecisionModeSelector({ current, onChange, variant = 'seg
           <ChevronDown className={`w-3.5 h-3.5 text-ink-faint transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
 
-        <AnimatePresence>
-          {open && (
-            <motion.div
-              initial={{ opacity: 0, y: -8, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl overflow-hidden z-50 ring-1 ring-black/5"
-            >
+        {open && (
+          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl overflow-hidden z-50 ring-1 ring-black/5 animate-dropdown-appear">
+
               <div className="p-2 border-b border-divider">
                 <p className="text-xs text-ink-muted font-medium px-2 py-1">I am deciding where to...</p>
               </div>
@@ -104,9 +97,8 @@ export default function DecisionModeSelector({ current, onChange, variant = 'seg
                   );
                 })}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
       </div>
     );
   }

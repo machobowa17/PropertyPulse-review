@@ -4,12 +4,13 @@ Absorb EPC data from core_transactions_epc into core_property_transactions.
 Uses batched updates by PK to avoid 29M-row sequential scan.
 Commits every BATCH_SIZE rows so progress is visible and disk-safe.
 """
+import os
 import psycopg2
 import time
 import sys
 
 BATCH_SIZE = 10_000
-DSN = "dbname=ukproperty user=postgres"
+DSN = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty")
 
 def main():
     conn = psycopg2.connect(DSN)

@@ -237,7 +237,7 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
   }
 
   // --- PTAL ---
-  if (id === 'ptal') {
+  if (id === 'ptal_score') {
     if (isHigher) {
       if (persona === 'young_professional') return { soWhat: 'Excellent connections', watchOut: 'Premium rents', colour: 'green' };
       if (persona === 'student') return { soWhat: 'Great transport links', watchOut: 'None', colour: 'green' };
@@ -291,6 +291,46 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     if (val >= 80) return { soWhat: 'Good coverage', watchOut: 'Indoor spots', colour: 'amber' };
     if (persona === 'young_professional') return { soWhat: 'Coverage gaps', watchOut: 'Connectivity issues', colour: 'red' };
     return { soWhat: 'Patchy coverage', watchOut: 'Check your network', colour: 'amber' };
+  }
+
+  // --- Connectivity Index (non-London composite) ---
+  if (id === 'connectivity_index') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'Highly connected area', watchOut: 'None', colour: 'green' };
+      if (persona === 'expat') return { soWhat: 'Good all-round connectivity', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Well connected', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Connectivity gap', watchOut: 'Commute + WFH impact', colour: 'amber' };
+      if (persona === 'investor') return { soWhat: 'Connectivity lag', watchOut: 'Demand suppression', colour: 'amber' };
+      return { soWhat: 'Below average connectivity', watchOut: 'Worth checking specifics', colour: 'amber' };
+    }
+  }
+
+  // --- Rail/Metro Stations in Area ---
+  if (id === 'stations_in_area') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'Good station coverage', watchOut: 'Train noise possible', colour: 'green' };
+      if (persona === 'student') return { soWhat: 'Well served by rail', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Multiple stations nearby', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Fewer stations', watchOut: 'Commute flexibility', colour: 'amber' };
+      return { soWhat: 'Limited rail access', watchOut: 'Car may be needed', colour: 'amber' };
+    }
+  }
+
+  // --- Work From Home Rate (wfh, Community tab duplicate) ---
+  if (id === 'wfh') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'WFH-friendly area', watchOut: 'None', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Flexible working common', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'High WFH rate', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Commuter area', watchOut: 'None', colour: 'neutral' };
+      return { soWhat: 'Lower WFH rate', watchOut: 'None', colour: 'neutral' };
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -420,6 +460,74 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     if (val >= 45) return { soWhat: 'Moderate ESG', watchOut: 'Room for improvement', colour: 'amber' };
     if (persona === 'investor') return { soWhat: 'ESG risk', watchOut: 'Regulatory risk', colour: 'red' };
     return { soWhat: 'Low ESG score', watchOut: 'Environmental concerns', colour: 'red' };
+  }
+
+  // --- Noise ---
+  if (id === 'noise') {
+    if (isHigher) {
+      if (persona === 'family') return { soWhat: 'Noisier than average', watchOut: 'Sleep + wellbeing', colour: 'red' };
+      if (persona === 'retired') return { soWhat: 'Noise concern', watchOut: 'Quality of life', colour: 'red' };
+      if (persona === 'young_professional') return { soWhat: 'Urban noise levels', watchOut: 'Worth checking', colour: 'amber' };
+      return { soWhat: 'Above average noise', watchOut: 'Check street-level', colour: 'amber' };
+    }
+    if (isLower) {
+      if (persona === 'family') return { soWhat: 'Quieter area', watchOut: 'None', colour: 'green' };
+      if (persona === 'retired') return { soWhat: 'Peaceful area', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Lower noise levels', watchOut: 'None', colour: 'green' };
+    }
+  }
+
+  // --- Green Cover (% land covered by vegetation) ---
+  if (id === 'green_cover') {
+    if (isHigher) {
+      if (persona === 'family') return { soWhat: 'Green and leafy', watchOut: 'None', colour: 'green' };
+      if (persona === 'retired') return { soWhat: 'Pleasant environment', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Good green cover', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'family') return { soWhat: 'Less green', watchOut: 'Urban feel', colour: 'amber' };
+      if (persona === 'retired') return { soWhat: 'Less greenery', watchOut: 'Quality of life', colour: 'amber' };
+      return { soWhat: 'Below average greenery', watchOut: 'More built-up feel', colour: 'neutral' };
+    }
+  }
+
+  // --- Green Spaces (count) ---
+  if (id === 'green_spaces') {
+    if (isHigher) {
+      if (persona === 'family') return { soWhat: 'Plenty of green space', watchOut: 'None', colour: 'green' };
+      if (persona === 'retired') return { soWhat: 'Good outdoor options', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Well-served for greenery', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'family') return { soWhat: 'Fewer green spaces', watchOut: 'Outdoor play limited', colour: 'amber' };
+      return { soWhat: 'Limited green spaces', watchOut: 'Quality of life', colour: 'amber' };
+    }
+  }
+
+  // --- Parks within 1km (count) ---
+  if (id === 'parks_1km') {
+    if (isHigher) {
+      if (persona === 'family') return { soWhat: 'Parks on doorstep', watchOut: 'None', colour: 'green' };
+      if (persona === 'retired') return { soWhat: 'Easy outdoor access', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Good park access', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'family') return { soWhat: 'Fewer parks nearby', watchOut: 'Outdoor play options', colour: 'amber' };
+      return { soWhat: 'Limited parks in 1km', watchOut: 'None', colour: 'neutral' };
+    }
+  }
+
+  // --- Sports & Recreation ---
+  if (id === 'sports_recreation') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'Good leisure options', watchOut: 'None', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Sports facilities nearby', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Good sports access', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Fewer facilities', watchOut: 'Lifestyle impact', colour: 'amber' };
+      return { soWhat: 'Limited sports nearby', watchOut: 'None', colour: 'neutral' };
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -562,6 +670,103 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     if (val >= 1) return { soWhat: 'Some NHS facilities', watchOut: 'May be busy', colour: 'amber' };
     if (persona === 'retired') return { soWhat: 'Few facilities', watchOut: 'GP access concern', colour: 'red' };
     return { soWhat: 'Limited NHS nearby', watchOut: 'Register early', colour: 'amber' };
+  }
+
+  // --- Median Earnings ---
+  if (id === 'median_earnings') {
+    if (isHigher) {
+      if (persona === 'investor') return { soWhat: 'Affluent workforce', watchOut: 'Higher wages = higher rents', colour: 'green' };
+      if (persona === 'young_professional') return { soWhat: 'High-earning area', watchOut: 'Competition for jobs', colour: 'green' };
+      if (persona === 'family') return { soWhat: 'Prosperous community', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Above average earnings', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) {
+      if (persona === 'investor') return { soWhat: 'Lower income area', watchOut: 'Rental demand risk', colour: 'amber' };
+      if (persona === 'young_professional') return { soWhat: 'Lower wage area', watchOut: 'Career prospects', colour: 'amber' };
+      return { soWhat: 'Below average earnings', watchOut: 'Local purchasing power', colour: 'amber' };
+    }
+  }
+
+  // --- Good Health (% reporting good health) ---
+  if (id === 'good_health') {
+    if (isHigher) return { soWhat: 'Healthier population', watchOut: 'None', colour: 'green' };
+    if (isLower) {
+      if (persona === 'retired') return { soWhat: 'Lower health scores', watchOut: 'Local health services', colour: 'amber' };
+      return { soWhat: 'Below average health rates', watchOut: 'Worth knowing', colour: 'neutral' };
+    }
+    return { soWhat: 'Health profile similar to average', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Economically Active (% in employment) ---
+  if (id === 'economically_active') {
+    if (isHigher) return { soWhat: 'High employment rate', watchOut: 'None', colour: 'green' };
+    if (isLower) {
+      if (persona === 'investor') return { soWhat: 'Lower employment area', watchOut: 'Rental demand', colour: 'amber' };
+      return { soWhat: 'Below average employment', watchOut: 'Worth knowing', colour: 'neutral' };
+    }
+    return { soWhat: 'Employment rate near average', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Degree Educated (% with degree-level qualification) ---
+  if (id === 'degree_educated') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'Educated community', watchOut: 'None', colour: 'green' };
+      if (persona === 'investor') return { soWhat: 'Professional tenant pool', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'High qualification levels', watchOut: 'None', colour: 'green' };
+    }
+    if (isLower) return { soWhat: 'Lower qualification rate', watchOut: 'Worth knowing', colour: 'neutral' };
+    return { soWhat: 'Qualification levels near average', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- No Car (% of households without a car) ---
+  if (id === 'no_car') {
+    if (isHigher) {
+      if (persona === 'young_professional') return { soWhat: 'Car-free living common', watchOut: 'None', colour: 'green' };
+      if (persona === 'student') return { soWhat: 'Car not needed here', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'High public transport reliance', watchOut: 'None', colour: 'neutral' };
+    }
+    if (isLower) {
+      if (persona === 'retired') return { soWhat: 'Car-owning area', watchOut: 'Less public transport?', colour: 'neutral' };
+      return { soWhat: 'Car ownership common', watchOut: 'None', colour: 'neutral' };
+    }
+    return { soWhat: 'Car ownership near average', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Born Abroad (% of population born outside UK) ---
+  if (id === 'born_abroad') {
+    if (isHigher) {
+      if (persona === 'expat') return { soWhat: 'Diverse, international community', watchOut: 'None', colour: 'green' };
+      if (persona === 'young_professional') return { soWhat: 'Cosmopolitan area', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Diverse population', watchOut: 'None', colour: 'neutral' };
+    }
+    if (isLower) {
+      if (persona === 'expat') return { soWhat: 'Less international community', watchOut: 'Cultural fit', colour: 'neutral' };
+      return { soWhat: 'Lower international diversity', watchOut: 'None', colour: 'neutral' };
+    }
+    return { soWhat: 'Average international diversity', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Household Size (average persons per household) ---
+  if (id === 'household_size') {
+    if (isHigher) {
+      if (persona === 'family') return { soWhat: 'Family-sized households common', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Larger households typical', watchOut: 'None', colour: 'neutral' };
+    }
+    if (isLower) {
+      if (persona === 'young_professional') return { soWhat: 'Singles/couples dominant', watchOut: 'None', colour: 'green' };
+      return { soWhat: 'Smaller household sizes', watchOut: 'None', colour: 'neutral' };
+    }
+    return { soWhat: 'Average household size', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Ethnicity (categorical summary) ---
+  if (id === 'ethnicity') {
+    return { soWhat: 'Community profile', watchOut: 'None', colour: 'neutral' };
+  }
+
+  // --- Demographics Overview (summary card) ---
+  if (id === 'demographics_overview') {
+    return { soWhat: 'Area demographics', watchOut: 'None', colour: 'neutral' };
   }
 
   // --- Area Persona ---

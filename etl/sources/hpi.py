@@ -21,6 +21,7 @@ import requests
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_MONTHLY, TABLE_NAMES, is_supported_lad_code
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -82,7 +83,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['hpi_lad']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['hpi_lad']}_new (LIKE {TABLE_NAMES['hpi_lad']} INCLUDING ALL)")
     conn.commit()
 
     rows = []
@@ -130,7 +131,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['hpi_lad']} (
+            f"""INSERT INTO {TABLE_NAMES['hpi_lad']}_new (
                     lad_code, date, average_price, index_value, sales_volume,
                     detached_price, semi_detached_price, terraced_price,
                     flat_price, yearly_change_pct
@@ -140,6 +141,8 @@ def run(db_url: str) -> int:
             page_size=10_000,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['hpi_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['hpi_lad']}")
     count = cur.fetchone()[0]

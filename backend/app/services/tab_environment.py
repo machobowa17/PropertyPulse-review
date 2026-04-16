@@ -1,7 +1,9 @@
 """Tab 3: Environment & Safety — Bible Part 4, Tab 3.
 Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
+from dateutil.relativedelta import relativedelta
 from sqlalchemy import text
+from app.constants import GMP_LAD_CODES
 from app.services.helpers import metric
 
 
@@ -14,47 +16,52 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
     # --- Crime & Safety ---
     # Bible: Overall crime rate per 1,000 population vs national average, breakdown by type
-    # Use latest month only for rate
+    # Both local and parent use the same 12-month rolling window for apples-to-apples comparison
     latest_month_result = await db.execute(
         text("SELECT MAX(month) as latest FROM core_crime_lsoa"),
     )
     latest_month = latest_month_result.scalar()
 
+    window_start = latest_month - relativedelta(years=1) if latest_month else None
+
     crime_local = await db.execute(
         text("""
-            SELECT crime_type, SUM(crime_count) as cnt
-            FROM core_crime_lsoa WHERE lsoa_code = ANY(:codes) AND month = :month
+            SELECT crime_type, SUM(crime_count) as cnt,
+                   COUNT(DISTINCT month) as months_count
+            FROM core_crime_lsoa
+            WHERE lsoa_code = ANY(:codes)
+              AND month > :window_start AND month <= :window_end
             GROUP BY crime_type ORDER BY cnt DESC
         """),
-        {"codes": lsoa_codes, "month": latest_month},
+        {"codes": lsoa_codes, "window_start": window_start, "window_end": latest_month},
     )
     crime_rows = crime_local.mappings().all()
     local_total = sum(int(r["cnt"]) for r in crime_rows)
+    local_months = max((int(r["months_count"]) for r in crime_rows), default=0)
     crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows}
 
-    # Forces with known data gaps (GMP excluded from national bulk ZIP since 2019)
-    GMP_LAD_CODES = {'E08000001','E08000002','E08000003','E08000004','E08000005',
-                     'E08000006','E08000007','E08000008','E08000009','E08000010'}
     crime_data_unavailable = False
 
     # MSOA-level fallback: LSOAs absent or sparse in crime dataset (incl. GMP partial coverage)
     if local_total == 0:
         crime_msoa = await db.execute(
             text("""
-                SELECT c.crime_type, SUM(c.crime_count) as cnt
+                SELECT c.crime_type, SUM(c.crime_count) as cnt,
+                       COUNT(DISTINCT c.month) as months_count
                 FROM core_crime_lsoa c
                 JOIN core_postcodes p ON p.lsoa_code = c.lsoa_code
                 WHERE p.msoa_code IN (
                     SELECT DISTINCT msoa_code FROM core_postcodes
                     WHERE lsoa_code = ANY(:codes) AND msoa_code IS NOT NULL
-                ) AND c.month = :month
+                ) AND c.month > :window_start AND c.month <= :window_end
                 GROUP BY c.crime_type ORDER BY cnt DESC
             """),
-            {"codes": lsoa_codes, "month": latest_month},
+            {"codes": lsoa_codes, "window_start": window_start, "window_end": latest_month},
         )
         crime_rows_msoa = crime_msoa.mappings().all()
         if crime_rows_msoa:
             local_total = sum(int(r["cnt"]) for r in crime_rows_msoa)
+            local_months = max((int(r["months_count"]) for r in crime_rows_msoa), default=0)
             crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows_msoa}
         elif lad_code in GMP_LAD_CODES:
             crime_data_unavailable = True
@@ -105,7 +112,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
               AND c.month > :window_start AND c.month <= :window_end
         """),
         {"parent_lads": parent_lads,
-         "window_start": latest_month.replace(year=latest_month.year - 1),
+         "window_start": latest_month - relativedelta(years=1),
          "window_end": latest_month},
     )
     pr_row = parent_result.mappings().first()
@@ -113,12 +120,13 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     parent_pop = int(pr_row["total_pop"]) if pr_row and pr_row["total_pop"] else 0
     parent_months = int(pr_row["months_count"]) if pr_row and pr_row["months_count"] else 0
 
-    # Annualise local: monthly snapshot × 12
-    local_rate = round(local_total / local_pop * 1000 * 12, 1) if local_pop and local_pop > 0 else None
+    # Annualise both local and parent identically: total / months_in_window * 12, per 1,000 pop
+    local_rate = None
+    if local_pop and local_pop > 0 and local_months > 0:
+        local_rate = round(local_total / local_months / local_pop * 1000 * 12, 1)
     parent_rate = None
     # GMP parent areas: crime data is too incomplete for a meaningful parent comparison
     gmp_parent = lad_code in GMP_LAD_CODES
-    # Annualise parent: total over window / months_in_window * 12, per 1000 pop
     if parent_pop > 0 and parent_months > 0 and not gmp_parent:
         parent_rate = round(parent_crimes / parent_months / parent_pop * 1000 * 12, 1)
 
@@ -130,7 +138,8 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         ))
     elif local_rate is not None:
         crime_details = dict(crime_breakdown) if crime_breakdown else {}
-        crime_details["monthly_crimes"] = local_total
+        crime_details["rolling_12m_crimes"] = local_total
+        crime_details["months_with_data"] = local_months
         crime_details["resident_population"] = local_pop
         # Flag high-footfall areas where resident pop << daytime footfall inflates rate
         if local_rate > 500:
@@ -152,7 +161,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                   AND month > :month_start AND month <= :month_end
             """),
             {"codes": lsoa_codes,
-             "month_start": latest_month.replace(year=latest_month.year - 1),
+             "month_start": latest_month - relativedelta(years=1),
              "month_end": latest_month},
         )
         rolling_prior = await db.execute(
@@ -163,15 +172,15 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                   AND month > :month_start AND month <= :month_end
             """),
             {"codes": lsoa_codes,
-             "month_start": latest_month.replace(year=latest_month.year - 2),
-             "month_end": latest_month.replace(year=latest_month.year - 1)},
+             "month_start": latest_month - relativedelta(years=2),
+             "month_end": latest_month - relativedelta(years=1)},
         )
         current_row = rolling_current.mappings().first()
         prior_row = rolling_prior.mappings().first()
-        rolling_current_total = int(current_row["cnt"]) if current_row and current_row["cnt"] else None
-        rolling_prior_total = int(prior_row["cnt"]) if prior_row and prior_row["cnt"] else None
+        rolling_current_total = int(current_row["cnt"]) if current_row and current_row["cnt"] is not None else None
+        rolling_prior_total = int(prior_row["cnt"]) if prior_row and prior_row["cnt"] is not None else None
 
-        if rolling_prior_total and rolling_prior_total > 0 and rolling_current_total:
+        if rolling_prior_total is not None and rolling_prior_total > 0 and rolling_current_total is not None:
             yoy_change = round((rolling_current_total - rolling_prior_total) / rolling_prior_total * 100, 1)
             # Parent crime trend (same YoY window)
             parent_crime_yoy = None
@@ -185,7 +194,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                           AND c.month > :month_start AND c.month <= :month_end
                     """),
                     {"parent_lads": parent_lads,
-                     "month_start": latest_month.replace(year=latest_month.year - 1),
+                     "month_start": latest_month - relativedelta(years=1),
                      "month_end": latest_month},
                 )
                 parent_prior_res = await db.execute(
@@ -197,8 +206,8 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                           AND c.month > :month_start AND c.month <= :month_end
                     """),
                     {"parent_lads": parent_lads,
-                     "month_start": latest_month.replace(year=latest_month.year - 2),
-                     "month_end": latest_month.replace(year=latest_month.year - 1)},
+                     "month_start": latest_month - relativedelta(years=2),
+                     "month_end": latest_month - relativedelta(years=1)},
                 )
                 pc = parent_current_res.mappings().first()
                 pp = parent_prior_res.mappings().first()
@@ -257,19 +266,29 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         else:
             flood_level = "Very Low"
 
-        # Parent percentages
+        # Parent percentages and level
+        parent_flood_level = None
+        parent_pct_high = None
+        parent_pct_medium = None
         if flood_parent_row and flood_parent_row["total_lsoas"]:
             pt = int(flood_parent_row["total_lsoas"])
-            parent_pct_high = round(int(flood_parent_row["zone3_count"] or 0) / pt * 100, 1)
-        else:
-            parent_pct_high = None
+            pz3 = int(flood_parent_row["zone3_count"] or 0)
+            pz2 = int(flood_parent_row["zone2_count"] or 0)
+            parent_pct_high = round(pz3 / pt * 100, 1)
+            parent_pct_medium = round(pz2 / pt * 100, 1)
+            if pz3 > 0:
+                parent_flood_level = "High" if parent_pct_high >= 10 else "Low-Medium"
+            elif pz2 > 0:
+                parent_flood_level = "Medium" if parent_pct_medium >= 10 else "Low"
+            else:
+                parent_flood_level = "Very Low"
 
         # risk_score: 0=Very Low … 100=High (drives gauge needle)
         risk_score = {"Very Low": 5, "Low": 20, "Low-Medium": 40, "Medium": 60, "High": 90}.get(flood_level, 5)
 
         metrics.append(metric(
             "flood_risk", "Flood Risk",
-            flood_level, None, "level",
+            flood_level, parent_flood_level, "level",
             details={
                 "risk_score": risk_score,
                 "flood_level": flood_level,
@@ -279,6 +298,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                 "medium_risk_lsoa_count": z2,
                 "total_lsoas": total,
                 "parent_zone_3_pct": parent_pct_high,
+                "parent_zone_2_pct": parent_pct_medium,
             },
         ))
 
@@ -312,14 +332,14 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     else:
         aq_row = None
 
-    # Parent average across parent comparison group
+    # Parent average via pre-computed LAD-level table (avoids expensive spatial join)
     if aq_row:
         aq_parent = await db.execute(
             text("""
-                SELECT AVG(a.no2_ugm3) as avg_no2, AVG(a.pm25_ugm3) as avg_pm25
-                FROM core_air_quality a
-                JOIN core_lsoa_boundaries l ON ST_Intersects(l.geom, a.geom)
-                WHERE l.lad_code = ANY(:parent_lads)
+                SELECT AVG(no2_ugm3) as avg_no2, AVG(pm25_ugm3) as avg_pm25
+                FROM core_air_quality_lad
+                WHERE lad_code = ANY(:parent_lads)
+                  AND year >= 2020
             """),
             {"parent_lads": parent_lads},
         )

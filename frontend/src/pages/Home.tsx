@@ -27,21 +27,21 @@ function PreviewCard() {
       <div className="rounded-2xl bg-white/[0.06] border border-white/[0.1] backdrop-blur-md p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-mono text-white/40 tracking-wider uppercase">Sample analysis</div>
-            <div className="text-lg font-bold text-white mt-0.5">Coulsdon, CR5</div>
+            <div className="text-[11px] font-mono text-white/40 tracking-wider uppercase">Illustrative example</div>
+            <div className="text-lg font-bold text-white mt-0.5">Your postcode</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-            <span className="text-emerald-400 font-mono font-bold text-sm">74</span>
+            <span className="text-emerald-400 font-mono font-bold text-sm">--</span>
           </div>
         </div>
 
         {/* Mini metrics */}
         <div className="grid grid-cols-2 gap-2">
           {[
-            { label: 'Median Price', value: '£385,000', signal: 'text-emerald-400' },
-            { label: 'Crime Rate', value: '62/1000', signal: 'text-amber-400' },
-            { label: 'Top School', value: 'Outstanding', signal: 'text-emerald-400' },
-            { label: 'Flood Risk', value: 'Very Low', signal: 'text-emerald-400' },
+            { label: 'Median Price', value: '£---,---', signal: 'text-emerald-400' },
+            { label: 'Crime Rate', value: '--/1000', signal: 'text-amber-400' },
+            { label: 'Top School', value: '--------', signal: 'text-emerald-400' },
+            { label: 'Flood Risk', value: '--------', signal: 'text-emerald-400' },
           ].map(({ label, value, signal }) => (
             <div key={label} className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-3">
               <div className="text-[10px] text-white/35 font-medium uppercase tracking-wide">{label}</div>
@@ -53,11 +53,11 @@ function PreviewCard() {
         {/* Mini bar */}
         <div className="space-y-1.5">
           <div className="flex justify-between text-[10px] text-white/40">
-            <span>Family Score</span>
-            <span className="font-mono">74 / 100</span>
+            <span>Persona Score</span>
+            <span className="font-mono">-- / 100</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: '74%' }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: '65%' }} />
           </div>
         </div>
       </div>

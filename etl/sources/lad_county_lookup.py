@@ -22,6 +22,7 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
+from utils import blue_green_swap
 from constants import (
     SCHEDULE_FOUNDATION,
     TABLE_NAMES,
@@ -95,7 +96,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['lad_county_lookup']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['lad_county_lookup']}_new (LIKE {TABLE_NAMES['lad_county_lookup']} INCLUDING ALL)")
     conn.commit()
 
     # Load LAD→county/unitary mapping for supported countries where source rows exist.
@@ -160,7 +161,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['lad_county_lookup']} (
+            f"""INSERT INTO {TABLE_NAMES['lad_county_lookup']}_new (
                     lad_code, lad_name, county_code, county_name,
                     region_code, region_name,
                     is_london_borough, is_metropolitan,
@@ -179,6 +180,8 @@ def run(db_url: str) -> int:
             page_size=1000,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['lad_county_lookup'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['lad_county_lookup']}")
     count = cur.fetchone()[0]

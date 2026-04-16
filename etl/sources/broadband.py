@@ -26,6 +26,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES, supported_country_prefixes
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -170,8 +171,7 @@ def run(db_url: str) -> int:
     # ------------------------------------------------------------------
     # Part 1: core_broadband_postcode
     # ------------------------------------------------------------------
-    print("  Truncating core_broadband_postcode...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['broadband_postcode']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['broadband_postcode']}_new (LIKE {TABLE_NAMES['broadband_postcode']} INCLUDING ALL)")
     conn.commit()
 
     csv_files = sorted(
@@ -207,7 +207,7 @@ def run(db_url: str) -> int:
         buf.seek(0)
         cur.copy_from(
             buf,
-            TABLE_NAMES["broadband_postcode"],
+            f"{TABLE_NAMES['broadband_postcode']}_new",
             sep="\t",
             null="",
             columns=["postcode", "avg_download_mbps", "avg_upload_mbps",
@@ -217,12 +217,12 @@ def run(db_url: str) -> int:
         total_postcode += buf.getvalue().count("\n")
 
     print(f"  Loaded ~{total_postcode:,} postcode rows", flush=True)
+    blue_green_swap(conn, TABLE_NAMES['broadband_postcode'])
 
     # ------------------------------------------------------------------
     # Part 2: core_broadband_lad
     # ------------------------------------------------------------------
-    print("  Truncating core_broadband_lad...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['broadband_lad']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['broadband_lad']}_new (LIKE {TABLE_NAMES['broadband_lad']} INCLUDING ALL)")
     conn.commit()
 
     perf = _load_performance(performance_path)
@@ -287,7 +287,7 @@ def run(db_url: str) -> int:
     execute_values(
         cur,
         f"""
-        INSERT INTO {TABLE_NAMES['broadband_lad']}
+        INSERT INTO {TABLE_NAMES['broadband_lad']}_new
             (lad_code, lad_name, avg_download_mbps, avg_upload_mbps,
              full_fibre_pct, superfast_pct, gigabit_pct, ultrafast_pct)
         VALUES %s
@@ -305,6 +305,7 @@ def run(db_url: str) -> int:
     )
     conn.commit()
     print(f"  Loaded {len(lad_rows):,} LAD rows", flush=True)
+    blue_green_swap(conn, TABLE_NAMES['broadband_lad'])
 
     # Return final row count in core_broadband_postcode
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['broadband_postcode']}")

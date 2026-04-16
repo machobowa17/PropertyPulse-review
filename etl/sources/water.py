@@ -22,6 +22,7 @@ import os
 import psycopg2
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -151,11 +152,12 @@ def run(db_url: str) -> int:
     )
     conn.commit()
 
-    # Truncate target and fill via spatial join (largest intersection area wins)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['water_company_lad']} CASCADE")
+    # Create staging table and fill via spatial join (largest intersection area wins)
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['water_company_lad']}_new (LIKE {TABLE_NAMES['water_company_lad']} INCLUDING ALL)")
+    conn.commit()
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['water_company_lad']} (lad_code, water_company, water_company_type)
+        INSERT INTO {TABLE_NAMES['water_company_lad']}_new (lad_code, water_company, water_company_type)
         SELECT DISTINCT ON (l.lad_code)
             l.lad_code,
             w.company,
@@ -173,6 +175,7 @@ def run(db_url: str) -> int:
     cur.execute("DROP TABLE IF EXISTS _tmp_water_companies")
     conn.commit()
 
+    blue_green_swap(conn, TABLE_NAMES['water_company_lad'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['water_company_lad']}")
     count = cur.fetchone()[0]
     cur.close()

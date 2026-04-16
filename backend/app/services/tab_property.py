@@ -8,7 +8,7 @@ from the currently empty bedroom-price table.
 """
 from sqlalchemy import text
 
-from app.constants import PRICE_TYPES
+from app.constants import PRICE_TYPES, VOA_LAD_REMAP
 from app.services.helpers import metric
 
 
@@ -627,9 +627,18 @@ async def fetch_property_market(
     # ------------------------------------------------------------------
     # Rental market and affordability
     # ------------------------------------------------------------------
+    # VOA PRMS data predates 2021/2023 LAD restructures — expand new codes
+    # to their old constituent district codes so the lookup succeeds.
+    voa_local = list(local_lads)
+    for code in local_lads:
+        voa_local.extend(VOA_LAD_REMAP.get(code, []))
+    voa_parent = list(parent_lads)
+    for code in parent_lads:
+        voa_parent.extend(VOA_LAD_REMAP.get(code, []))
+
     rent_period_result = await db.execute(
         text("SELECT MAX(period) AS latest_period FROM core_voa_rents_lad WHERE lad_code = ANY(:lads)"),
-        {"lads": local_lads},
+        {"lads": voa_local},
     )
     rent_period_row = rent_period_result.mappings().first()
     rent_period = rent_period_row["latest_period"] if rent_period_row else None
@@ -650,7 +659,7 @@ async def fetch_property_market(
                   AND period = :period
                 """
             ),
-            {"lads": local_lads, "period": rent_period},
+            {"lads": voa_local, "period": rent_period},
         )
         rent_row = rent_local.mappings().first()
 
@@ -663,7 +672,7 @@ async def fetch_property_market(
                   AND period = :period
                 """
             ),
-            {"lads": parent_lads, "period": rent_period},
+            {"lads": voa_parent, "period": rent_period},
         )
         rent_parent_row = rent_parent.mappings().first()
 
@@ -821,28 +830,41 @@ async def fetch_property_market(
     # ------------------------------------------------------------------
     # Investment grade heuristic
     # ------------------------------------------------------------------
+    def _grade_from_combined(score):
+        if score >= 10:
+            return "A"
+        elif score >= 7:
+            return "B"
+        elif score >= 5:
+            return "C"
+        elif score >= 3:
+            return "D"
+        elif score >= 1:
+            return "E"
+        return "F"
+
     if hpi_row and hpi_row["yearly_change_pct"] is not None:
         yoy = float(hpi_row["yearly_change_pct"] or 0)
         combined = (gross_yield or 0) + (yoy or 0)
+
+        # Derive parent investment grade from parent yield + parent HPI
+        parent_grade = None
+        parent_yoy = float(hpi_parent_row["avg_yoy"]) if hpi_parent_row and hpi_parent_row["avg_yoy"] is not None else None
+        # parent_yield may not be in scope (defined inside rent block); recompute from available data
+        p_yield = None
+        if parent_avg and rent_parent_row and rent_parent_row["avg_rent"]:
+            p_yield = round(float(rent_parent_row["avg_rent"]) * 12 / parent_avg * 100, 2)
+        if parent_yoy is not None and p_yield is not None:
+            parent_grade = _grade_from_combined(p_yield + parent_yoy)
+
         if is_lad_or_coarser and gross_yield is not None:
-            if combined >= 10:
-                grade = "A"
-            elif combined >= 7:
-                grade = "B"
-            elif combined >= 5:
-                grade = "C"
-            elif combined >= 3:
-                grade = "D"
-            elif combined >= 1:
-                grade = "E"
-            else:
-                grade = "F"
+            grade = _grade_from_combined(combined)
             metrics.append(
                 metric(
                     "investment_grade",
                     "Investment Grade",
                     grade,
-                    None,
+                    parent_grade,
                     "grade",
                     details={
                         "gross_yield": _round(gross_yield),

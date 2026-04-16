@@ -38,7 +38,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                    AVG(pct_families) as avg_families, AVG(pct_singles) as avg_singles,
                    AVG(pct_sharers) as avg_sharers,
                    AVG(pct_age_0_15) as avg_0_15, AVG(pct_age_16_64) as avg_16_64,
-                   AVG(pct_age_65_plus) as avg_65plus
+                   AVG(pct_age_65_plus) as avg_65plus,
+                   SUM(total_population) as total_population
             FROM core_census_lsoa d
             JOIN core_lsoa_boundaries l ON l.lsoa_code = d.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -217,10 +218,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             "unit": "%", "parent": _r(extra_parent_row["pct_no_car"]) if extra_parent_row else None,
         }
     if demo_cards:
+        parent_pop = _r(demo_parent_row["total_population"]) if demo_parent_row and demo_parent_row["total_population"] else None
         metrics.insert(0, metric(
             "demographics_overview", "Demographics Overview",
             _r(demo_row["total_population"]) if demo_row and demo_row["total_population"] else None,
-            None, "people",
+            parent_pop, "people",
             details={"cards": demo_cards},
         ))
 
@@ -318,15 +320,29 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         ))
 
     # --- Ethnicity (TS022, ward-level) ---
-    ethnicity_local = await db.execute(
-        text("""
-            SELECT AVG(pct_white) as pct_white, AVG(pct_asian) as pct_asian,
-                   AVG(pct_black) as pct_black, AVG(pct_mixed) as pct_mixed,
-                   AVG(pct_other) as pct_other
-            FROM core_census_ethnicity_ward WHERE ward_code = :ward
-        """),
-        {"ward": ward_code},
-    )
+    # For ward searches use single ward; for LAD/county/place, average across all wards in scope
+    if ward_code and ward_code != "_":
+        ethnicity_local = await db.execute(
+            text("""
+                SELECT AVG(pct_white) as pct_white, AVG(pct_asian) as pct_asian,
+                       AVG(pct_black) as pct_black, AVG(pct_mixed) as pct_mixed,
+                       AVG(pct_other) as pct_other
+                FROM core_census_ethnicity_ward WHERE ward_code = :ward
+            """),
+            {"ward": ward_code},
+        )
+    else:
+        ethnicity_local = await db.execute(
+            text("""
+                SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
+                       AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
+                       AVG(e.pct_other) as pct_other
+                FROM core_census_ethnicity_ward e
+                JOIN core_ward_boundaries wb ON wb.ward_code = e.ward_code
+                WHERE wb.lad_code = ANY(:local_lads)
+            """),
+            {"local_lads": local_lads or [lad_code]},
+        )
     eth_row = ethnicity_local.mappings().first()
 
     ethnicity_parent = await db.execute(
@@ -412,9 +428,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                         COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
                         NULLIF(COUNT(*), 0) * 100 AS good_share
                     FROM core_schools s
-                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
                     WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                      AND lb.lad_code = ANY(:parent_lads)
+                      AND s.lad_code = ANY(:parent_lads)
                 """),
                 {"parent_lads": parent_lads},
             )
@@ -485,9 +500,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                         COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
                         NULLIF(COUNT(*), 0) * 100 AS good_share
                     FROM core_schools s
-                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
                     WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                      AND lb.lad_code = ANY(:parent_lads)
+                      AND s.lad_code = ANY(:parent_lads)
                 """),
                 {"parent_lads": parent_lads},
             )
@@ -560,9 +574,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                         COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
                         NULLIF(COUNT(*), 0) * 100 AS good_share
                     FROM core_schools s
-                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
                     WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                      AND lb.lad_code = ANY(:parent_lads)
+                      AND s.lad_code = ANY(:parent_lads)
                 """),
                 {"parent_lads": parent_lads},
             )
@@ -633,9 +646,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                         COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
                         NULLIF(COUNT(*), 0) * 100 AS good_share
                     FROM core_schools s
-                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
                     WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                      AND lb.lad_code = ANY(:parent_lads)
+                      AND s.lad_code = ANY(:parent_lads)
                 """),
                 {"parent_lads": parent_lads},
             )

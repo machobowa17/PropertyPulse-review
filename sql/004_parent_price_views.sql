@@ -87,3 +87,50 @@ GROUP BY l.parent_comparison;
 
 CREATE INDEX idx_mv_parent_roll_pc ON mv_parent_rolling_price_stats(parent_comparison);
 CREATE INDEX idx_mv_parent_roll_pc_pt ON mv_parent_rolling_price_stats(parent_comparison, property_type);
+
+
+-- ============================================================
+-- 3. LAD-level comparable features: price, rent, earnings, AQ, HPI
+--    Used by comparable_areas.py — refreshed alongside parent views.
+-- ============================================================
+DROP MATERIALIZED VIEW IF EXISTS mv_lad_comparable_features CASCADE;
+
+CREATE MATERIALIZED VIEW mv_lad_comparable_features AS
+WITH price_agg AS (
+    SELECT lad_code, AVG(price) AS avg_price
+    FROM core_property_transactions
+    WHERE date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+      AND property_type IN ('D','S','T','F')
+    GROUP BY lad_code
+),
+rent_latest AS (
+    SELECT DISTINCT ON (lad_code) lad_code, median_rent_all
+    FROM core_voa_rents_lad
+    ORDER BY lad_code, period DESC
+),
+hpi_latest AS (
+    SELECT DISTINCT ON (lad_code) lad_code, yearly_change_pct
+    FROM core_hpi_lad
+    ORDER BY lad_code, date DESC
+),
+aq_latest AS (
+    SELECT DISTINCT ON (lad_code) lad_code, pm25_ugm3
+    FROM core_air_quality_lad
+    ORDER BY lad_code, year DESC
+)
+SELECT
+    lb.lad_code,
+    lb.lad_name,
+    p.avg_price,
+    r.median_rent_all AS median_rent,
+    e.median_annual_earnings AS earnings,
+    aq.pm25_ugm3 AS pm25,
+    h.yearly_change_pct AS hpi_yoy
+FROM core_lad_boundaries lb
+JOIN price_agg p ON p.lad_code = lb.lad_code
+LEFT JOIN rent_latest r ON r.lad_code = lb.lad_code
+LEFT JOIN core_earnings_lad e ON e.lad_code = lb.lad_code
+LEFT JOIN aq_latest aq ON aq.lad_code = lb.lad_code
+LEFT JOIN hpi_latest h ON h.lad_code = lb.lad_code;
+
+CREATE UNIQUE INDEX idx_mv_lad_comparable_lad_code ON mv_lad_comparable_features (lad_code);

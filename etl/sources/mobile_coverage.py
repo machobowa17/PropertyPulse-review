@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_QUARTERLY, TABLE_NAMES, supported_country_prefixes
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -67,7 +68,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['mobile_coverage_lad']}")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['mobile_coverage_lad']}_new (LIKE {TABLE_NAMES['mobile_coverage_lad']} INCLUDING ALL)")
     conn.commit()
 
     rows = []
@@ -97,13 +98,15 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['mobile_coverage_lad']} (
+            f"""INSERT INTO {TABLE_NAMES['mobile_coverage_lad']}_new (
                     lad_code, lad_name,
                     pct_4g_outdoor, pct_4g_indoor, pct_5g_outdoor
                 ) VALUES %s""",
             rows,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['mobile_coverage_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['mobile_coverage_lad']}")
     count = cur.fetchone()[0]

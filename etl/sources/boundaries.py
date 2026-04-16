@@ -50,7 +50,7 @@ METADATA = {
         TABLE_NAMES["county_boundaries"],
     ],
     "cache_key_patterns": ["lsoa_sess:*", "area:*", "boundary:*", "choropleth:*"],
-    "expected_row_range": (33_000, 35_000),   # core_lsoa_boundaries
+    "expected_row_range": (33_000, 36_500),   # core_lsoa_boundaries (E+W)
 }
 
 # ---------------------------------------------------------------------------
@@ -139,8 +139,8 @@ def _ingest_lsoa_boundaries(conn):
 
     gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['lsoa_boundaries']} CASCADE")
 
+    # Insert/update without TRUNCATE — ON CONFLICT handles existing rows safely
     count = 0
     for _, row in gdf.iterrows():
         code = row.get(cols["code_field"])
@@ -193,8 +193,8 @@ def _ingest_ward_boundaries(conn):
 
     gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['ward_boundaries']} CASCADE")
 
+    # Insert/update without TRUNCATE — ON CONFLICT handles existing rows safely
     count = 0
     for _, row in gdf.iterrows():
         code = row.get(cols["code_field"])
@@ -244,8 +244,8 @@ def _ingest_lad_boundaries(conn):
 
     gdf = gpd.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['lad_boundaries']} CASCADE")
 
+    # Insert/update without TRUNCATE — ON CONFLICT handles existing rows safely
     count = 0
     for _, row in gdf.iterrows():
         code = row.get(cols["code_field"])

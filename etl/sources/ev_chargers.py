@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_QUARTERLY, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -65,7 +66,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['ev_chargers']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['ev_chargers']}_new (LIKE {TABLE_NAMES['ev_chargers']} INCLUDING ALL)")
     conn.commit()
 
     rows = []
@@ -102,7 +103,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['ev_chargers']} (
+            f"""INSERT INTO {TABLE_NAMES['ev_chargers']}_new (
                     reference_id, name, latitude, longitude,
                     connector_count, max_power_kw, operator
                 ) VALUES %s""",
@@ -112,11 +113,13 @@ def run(db_url: str) -> int:
         conn.commit()
 
     cur.execute(f"""
-        UPDATE {TABLE_NAMES['ev_chargers']}
+        UPDATE {TABLE_NAMES['ev_chargers']}_new
         SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
         WHERE latitude IS NOT NULL
     """)
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['ev_chargers'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['ev_chargers']}")
     count = cur.fetchone()[0]

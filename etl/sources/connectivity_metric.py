@@ -21,6 +21,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 
 METADATA = {
@@ -192,7 +193,8 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['connectivity_lsoa']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['connectivity_lsoa']}_new (LIKE {TABLE_NAMES['connectivity_lsoa']} INCLUDING ALL)")
+    conn.commit()
     if rows:
         assignments = ",\n                ".join(
             f"{col} = EXCLUDED.{col}" for col in INSERT_COLUMNS if col != "lsoa_code"
@@ -200,7 +202,7 @@ def run(db_url: str) -> int:
         execute_values(
             cur,
             f"""
-            INSERT INTO {TABLE_NAMES['connectivity_lsoa']} ({', '.join(INSERT_COLUMNS)})
+            INSERT INTO {TABLE_NAMES['connectivity_lsoa']}_new ({', '.join(INSERT_COLUMNS)})
             VALUES %s
             ON CONFLICT (lsoa_code) DO UPDATE SET
                 {assignments}
@@ -210,6 +212,7 @@ def run(db_url: str) -> int:
         )
     conn.commit()
 
+    blue_green_swap(conn, TABLE_NAMES['connectivity_lsoa'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['connectivity_lsoa']}")
     count = cur.fetchone()[0]
     cur.close()

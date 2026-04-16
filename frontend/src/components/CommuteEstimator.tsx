@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { AlertTriangle, Building2, Bus, Clock3, MapPin, Train, Wifi } from 'lucide-react';
-import { fetchAreaTab } from '../api/client';
-import type { AreaResponse, Metric } from '../types';
+import type { Metric } from '../types';
 
 interface Props {
-  sessionKey: string;
+  metrics: Metric[];
   originLabel: string;
 }
-
-type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
 function getMetric(metrics: Metric[], id: string): Metric | undefined {
   return metrics.find((metric) => metric.id === id);
@@ -150,33 +147,7 @@ function getMetricComparisonNumber(metric: Metric | null | undefined): number | 
   return asNumber(metric?.parent_value);
 }
 
-export default function CommuteEstimator({ sessionKey, originLabel }: Props) {
-  const [state, setState] = useState<LoadState>('idle');
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setState('loading');
-      try {
-        const response: AreaResponse = await fetchAreaTab(sessionKey, 'Lifestyle & Connectivity');
-        if (cancelled) return;
-        setMetrics(response.metrics || []);
-        setState('ready');
-      } catch {
-        if (cancelled) return;
-        setMetrics([]);
-        setState('error');
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionKey]);
-
+export default function CommuteEstimator({ metrics, originLabel }: Props) {
   const accessMetric = useMemo(() => getMetric(metrics, 'nearest_station') || getMetric(metrics, 'stations_in_area'), [metrics]);
   const ptalMetric = useMemo(() => getMetric(metrics, 'ptal_score'), [metrics]);
   const broadbandMetric = useMemo(() => getMetric(metrics, 'broadband'), [metrics]);
@@ -310,34 +281,8 @@ export default function CommuteEstimator({ sessionKey, originLabel }: Props) {
     return parts.length ? parts.join(' • ') : 'Broadband context not available.';
   }, [broadbandMetric]);
 
-  if (state === 'loading' || state === 'idle') {
-    return (
-      <div className="bg-surface rounded-xl p-4 space-y-3 mt-2">
-        <div className="text-sm font-semibold text-ink">Commuter Connectivity</div>
-        <div className="text-xs text-ink-muted">Loading source-backed movement evidence for {originLabel}…</div>
-      </div>
-    );
-  }
-
-  if (state === 'error') {
-    return (
-      <div className="bg-surface rounded-xl p-4 space-y-3 mt-2">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
-            <AlertTriangle className="w-4 h-4" />
-          </div>
-          <div className="space-y-1">
-            <h4 className="text-sm font-semibold text-ink">Commuter connectivity unavailable</h4>
-            <p className="text-xs text-ink-muted">
-              The source-backed movement panel could not load for <span className="font-semibold text-ink">{originLabel}</span>.
-            </p>
-            <p className="text-xs text-ink-muted">
-              Use the wider Lifestyle rows as the primary transport evidence for now while this supporting panel reloads.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+  if (!metrics.length) {
+    return null;
   }
 
   return (

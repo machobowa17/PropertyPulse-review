@@ -21,6 +21,7 @@ interface Props {
   initialViewport?: Viewport | null;
   onViewportChange?: (vp: Viewport) => void;
   choroplethData?: ChoroplethResponse | null;
+  choroplethUrl?: string | null;
 }
 
 const POI_COLOURS: Record<string, string> = {
@@ -124,7 +125,7 @@ const ISOCHRONE_LAYERS = [
 const ISOCHRONE_SOURCES = ['iso-5', 'iso-10', 'iso-15'] as const;
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function formatPrice(price: number): string {
@@ -209,7 +210,7 @@ function soldPricePopupHtml(props: Record<string, unknown>): string {
   </div>`;
 }
 
-export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData }: Props) {
+export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData, choroplethUrl }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -233,6 +234,11 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
   // Track previous tab to detect tab changes (for stale marker cleanup)
   const prevTabRef = useRef(activeTab);
+
+  // R10: guard sold price marker rebuild when pois + all filter inputs are unchanged
+  const lastRenderedPoisRef = useRef<GeoJSON.FeatureCollection | null | undefined>(undefined);
+  const lastRenderedLayersRef = useRef<Record<string, boolean> | undefined>(undefined);
+  const lastRenderedLsoaRef = useRef<string | undefined>(undefined);
 
   // Store choropleth event handlers for cleanup
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -471,6 +477,13 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     // Don't clear markers if no new data — keeps old markers visible during tab-switch loading
     if (!poisData?.features) return;
 
+    // R10: skip full rebuild if pois + filter inputs are all unchanged
+    // (lastRenderedPoisRef is reset to undefined by the effect when tab/layers/lsoa change)
+    if (poisData === lastRenderedPoisRef.current) return;
+    lastRenderedPoisRef.current = poisData;
+    lastRenderedLayersRef.current = layers;
+    lastRenderedLsoaRef.current = lsoaCode;
+
     // Clear old markers (new data is ready to render)
     soldMarkersRef.current.forEach((m) => m.remove());
     soldMarkersRef.current = [];
@@ -623,6 +636,11 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     const tabChanged = prevTabRef.current !== activeTab;
     prevTabRef.current = activeTab;
 
+    // R10: reset pois guard when non-pois inputs change so rebuild still happens
+    if (tabChanged || searchLsoa !== lastRenderedLsoaRef.current || visibleLayers !== lastRenderedLayersRef.current) {
+      lastRenderedPoisRef.current = undefined;
+    }
+
     // Helper: clear all markers + flood zone layers
     const clearAll = () => {
       soldMarkersRef.current.forEach((m) => m.remove());
@@ -699,7 +717,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       matchExpr.push(noDataColour); // fallback for -1 / null
 
       try {
-        m.addSource(CHORO_SOURCE, { type: 'geojson', data: choroplethData as GeoJSON.FeatureCollection });
+        // R2: use URL when available so MapLibre fetches + parses GeoJSON off the main thread
+        const sourceData = choroplethUrl ?? (choroplethData as GeoJSON.FeatureCollection);
+        m.addSource(CHORO_SOURCE, { type: 'geojson', data: sourceData });
 
         // Insert below boundary layers so they remain visible on top
         const beforeLayer = m.getLayer('lsoa-boundary-fill')
@@ -845,7 +865,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       }
       cleanup();
     };
-  }, [choroplethData]);
+  }, [choroplethData, choroplethUrl]);
 
   // Toggle boundary layer visibility
   useEffect(() => {
@@ -1007,8 +1027,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       renderPoisOnMap(map, poisRef.current, visibleLayersRef.current, searchLsoaRef.current);
     });
 
+    // R11: resize map whenever the container changes size (e.g. CSS Grid mobile animation)
+    const ro = new ResizeObserver(() => { map.resize(); });
+    ro.observe(containerRef.current!);
+
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { ro.disconnect(); map.remove(); mapRef.current = null; };
   // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
   }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 

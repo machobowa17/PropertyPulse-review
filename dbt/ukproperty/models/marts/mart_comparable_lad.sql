@@ -18,7 +18,7 @@ aq_data AS (
     FROM core_air_quality_lad GROUP BY lad_code
 ),
 hpi_data AS (
-    SELECT lad_code, hpi_yoy FROM core_hpi_lad WHERE year_month = (SELECT MAX(year_month) FROM core_hpi_lad)
+    SELECT lad_code, yearly_change_pct AS hpi_yoy FROM core_hpi_lad WHERE date = (SELECT MAX(date) FROM core_hpi_lad)
 )
 SELECT
     l.lad_code,

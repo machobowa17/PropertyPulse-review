@@ -5,16 +5,16 @@ services:
     image: postgis/postgis:16-3.4
     container_name: ukproperty_db
     environment:
-      POSTGRES_DB: ukproperty
-      POSTGRES_USER: ukproperty
-      POSTGRES_PASSWORD: ukproperty_dev
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./sql:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ukproperty"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,8 +23,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ukproperty_redis
+    command: redis-server --appendonly yes
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -40,10 +43,10 @@ services:
     ports:
       - "8008:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://ukproperty:ukproperty_dev@db:5432/ukproperty
-      DATABASE_URL_SYNC: postgresql://ukproperty:ukproperty_dev@db:5432/ukproperty
-      REDIS_URL: redis://redis:6379/0
-      ALLOWED_ORIGINS: "http://localhost:3001,http://frontend:80"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: ${REDIS_URL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     depends_on:
       db:
         condition: service_healthy
@@ -66,3 +69,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

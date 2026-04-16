@@ -40,6 +40,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ONE_TIME, TABLE_NAMES
+from utils import blue_green_swap
 
 
 _EW_CENSUS_PREFIXES = ("E", "W")
@@ -50,12 +51,13 @@ _EW_CENSUS_PREFIXES = ("E", "W")
 
 METADATA = {
     "name":           "census",
-    "description":    "Census 2021 (TS001/003/004/006/007A/017/022/037/044/045/054/058/066/067) → core_census_lsoa + core_census_ethnicity_ward.",
+    "description":    "Census 2021 (TS001/003/004/006/007A/017/022/027/031/037/044/045/054/058/066/067) → core_census_lsoa + core_census_ethnicity_ward + core_census_religion_ward.",
     "schedule":       SCHEDULE_ONE_TIME,
     "depends_on":     [],
     "tables_written": [
         TABLE_NAMES["census_lsoa"],
         TABLE_NAMES["census_ethnicity_ward"],
+        TABLE_NAMES["census_religion_ward"],
     ],
     "cache_key_patterns": [],
     "expected_row_range": (32_000, 36_000),   # census_lsoa row count (primary)
@@ -325,7 +327,7 @@ def _ingest_hh_size(cur, census_dir):
     print(f"  Inserted {len(rows):,} household size rows", flush=True)
 
 
-def _ingest_ethnicity(cur, census_dir):
+def _ingest_ethnicity(cur, census_dir, conn):
     """TS022 → core_census_ethnicity_ward."""
     print("  Ingesting ethnicity (TS022 ward)...", flush=True)
     path = os.path.join(census_dir, "census2021-ts022-ward.csv")
@@ -365,17 +367,19 @@ def _ingest_ethnicity(cur, census_dir):
             except (ValueError, KeyError):
                 continue
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['census_ethnicity_ward']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['census_ethnicity_ward']}_new (LIKE {TABLE_NAMES['census_ethnicity_ward']} INCLUDING ALL)")
+    conn.commit()
     execute_values(
         cur,
         f"""
-        INSERT INTO {TABLE_NAMES['census_ethnicity_ward']}
+        INSERT INTO {TABLE_NAMES['census_ethnicity_ward']}_new
             (ward_code, total_pop, pct_white, pct_asian, pct_black, pct_mixed, pct_other)
         VALUES %s
         """,
         rows,
         page_size=5_000,
     )
+    blue_green_swap(conn, TABLE_NAMES['census_ethnicity_ward'])
     print(f"  Inserted {len(rows):,} ethnicity rows", flush=True)
 
 
@@ -545,10 +549,14 @@ def _ingest_extra(cur, census_dir):
                 if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
-                    total = int(r["Highest level of qualification: Total: All usual residents aged 16 years and over"] or 0)
+                    total = int(r.get("Highest level of qualification: Total: All usual residents aged 16 years and over")
+                              or r.get("Highest level of qualification: Total: All usual residents aged 16 years and over; measures: Value")
+                              or 0)
                     if total == 0:
                         continue
-                    degree = int(r["Highest level of qualification: Level 4 qualifications or above"] or 0)
+                    degree = int(r.get("Highest level of qualification: Level 4 qualifications or above")
+                                or r.get("Highest level of qualification: Level 4 qualifications and above")
+                                or 0)
                     rows.append((lsoa, round(degree / total * 100, 2)))
                 except (ValueError, KeyError):
                     continue
@@ -574,10 +582,14 @@ def _ingest_extra(cur, census_dir):
                 if not lsoa.startswith(_EW_CENSUS_PREFIXES):
                     continue
                 try:
-                    total = int(r["Country of birth: Total: All usual residents"] or 0)
+                    total = int(r.get("Country of birth: Total: All usual residents")
+                              or r.get("Country of birth: Total; measures: Value")
+                              or 0)
                     if total == 0:
                         continue
-                    uk = int(r["Country of birth: Europe: United Kingdom"] or 0)
+                    uk = int(r.get("Country of birth: Europe: United Kingdom")
+                            or r.get("Country of birth: Europe: United Kingdom; measures: Value")
+                            or 0)
                     born_abroad = total - uk
                     rows.append((lsoa, round(born_abroad / total * 100, 2)))
                 except (ValueError, KeyError):
@@ -595,6 +607,149 @@ def _ingest_extra(cur, census_dir):
         print(f"    TS004 SKIPPED — {ts004_path} not found", flush=True)
 
 
+def _ingest_identity(cur, census_dir):
+    """TS027 → pct_uk_identity column in core_census_lsoa.
+
+    Sums all UK-only identity categories (British, English, Welsh, Scottish,
+    Northern Irish, Cornish) as a percentage of all usual residents.
+    """
+    print("  Ingesting national identity (TS027)...", flush=True)
+    path = os.path.join(census_dir, "census2021-ts027-lsoa.csv")
+    if not os.path.exists(path):
+        print(f"    TS027 SKIPPED — {path} not found", flush=True)
+        return
+
+    _COL_TOTAL = "National identity: Total: All usual residents"
+    _UK_COLS = [
+        "National identity: British only identity",
+        "National identity: English only identity",
+        "National identity: English and British only identity",
+        "National identity: Welsh only identity",
+        "National identity: Welsh and British only identity",
+        "National identity: Scottish only identity",
+        "National identity: Scottish and British only identity",
+        "National identity: Northern Irish only identity",
+        "National identity: Northern Irish and British only identity",
+        "National identity: Cornish only identity",
+        "National identity: Cornish and British only identity",
+        "National identity: Any other combination of only UK identities",
+    ]
+
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            lsoa = r["geography code"].strip()
+            if not lsoa.startswith(_EW_CENSUS_PREFIXES):
+                continue
+            try:
+                total = int(r[_COL_TOTAL] or 0)
+                if total == 0:
+                    continue
+                uk_sum = sum(int(r.get(c) or 0) for c in _UK_COLS)
+                rows.append((lsoa, round(uk_sum / total * 100, 2)))
+            except (ValueError, KeyError):
+                continue
+
+    if rows:
+        execute_values(
+            cur,
+            f"""INSERT INTO {TABLE_NAMES['census_lsoa']} (lsoa_code, pct_uk_identity)
+                VALUES %s ON CONFLICT (lsoa_code) DO UPDATE SET
+                pct_uk_identity = EXCLUDED.pct_uk_identity""",
+            rows, page_size=5_000,
+        )
+        print(f"    TS027 identity: {len(rows):,} rows", flush=True)
+
+
+def _ingest_religion(cur, census_dir, conn):
+    """TS031 → core_census_religion_ward (ward-level, same pattern as ethnicity).
+
+    Creates the table if it doesn't exist, then TRUNCATE + INSERT.
+    Columns: ward_code, total_pop, pct_christian, pct_muslim, pct_hindu,
+             pct_sikh, pct_jewish, pct_buddhist, pct_no_religion, pct_other.
+    """
+    print("  Ingesting religion (TS031 ward)...", flush=True)
+    path = os.path.join(census_dir, "census2021-ts031-ward.csv")
+    if not os.path.exists(path):
+        print(f"    TS031 SKIPPED — {path} not found", flush=True)
+        return
+
+    # Ensure table exists
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAMES['census_religion_ward']} (
+            ward_code       TEXT PRIMARY KEY,
+            total_pop       INT,
+            pct_christian   NUMERIC(5,2),
+            pct_muslim      NUMERIC(5,2),
+            pct_hindu       NUMERIC(5,2),
+            pct_sikh        NUMERIC(5,2),
+            pct_jewish      NUMERIC(5,2),
+            pct_buddhist    NUMERIC(5,2),
+            pct_no_religion NUMERIC(5,2),
+            pct_other       NUMERIC(5,2)
+        )
+    """)
+
+    _COL_TOTAL     = "Religion (detailed): Total: All Usual Residents"
+    _COL_CHRISTIAN = "Religion (detailed): Christian"
+    _COL_MUSLIM    = "Religion (detailed): Muslim "   # trailing space in ONS header
+    _COL_HINDU     = "Religion (detailed): Hindu"
+    _COL_SIKH      = "Religion (detailed): Sikh"
+    _COL_JEWISH    = "Religion (detailed): Jewish"
+    _COL_BUDDHIST  = "Religion (detailed): Buddhist"
+    _COL_NORELIG   = "Religion (detailed): No religion"
+    _COL_OTHER     = "Religion (detailed): Other religion"
+
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            ward = r["geography code"].strip()
+            if not ward.startswith(_EW_CENSUS_PREFIXES):
+                continue
+            try:
+                total = int(r[_COL_TOTAL] or 0)
+                if total == 0:
+                    continue
+                christian = int(r.get(_COL_CHRISTIAN) or 0)
+                muslim    = int(r.get(_COL_MUSLIM) or r.get(_COL_MUSLIM.rstrip()) or 0)
+                hindu     = int(r.get(_COL_HINDU) or 0)
+                sikh      = int(r.get(_COL_SIKH) or 0)
+                jewish    = int(r.get(_COL_JEWISH) or 0)
+                buddhist  = int(r.get(_COL_BUDDHIST) or 0)
+                no_relig  = int(r.get(_COL_NORELIG) or 0)
+                other     = int(r.get(_COL_OTHER) or 0)
+                rows.append((
+                    ward, total,
+                    round(christian / total * 100, 2),
+                    round(muslim / total * 100, 2),
+                    round(hindu / total * 100, 2),
+                    round(sikh / total * 100, 2),
+                    round(jewish / total * 100, 2),
+                    round(buddhist / total * 100, 2),
+                    round(no_relig / total * 100, 2),
+                    round(other / total * 100, 2),
+                ))
+            except (ValueError, KeyError):
+                continue
+
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['census_religion_ward']}_new (LIKE {TABLE_NAMES['census_religion_ward']} INCLUDING ALL)")
+    conn.commit()
+    execute_values(
+        cur,
+        f"""
+        INSERT INTO {TABLE_NAMES['census_religion_ward']}_new
+            (ward_code, total_pop, pct_christian, pct_muslim, pct_hindu,
+             pct_sikh, pct_jewish, pct_buddhist, pct_no_religion, pct_other)
+        VALUES %s
+        """,
+        rows,
+        page_size=5_000,
+    )
+    blue_green_swap(conn, TABLE_NAMES['census_religion_ward'])
+    print(f"  Inserted {len(rows):,} religion rows", flush=True)
+
+
 # ---------------------------------------------------------------------------
 # Main run function
 # ---------------------------------------------------------------------------
@@ -610,7 +765,9 @@ def run(db_url: str) -> int:
     4. Load TS058 → commute distance columns.
     5. Load TS037/045/066/067/004 → extra columns (health, cars, econ, degree, born abroad).
     6. Load TS022 → core_census_ethnicity_ward (separate table, ward-level).
-    7. Return final row count in core_census_lsoa.
+    7. Load TS027 → pct_uk_identity column in core_census_lsoa.
+    8. Load TS031 → core_census_religion_ward (separate table, ward-level).
+    9. Return final row count in core_census_lsoa.
 
     Note: Each domain uses INSERT ... ON CONFLICT DO UPDATE, so only the
     columns for that domain are touched. Extra columns are preserved even if
@@ -638,7 +795,13 @@ def run(db_url: str) -> int:
     _ingest_extra(cur, census_dir)
     conn.commit()
 
-    _ingest_ethnicity(cur, census_dir)
+    _ingest_ethnicity(cur, census_dir, conn)
+    conn.commit()
+
+    _ingest_identity(cur, census_dir)
+    conn.commit()
+
+    _ingest_religion(cur, census_dir, conn)
     conn.commit()
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['census_lsoa']}")

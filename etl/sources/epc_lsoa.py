@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import EPC_BAND_SCORES, SCHEDULE_QUARTERLY, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -65,7 +66,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['epc_lsoa']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['epc_lsoa']}_new (LIKE {TABLE_NAMES['epc_lsoa']} INCLUDING ALL)")
     conn.commit()
 
     # EPC band → midpoint energy efficiency score (from constants)
@@ -126,7 +127,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['epc_lsoa']} (
+            f"""INSERT INTO {TABLE_NAMES['epc_lsoa']}_new (
                     lsoa_code, total_certs, avg_energy_score,
                     pct_rating_a_b, pct_rating_c, pct_rating_d, pct_rating_e_g,
                     avg_co2_emissions
@@ -136,6 +137,8 @@ def run(db_url: str) -> int:
             page_size=10_000,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['epc_lsoa'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['epc_lsoa']}")
     count = cur.fetchone()[0]

@@ -130,8 +130,9 @@ TABLE_NAMES = {
     "lad_county_lookup":        "core_lad_county_lookup",
     "place_names":              "core_place_names",
     "place_boundaries":         "core_place_boundaries",
-    "place_lsoa_mapping":       "core_place_lsoa_mapping",
-    "place_lsoa_mapping_town":  "core_place_lsoa_mapping_town",
+    "place_lsoa_mapping":         "core_place_lsoa_mapping",
+    "place_lsoa_mapping_town":    "core_place_lsoa_mapping_town",
+    "place_boundaries_union":     "core_place_boundaries_union",
     "property_transactions":    "core_property_transactions",
     "hpi_lad":                  "core_hpi_lad",
     "voa_rents_lad":            "core_voa_rents_lad",
@@ -169,4 +170,26 @@ TABLE_NAMES = {
     "pipeline_runs":            "core_pipeline_runs",
     "lsoa_green_space":         "core_lsoa_green_space",
     "lsoa_transport":           "core_lsoa_transport",
+}
+
+# ---------------------------------------------------------------------------
+# VOA LAD code remapping — old district codes for restructured authorities
+# ---------------------------------------------------------------------------
+# VOA PRMS data (2022-23) predates the April 2023 (and some April 2021)
+# LAD restructures. Our postcode table uses current ONS codes, but the VOA
+# table still has the old district-level codes. When querying VOA rents
+# for a new-code LAD, expand the lookup to include the old constituent codes.
+
+VOA_LAD_REMAP: dict[str, list[str]] = {
+    # Northamptonshire restructure (April 2021)
+    "E06000061": ["E07000150", "E07000151", "E07000152", "E07000153"],  # North Northamptonshire = Corby + East Northants + Kettering + Wellingborough
+    "E06000062": ["E07000154", "E07000155", "E07000156"],               # West Northamptonshire = Daventry + Northampton + South Northants
+    # Cumbria restructure (April 2023)
+    "E06000063": ["E07000026", "E07000028", "E07000029"],               # Cumberland = Allerdale + Carlisle + Copeland
+    "E06000064": ["E07000027", "E07000030", "E07000031"],               # Westmorland and Furness = Barrow-in-Furness + Eden + South Lakeland
+    # North Yorkshire restructure (April 2023)
+    "E06000065": ["E07000163", "E07000164", "E07000165", "E07000166",   # North Yorkshire = Craven + Hambleton + Harrogate +
+                  "E07000167", "E07000168", "E07000169"],               #   Richmondshire + Ryedale + Scarborough + Selby
+    # Somerset restructure (April 2023)
+    "E06000066": ["E07000187", "E07000188", "E07000189", "E07000246"],  # Somerset = Mendip + Sedgemoor + South Somerset + Somerset West and Taunton
 }

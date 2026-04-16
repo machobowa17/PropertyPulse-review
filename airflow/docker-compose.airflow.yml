@@ -7,20 +7,20 @@ x-airflow-common: &airflow-common
   image: apache/airflow:2.9.3-python3.11
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow_db/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@airflow_db/${AIRFLOW_POSTGRES_DB}
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
-    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: ${AIRFLOW__WEBSERVER__EXPOSE_CONFIG:-false}
     # App env vars passed through
-    DATABASE_URL: postgresql://ukproperty:ukproperty_dev@db:5432/ukproperty
-    REDIS_URL: redis://redis:6379/0
+    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    REDIS_URL: ${REDIS_URL}
     POSTGRES_HOST: db
     POSTGRES_PORT: "5432"
-    POSTGRES_DB: ukproperty
-    POSTGRES_USER: ukproperty
-    POSTGRES_PASSWORD: ukproperty_dev
+    POSTGRES_DB: ${POSTGRES_DB}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ETL_DIR: /opt/etl
     DBT_DIR: /opt/dbt/ukproperty
     API_BASE_URL: http://api:8000/api/v1
@@ -41,13 +41,13 @@ services:
     image: postgres:15-alpine
     container_name: airflow_db
     environment:
-      POSTGRES_DB: airflow
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
     volumes:
       - airflow_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -84,12 +84,12 @@ services:
       - |
         airflow db init
         airflow users create \
-          --username admin \
+          --username ${AIRFLOW_ADMIN_USER} \
           --firstname Admin \
           --lastname User \
           --role Admin \
           --email admin@propertypulse.co.uk \
-          --password admin
+          --password ${AIRFLOW_ADMIN_PASSWORD}
     restart: "no"
 
 volumes:

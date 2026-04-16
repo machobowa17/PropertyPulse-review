@@ -17,6 +17,7 @@ Expected row count (verify after rebuild):
 import psycopg2
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -50,14 +51,14 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    print("  Truncating core_nhs_lsoa...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['nhs_lsoa']} CASCADE")
+    print("  Creating staging table core_nhs_lsoa_new...", flush=True)
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['nhs_lsoa']}_new (LIKE {TABLE_NAMES['nhs_lsoa']} INCLUDING ALL)")
     conn.commit()
 
     print("  Aggregating NHS facilities within 2km of each LSOA centroid...", flush=True)
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['nhs_lsoa']}
+        INSERT INTO {TABLE_NAMES['nhs_lsoa']}_new
             (lsoa_code, nhs_count_2km, gp_count_2km, hospital_count_2km,
              dentist_count_2km, pharmacy_count_2km, optician_count_2km, care_home_count_2km)
         SELECT
@@ -90,6 +91,8 @@ def run(db_url: str) -> int:
     inserted = cur.rowcount
     conn.commit()
     print(f"  Inserted {inserted:,} LSOA rows", flush=True)
+
+    blue_green_swap(conn, TABLE_NAMES['nhs_lsoa'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['nhs_lsoa']}")
     count = cur.fetchone()[0]

@@ -27,6 +27,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import PRICE_TYPES, SCHEDULE_ANNUAL, TABLE_NAMES, SUPPORTED_LAD_CODE_PREFIXES_BY_COUNTRY
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -40,7 +41,7 @@ METADATA = {
     "tables_written":     [
         TABLE_NAMES["price_sqm_lad"],
         TABLE_NAMES["price_sqm_lsoa"],
-        "core_price_sqm_lsoa_yearly",
+        TABLE_NAMES["price_sqm_lsoa_yearly"],
     ],
     "cache_key_patterns": ["area:*"],
     "expected_row_range": (30_000, 36_000),   # core_price_sqm_lsoa
@@ -168,9 +169,14 @@ def run(db_url: str) -> int:
             return round(bt["total"] / bt["count"], 2) if bt["count"] else None
         return round(d["total"] / d["count"], 2) if d["count"] else None
 
+    # Create staging tables for blue/green swap
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['price_sqm_lad']}_new (LIKE {TABLE_NAMES['price_sqm_lad']} INCLUDING ALL)")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['price_sqm_lsoa']}_new (LIKE {TABLE_NAMES['price_sqm_lsoa']} INCLUDING ALL)")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['price_sqm_lsoa_yearly']}_new (LIKE {TABLE_NAMES['price_sqm_lsoa_yearly']} INCLUDING ALL)")
+    conn.commit()
+
     # Load LAD snapshot table
     print(f"  LADs with data: {len(lad_data):,}", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['price_sqm_lad']}")
     lad_rows = [
         (lad,
          _avg(d), _avg(d, "D"), _avg(d, "S"), _avg(d, "T"), _avg(d, "F"),
@@ -179,7 +185,7 @@ def run(db_url: str) -> int:
     ]
     execute_values(
         cur,
-        f"""INSERT INTO {TABLE_NAMES['price_sqm_lad']} (
+        f"""INSERT INTO {TABLE_NAMES['price_sqm_lad']}_new (
                 lad_code, avg_price_per_sqm,
                 avg_ppsm_detached, avg_ppsm_semi, avg_ppsm_terraced, avg_ppsm_flat,
                 transaction_count
@@ -190,7 +196,6 @@ def run(db_url: str) -> int:
 
     # Load LSOA snapshot table
     print(f"  LSOAs with data: {len(lsoa_data):,}", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['price_sqm_lsoa']}")
     lsoa_rows = [
         (lsoa,
          _avg(d), _avg(d, "D"), _avg(d, "S"), _avg(d, "T"), _avg(d, "F"),
@@ -199,7 +204,7 @@ def run(db_url: str) -> int:
     ]
     execute_values(
         cur,
-        f"""INSERT INTO {TABLE_NAMES['price_sqm_lsoa']} (
+        f"""INSERT INTO {TABLE_NAMES['price_sqm_lsoa']}_new (
                 lsoa_code, avg_price_per_sqm,
                 avg_ppsm_detached, avg_ppsm_semi, avg_ppsm_terraced, avg_ppsm_flat,
                 transaction_count
@@ -210,7 +215,6 @@ def run(db_url: str) -> int:
 
     # Load LSOA yearly table (ALL years)
     print(f"  LSOA-yearly combinations: {len(lsoa_yearly):,}", flush=True)
-    cur.execute("TRUNCATE TABLE core_price_sqm_lsoa_yearly")
     yearly_rows = [
         (lsoa, year, ptype,
          round(d["total"] / d["count"], 2),
@@ -223,13 +227,18 @@ def run(db_url: str) -> int:
     for start in range(0, len(yearly_rows), chunk_size):
         execute_values(
             cur,
-            """INSERT INTO core_price_sqm_lsoa_yearly
+            f"""INSERT INTO {TABLE_NAMES['price_sqm_lsoa_yearly']}_new
                     (lsoa_code, year, property_type, avg_ppsm, transaction_count)
                 VALUES %s""",
             yearly_rows[start:start + chunk_size],
         )
     conn.commit()
-    print(f"  core_price_sqm_lsoa_yearly: {len(yearly_rows):,} rows", flush=True)
+    print(f"  {TABLE_NAMES['price_sqm_lsoa_yearly']}: {len(yearly_rows):,} rows", flush=True)
+
+    # Atomic swap — all three tables replace live data simultaneously
+    blue_green_swap(conn, TABLE_NAMES['price_sqm_lad'])
+    blue_green_swap(conn, TABLE_NAMES['price_sqm_lsoa'])
+    blue_green_swap(conn, TABLE_NAMES['price_sqm_lsoa_yearly'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['price_sqm_lsoa']}")
     count = cur.fetchone()[0]

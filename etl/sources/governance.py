@@ -22,6 +22,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_QUARTERLY, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -111,7 +112,7 @@ def _ingest_council_control(conn):
                  .replace("royal borough of ", ""))
         lad_map[clean] = lad_code
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['council_control_lad']}")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['council_control_lad']}_new (LIKE {TABLE_NAMES['council_control_lad']} INCLUDING ALL)")
     conn.commit()
 
     seen_lads = {}
@@ -128,13 +129,15 @@ def _ingest_council_control(conn):
     rows = list(seen_lads.values())
     execute_values(
         cur,
-        f"""INSERT INTO {TABLE_NAMES['council_control_lad']}
+        f"""INSERT INTO {TABLE_NAMES['council_control_lad']}_new
                 (lad_code, council_name, controlling_party, majority_seats, total_seats)
             VALUES %s
             ON CONFLICT DO NOTHING""",
         rows,
     )
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['council_control_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['council_control_lad']}")
     count = cur.fetchone()[0]
@@ -149,15 +152,17 @@ def _ingest_council_control(conn):
 
 def _ingest_s114(conn):
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['s114_notices']}")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['s114_notices']}_new (LIKE {TABLE_NAMES['s114_notices']} INCLUDING ALL)")
+    conn.commit()
     execute_values(
         cur,
-        f"""INSERT INTO {TABLE_NAMES['s114_notices']}
+        f"""INSERT INTO {TABLE_NAMES['s114_notices']}_new
                 (lad_code, council_name, notice_date)
             VALUES %s""",
         _S114_DATA,
     )
     conn.commit()
+    blue_green_swap(conn, TABLE_NAMES['s114_notices'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['s114_notices']}")
     count = cur.fetchone()[0]
     cur.close()

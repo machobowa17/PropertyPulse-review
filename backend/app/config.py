@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3001"
     RATE_LIMIT: str = "60/minute"
+    ADMIN_API_KEY: str = ""
+    SENTRY_DSN: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

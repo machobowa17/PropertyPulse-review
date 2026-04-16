@@ -271,7 +271,11 @@ async def _resolve_place_name(db: AsyncSession, query: str) -> dict:
 
 
 async def _try_county(db: AsyncSession, q_lower: str) -> dict | None:
-    """Check if input matches a county name."""
+    """Check if input matches a county name.
+
+    Also matches common short names (e.g. "london" → "Greater London")
+    so users don't need to type the full formal name.
+    """
     result = await db.execute(
         text("""
             SELECT county_name,
@@ -279,6 +283,8 @@ async def _try_county(db: AsyncSession, q_lower: str) -> dict | None:
                    ST_X(ST_Centroid(geom)) AS lon
             FROM core_county_boundaries
             WHERE LOWER(county_name) = :q
+               OR LOWER(county_name) = 'greater ' || :q
+            ORDER BY CASE WHEN LOWER(county_name) = :q THEN 0 ELSE 1 END
             LIMIT 1
         """),
         {"q": q_lower},

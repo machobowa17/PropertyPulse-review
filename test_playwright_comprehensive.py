@@ -326,35 +326,35 @@ def run_all_tests():
         map_container = page.locator(".maplibregl-map")
         R.add(section, "MapLibre container", map_container.count() > 0)
 
-        # Check for map layer control button
-        layer_btn = page.locator('button[title="Map layers"]')
+        # Check for map layer control button (new version: "Map evidence and layers")
+        layer_btns = page.locator('button[title="Map evidence and layers"]')
         R.add(section, "Layer control button",
-              layer_btn.count() > 0)
+              layer_btns.count() > 0)
 
-        if layer_btn.count() > 0:
-            # Open layer panel
-            layer_btn.click()
+        if layer_btns.count() > 0:
+            # Open layer panel — use last (desktop sidebar) button; force click to bypass z-index occlusion
+            layer_btns.last.click(force=True)
             time.sleep(0.5)
 
-            # Check layer panel text contains expected layers
-            panel_text = page.locator('[class*="absolute"]').filter(has_text="Sold Prices").inner_text()
-            has_sold = "Sold Prices" in panel_text
+            # Check layer panel text contains expected layers (new labels)
+            panel_text = page.locator('[class*="absolute"]').filter(has_text="Sold prices").inner_text()
+            has_sold = "Sold prices" in panel_text
             R.add(section, "Layer panel — Sold Prices", has_sold, f"panel text present")
 
-            # Check for boundary layer toggles
-            has_ward = page.locator('label:has-text("Ward Boundary")').count() > 0
-            has_lsoa = page.locator('label:has-text("LSOA Boundary")').count() > 0
+            # Check for boundary layer toggles (new labels: "Wider area boundary" and "Local analysis boundary")
+            has_ward = page.locator('button:has-text("Wider area boundary")').count() > 0
+            has_lsoa = page.locator('button:has-text("Local analysis boundary")').count() > 0
             R.add(section, "Layer panel — Ward toggle", has_ward)
             R.add(section, "Layer panel — LSOA toggle", has_lsoa)
 
-            # Toggle choropleth layer if available
-            choro_label = page.locator('label:has-text("Avg Price")')
-            if choro_label.count() > 0:
-                choro_label.click()
+            # Toggle choropleth layer if available (new: buttons, not labels)
+            choro_btn = page.locator('button:has-text("Average price heatmap")')
+            if choro_btn.count() > 0:
+                choro_btn.first.click(force=True)
                 time.sleep(3)  # Choropleth fetches data
                 R.add(section, "Choropleth toggle clicked", True, "Avg Price heatmap toggled")
                 # Turn it off again
-                choro_label.click()
+                choro_btn.first.click(force=True)
                 time.sleep(1)
 
         # Switch to Community tab — check for school markers

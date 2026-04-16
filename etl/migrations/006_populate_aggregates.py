@@ -8,11 +8,12 @@ then swaps it for the original. Avoids 29M-row UPDATE entirely.
 Estimated: ~15 min table creation + ~45 min index rebuilds = ~1 hour.
 Disk: needs ~10 GB for new table while old (~7 GB data) still exists.
 """
+import os
 import psycopg2
 import time
 import sys
 
-DSN = "dbname=ukproperty user=postgres"
+DSN = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/ukproperty")
 
 def step(msg):
     print(f"\n{'='*60}\n  {msg}\n{'='*60}", flush=True)
@@ -120,13 +121,17 @@ def main():
     if new_count != original_count:
         sys.exit(f"ABORT: count mismatch! old={original_count:,} new={new_count:,}")
 
-    # ── 4. Swap tables ───────────────────────────────────────────
+    # ── 4. Swap tables (atomic) ──────────────────────────────────
     t0 = step("4/7  Swap tables (rename old → drop, rename new → live)")
+    # Wrap rename+drop in a single transaction so partial failure can't leave broken state
+    conn.autocommit = False
     cur.execute("ALTER TABLE core_property_transactions RENAME TO core_property_transactions_old")
     cur.execute("ALTER TABLE core_property_transactions_new RENAME TO core_property_transactions")
     cur.execute("DROP TABLE core_property_transactions_old")
     cur.execute("DROP TABLE IF EXISTS _tx_agg")
-    done(t0, "swapped + old table dropped")
+    conn.commit()
+    conn.autocommit = True
+    done(t0, "swapped + old table dropped (atomic)")
 
     # ── 5. Primary key ───────────────────────────────────────────
     t0 = step("5/7  Rebuild primary key")

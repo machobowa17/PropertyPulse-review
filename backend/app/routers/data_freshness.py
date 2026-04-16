@@ -4,18 +4,29 @@ backend/app/routers/data_freshness.py — GET /data-freshness
 Returns last successful pipeline run per source from core_pipeline_runs.
 """
 
-from fastapi import APIRouter, Depends
+import secrets
+
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
+from app.errors import http_error
 from app.constants import TABLE_NAMES
 
 router = APIRouter(tags=["observability"])
 
 
 @router.get("/data-freshness")
-async def data_freshness(db: AsyncSession = Depends(get_db)):
+async def data_freshness(
+    db: AsyncSession = Depends(get_db),
+    x_api_key: str = Header(default=""),
+):
+    if not settings.ADMIN_API_KEY:
+        raise http_error(403, "ADMIN_ENDPOINT_DISABLED", "Admin API key not configured on server")
+    if not secrets.compare_digest(x_api_key.encode("utf-8"), settings.ADMIN_API_KEY.encode("utf-8")):
+        raise http_error(401, "UNAUTHORIZED", "Invalid or missing X-API-Key header")
     """
     Returns the most recent successful pipeline run per source.
 

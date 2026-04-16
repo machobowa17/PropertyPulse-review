@@ -18,6 +18,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES, is_supported_lad_code
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -85,18 +86,20 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['earnings_lad']}")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['earnings_lad']}_new (LIKE {TABLE_NAMES['earnings_lad']} INCLUDING ALL)")
     conn.commit()
 
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['earnings_lad']} (
+            f"""INSERT INTO {TABLE_NAMES['earnings_lad']}_new (
                     lad_code, lad_name, median_annual_earnings
                 ) VALUES %s""",
             rows,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['earnings_lad'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['earnings_lad']}")
     count = cur.fetchone()[0]

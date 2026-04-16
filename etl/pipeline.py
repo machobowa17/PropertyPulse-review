@@ -176,10 +176,14 @@ SOURCE_REGISTRY = {
         "module":       "sources.epc_domestic",
         "schedule":     SCHEDULE_MONTHLY,
         "depends_on":   [],
-        "description":  "MHCLG EPC domestic certificates bulk ZIP (all 93 columns) → core_epc_domestic.",
-        "tables_written": ["core_epc_domestic"],
-        "cache_key_patterns": ["pois:*", "area:*"],
-        "expected_row_range": (20_000_000, 30_000_000),
+        "description":  (
+            "MHCLG EPC bulk ZIP → load 9-col core_epc_domestic → SQL address-match "
+            "→ UPDATE core_property_transactions (floor_area_sqm, habitable_rooms, "
+            "epc_rating, ppsm, ppsft) → recompute lsoa_month ppsm/ppsft → DROP epc table."
+        ),
+        "tables_written": ["core_property_transactions"],
+        "cache_key_patterns": ["area:*", "price_history:*"],
+        "expected_row_range": (1_000_000, 10_000_000),
         "critical":     False,
     },
 
@@ -417,6 +421,28 @@ SOURCE_REGISTRY = {
         "tables_written": ["core_price_sqm_lsoa", "core_price_sqm_lad"],
         "cache_key_patterns": ["area:*"],
         "expected_row_range": (30_000, 36_000),
+        "critical":     False,
+    },
+
+    "inspire_parcels": {
+        "module":       "sources.inspire_parcels",
+        "schedule":     SCHEDULE_ONE_TIME,
+        "depends_on":   [],
+        "description":  "Land Registry INSPIRE Cadastral Parcel GML files → core_inspire_parcels (24M polygons).",
+        "tables_written": ["core_inspire_parcels"],
+        "cache_key_patterns": [],
+        "expected_row_range": (15_000_000, 30_000_000),
+        "critical":     False,
+    },
+
+    "llc": {
+        "module":       "sources.llc",
+        "schedule":     SCHEDULE_ONE_TIME,
+        "depends_on":   [],
+        "description":  "HM Land Registry Local Land Charges GML files → core_llc_charges (8.3M features, 4 charge types).",
+        "tables_written": ["core_llc_charges"],
+        "cache_key_patterns": [],
+        "expected_row_range": (5_000_000, 12_000_000),
         "critical":     False,
     },
 
@@ -793,7 +819,7 @@ Examples:
         conn = psycopg2.connect(DB_DSN)
         conn.autocommit = True
         cur = conn.cursor()
-        for view in ("mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats"):
+        for view in ("mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_lad_comparable_features"):
             t_mv = time.time()
             print(f"  REFRESH {view} ...", end=" ", flush=True)
             cur.execute(f"REFRESH MATERIALIZED VIEW {view}")

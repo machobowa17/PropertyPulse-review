@@ -26,11 +26,12 @@ epc_summary AS (
 crime_summary AS (
     SELECT
         lb.lad_code,
-        SUM(c.total_crimes) AS total_crimes,
-        SUM(c.total_crimes)::float / NULLIF(SUM(dem.total_population), 0) * 1000 AS crime_rate_per_1k
+        SUM(c.crime_count) AS total_crimes,
+        SUM(c.crime_count)::float / NULLIF(MAX(dem.total_population), 0) * 1000 AS crime_rate_per_1k
     FROM core_crime_lsoa c
     JOIN core_lsoa_boundaries lb ON lb.lsoa_code = c.lsoa_code
-    JOIN core_census_lsoa dem ON dem.lsoa_code = c.lsoa_code
+    JOIN (SELECT lsoa_code, SUM(total_population) AS total_population
+          FROM core_census_lsoa GROUP BY lsoa_code) dem ON dem.lsoa_code = c.lsoa_code
     GROUP BY lb.lad_code
 )
 SELECT

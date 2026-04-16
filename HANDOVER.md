@@ -1,8 +1,8 @@
 # PropertyPulse — Complete Handover Document
 
-**Date:** 2026-04-06
-**Branch:** `redesign/premium-ui`
-**Status:** Production-ready for England (42+ metrics, 5 tabs, persona engine, interactive map)
+**Date:** 2026-04-16 (session 32)
+**Branch:** `main`
+**Status:** Production-ready for England + Wales. Phase 2 Review Fixes ALL COMPLETE (22 items: security hardening, ETL blue/green swap, Sentry APM, R1-R25 frontend+backend). Next: AWS deployment (Phase 3).
 
 ---
 
@@ -110,10 +110,21 @@ frontend/
   src/
     pages/
       Home.tsx           — Dark cinematic landing page
-      Results.tsx        — Main dashboard (tabs, metrics, map, calculators)
+      Results.tsx        — 2-line re-export of ResultsPage
+      ResultsPage.tsx    — Thin layout shell: Provider + sub-components
       Attribution.tsx    — Data sources and licenses
+      SavedAreas.tsx     — Saved area collections
+    context/
+      ResultsContext.tsx — Provider + useResults() hook (ALL shared state + queries)
+    hooks/
+      useIsDesktop.ts    — Media query hook
+      useResultsMap.ts   — All map state, refs, callbacks, scroll-follow
     components/
-      SearchBox.tsx      — Debounced search with dropdown suggestions
+      results/
+        ResultsHeader.tsx    — Sticky nav header
+        ResultsHero.tsx      — Area banner + LsoaContextBlurb
+        ResultsMapPanel.tsx  — ResultsMobileMap + ResultsDesktopMap exports
+        ResultsMetricsPanel.tsx — Metrics grid + supplemental tools
       MetricCard.tsx     — THE core component — renders any metric with expanded details
       MapView.tsx        — MapLibre GL map with POIs, boundaries, choropleths
       MapLayerControl.tsx — Toggle map layers
@@ -121,14 +132,18 @@ frontend/
       TransactionTable.tsx — Paginated, sortable transaction table
       CommuteEstimator.tsx — Commute time estimator
       ComparableAreas.tsx — Similar LADs panel
+      ErrorBoundary.tsx  — Wraps ResultsPage in App.tsx
       MortgageCalculator.tsx, RentalYieldCalculator.tsx
-      DistrictPriceHistoryChart.tsx, NewBuildTrendChart.tsx, AmenityRadarChart.tsx,
-      AirQualityChart.tsx, EpcRatingChart.tsx, PriceByTypeChart.tsx, etc.
+      AirQualityChart.tsx, PersonaScoreCard.tsx, etc.
     api/client.ts        — All fetch functions + TypeScript interfaces
     types/index.ts       — ResolveResponse, Metric, AreaResponse, TabName, PersonaId
     utils/
       tabs.ts            — TABS config, formatValue(value, unit), METRIC_ICONS
-      personas.ts        — 6 personas, getTakeaway() engine (252 rules), weight matrix
+      personas.ts        — 6 personas, getTakeaway() engine (60 metric branches, full registry coverage)
+      personalization.ts — PERSONA_METRIC_WEIGHTS (45 entries), METRIC_TAB, buildPersonaFitSummary()
+      resultsConstants.ts — MAP_LAYER_DEFAULTS, CHOROPLETH_LAYERS, etc.
+      tabExplainers.ts   — TAB_EXPLAINERS per tab
+      sectionSummary.ts  — buildSectionSummary() for metrics panel chip
 
 sql/
   001_schema.sql         — Original schema (historical; some tables since dropped)
@@ -250,25 +265,28 @@ The ETL pipeline invalidates relevant cache patterns after successful runs. Cach
 ## 6. Database
 
 **Database:** `ukproperty` on PostgreSQL 16 with PostGIS
-**Size:** ~20 GB, ~19 GB disk free
+**Size:** ~30+ GB (SD card at `/Volumes/PropertyPulse/var-16`)
 **User:** `postgres` (no password, local socket auth)
 
 ### Key Tables
 
-| Table | Rows | Size | Purpose |
-|-------|------|------|---------|
-| `core_property_transactions` | 28.9M | 14 GB | **THE master table** — Land Registry PPD + EPC columns + 12 lsoa_month_* aggregates |
-| `core_postcodes` | ~2.5M | 1 GB | ONSPD postcode directory (lat/lon/lsoa/ward/lad/county) |
-| `core_crime_lsoa` | ~6M | 896 MB | Monthly crime by LSOA and type |
-| `core_lsoa_boundaries` | 33,755 | ~50 MB | LSOA polygons (geometry + lad_code) |
-| `core_census_lsoa` | 33,755 | ~5 MB | Consolidated wide census table (~30 columns) |
-| `core_schools` | ~28K | ~15 MB | Schools with Ofsted ratings + KS2/KS4 |
-| `core_osm_amenities` | ~200K | ~30 MB | POIs (cafes, parks, pubs, etc.) |
-| `core_imd_lsoa` | ~33K | ~5 MB | Index of Multiple Deprivation (7 domains) |
-| `core_hpi_lad` | ~120K | ~15 MB | House Price Index by LAD |
-| `core_epc_lsoa` | 33,755 | ~3 MB | Pre-aggregated EPC distribution |
-| `core_nhs_facilities` | ~20K | ~5 MB | GP/hospital/dentist locations |
-| `core_nhs_lsoa` | ~33K | ~3 MB | Pre-computed NHS count within 2km per LSOA |
+| Table | Rows | Purpose |
+|-------|------|---------|
+| `core_property_transactions` | 30.4M | **THE master table** — Land Registry PPD + EPC columns + 12 lsoa_month_* aggregates |
+| `core_postcodes` | 1.75M | ONSPD postcode directory (E+W+S, lat/lon/lsoa/ward/lad/county) |
+| `core_crime_lsoa` | 5.96M | Monthly crime by LSOA and type (E+W) |
+| `core_lsoa_boundaries` | 33,755 | LSOA polygons (geometry + lad_code) |
+| `core_census_lsoa` | 33,755 | Consolidated wide census table (~30 columns) |
+| `core_schools` | ~28K | Schools with Ofsted ratings + KS2/KS4 |
+| `core_osm_amenities` | ~200K | POIs (cafes, parks, pubs, etc.) |
+| `core_imd_lsoa` | ~33K | Index of Multiple Deprivation (7 domains) |
+| `core_hpi_lad` | ~120K | House Price Index by LAD |
+| `core_epc_lsoa` | 33,755 | Pre-aggregated EPC distribution |
+| `core_nhs_lsoa` | ~33K | Pre-computed NHS count within 2km per LSOA |
+| `core_noise` | 1.43M | DEFRA strategic noise map (road/rail/air dB per LSOA) |
+| `core_inspire_parcels` | 24,255,962 | OS INSPIRE land parcel polygons (318 authorities) |
+| `core_llc_charges` | 7,720,311 | Local Land Charges (141 authorities) |
+| `core_flood_zones` | 3,536,992 | EA flood zones (FZ2 82.6%, FZ3 17.4%) |
 
 ### Master Table Columns (core_property_transactions)
 
@@ -291,7 +309,8 @@ The 40 columns include:
 ### Dropped Tables (historical — DO NOT recreate)
 - core_transactions_epc (absorbed into master table)
 - core_property_prices_lsoa, core_property_prices_lad, core_property_prices_district (replaced by raw queries on master)
-- core_price_sqm_lsoa, core_price_sqm_lad (replaced by price_per_sqm/sqft on master)
+- core_price_sqm_lsoa, core_price_sqm_lad (dropped — not queried by any endpoint)
+- **Note:** `core_price_sqm_lsoa_yearly` is NOT dropped — actively queried by `/price-history` for historical PPSF chart enrichment (3M rows, UCL data)
 - core_census_demographics_lsoa, core_census_housing_lsoa, core_census_hh_size_lsoa, core_census_commute_lsoa, core_census_extra_lsoa (consolidated into core_census_lsoa)
 
 ### Empty Tables (data never ingested)
@@ -364,17 +383,30 @@ RATE_LIMIT = "60/minute"
 
 ### Pages
 - **Home.tsx** — Dark cinematic landing page with SearchBox, feature cards, attribution strip
-- **Results.tsx** — Main dashboard. On search: resolves → fetches all 5 tabs → renders active tab with metrics + map
+- **Results.tsx** — 2-line re-export of ResultsPage (session 28 decomp)
+- **ResultsPage.tsx** — Thin layout shell: wraps with ResultsProvider, composes sub-components
 - **Attribution.tsx** — 30 data sources with licenses
+- **SavedAreas.tsx** — Saved area collections
+
+### Architecture: Results Decomposition (session 28)
+Results page uses React Context pattern:
+- `context/ResultsContext.tsx` — Provider + `useResults()` hook. All shared state, all 9 useQuery calls.
+- `hooks/useIsDesktop.ts` — Media query hook
+- `hooks/useResultsMap.ts` — ALL map state, refs, callbacks, scroll-follow effect
+- `components/results/ResultsHeader.tsx` — Sticky nav header
+- `components/results/ResultsHero.tsx` — Area banner + LsoaContextBlurb
+- `components/results/ResultsMapPanel.tsx` — `ResultsMobileMap` + `ResultsDesktopMap` exports
+- `components/results/ResultsMetricsPanel.tsx` — Metrics grid + all supplemental tools
 
 ### Key Components
-- **MetricCard.tsx** — THE core renderer. Takes a metric + persona, renders value, parent comparison, colour-coded takeaway, and expandable detail panel (charts, tables, lists, gauges). This is the most complex component.
+- **MetricCard.tsx** — THE core renderer. Takes a metric + persona, renders value, parent comparison, colour-coded takeaway, and expandable detail panel (charts, tables, lists, gauges).
 - **MapView.tsx** — MapLibre GL map with Supercluster POI clustering, boundary outlines, choropleth heatmaps, isochrone rings, sold price popups
 - **SearchBox.tsx** — Debounced typeahead with 7-stage suggestion ranking
 - **TransactionTable.tsx** — Paginated, sortable, filterable transaction table
 - **PersonaSelector.tsx** — Dropdown for 6 personas
-- **DistrictPriceHistoryChart.tsx** — Multi-line price trend chart (local vs regional vs by-type vs by-bedrooms)
-- Various other chart/gauge components (see project structure above)
+
+### Metric Registry (session 25-26)
+`backend/app/metric_registry.py` — source of truth for 62 metric metadata entries (short_label, value_type, section_id). `helpers.py` `build_metric_contract()` + `enrich_metrics()` post-process at router level. TypeScript types: MetricRegistryMeta, MetricHeadline, MetricComparison, MetricTrend, MetricCapsule.
 
 ### Data Flow
 ```
@@ -384,10 +416,12 @@ User search → resolveSearch(q) → sessionKey
   → fetchBoundary(sessionKey) → map outline
   → fetchMapPois(sessionKey, tab) → POI markers
   → Pre-fetch remaining 4 tabs in background
+All state flows through ResultsContext → sub-components via useResults()
 ```
 
 ### Persona Engine
-`utils/personas.ts` contains 252 rules mapping (metric_id × persona × comparison direction) → {soWhat, watchOut, colour}. A weight matrix scores each metric per persona to produce a 0-100 fit score displayed in PersonaScoreCard.
+`utils/personas.ts` — `getTakeaway()` covers 60 metric ID branches (full registry coverage). Fixed: `ptal` → `ptal_score` bug (was silently failing for all PTAL metrics).
+`utils/personalization.ts` — `PERSONA_METRIC_WEIGHTS` (45 metric entries × 6 personas), `METRIC_TAB` mapping, `buildPersonaFitSummary()`, `rankSectionsForPersona()`. Produces 0-100 fit score shown in PersonaScoreCard.
 
 ### Key Dependencies
 React 19, React Router 7, TanStack React Query 5, Recharts 3.8, MapLibre GL 5.21, Supercluster 8, Framer Motion 12, Lucide React, Tailwind 4.2
@@ -423,7 +457,7 @@ def run(db_url: str) -> int:
     # Ingest data, return row count
 ```
 
-### Execution Order (31 modules)
+### Execution Order (31+ modules)
 ```
 Foundation (5): postcodes → boundaries → lad_county_lookup → place_names → place_boundaries
 Monthly (5): land_registry_full → hpi → crime → schools → epc_domestic
@@ -432,6 +466,7 @@ Annual (12): voa_rents → ashe → broadband → air_quality → flood → gree
              naptan → council_tax → water → cycling_ptal → place_lsoa_mapping → nhs_lsoa
 One-time (2): census → imd
 Derived (2): price_by_bedrooms
+One-time large ingests (complete): inspire_parcels → llc → flood (GeoPackage)
 ```
 
 ### Running
@@ -449,7 +484,8 @@ See `etl/DATA_SOURCES.md` for the complete list of 31 data sources with URLs, li
 
 ### Legacy Modules (in etl/legacy/ — do NOT run)
 - `land_registry.py` — old incremental ingest, superseded by `land_registry_full.py`
-- `transactions_epc.py` — Jaccard address-match EPC → transactions. Target table dropped. **This is the script needed for the EPC backfill (see Known Issues).**
+- `transactions_epc.py` — old Jaccard address-match → intermediate `core_transactions_epc` table (now dropped). Superseded by Phase 2 of new `epc_domestic.py`.
+- `absorb_epc.py` — old step to copy `core_transactions_epc` → master. Superseded by Phase 2 of new `epc_domestic.py`.
 - `price_sqm.py` — UCL price-per-sqm data. Target tables dropped.
 - `import_epc.py` — older EPC import
 
@@ -458,8 +494,9 @@ See `etl/DATA_SOURCES.md` for the complete list of 31 data sources with URLs, li
 ## 10. Testing
 
 ### Playwright Browser Tests
-- **Main suite:** `test_playwright_comprehensive.py` — **123/123 passing**
+- **Main suite:** `test_playwright_comprehensive.py` — **122/123 passing** (1 pre-existing Scotland postcode failure)
   - 10 sections: all 5 tabs × 3 search types, charts, map, null handling, tab switching, responsive, errors, navigation
+- **Metric refactor suite:** `test_metric_refactor.py` — **21/21 passing**
 - **Map tests:** `test_map_e2e.py` (needs 8s wait for sold markers), `test_map_edge_cases.py`
 - **Isochrone:** `test_map_isochrone.py`
 
@@ -486,29 +523,35 @@ python3 test_map_e2e.py                     # Map marker tests
 
 ## 11. Known Issues & Data Gaps
 
-### Critical: EPC Floor Area Data Only Covers 2024-2025
+### EPC Floor Area Coverage — Pending Full Run
 
-**Impact:** The price per sqft combined average chart lines only show data for 2024-2025. Historical years show null.
+**Impact:** `price_per_sqft` chart lines only show data for 2024-2025 (the ~4.2M rows matched in sessions 17-18). Historical years show null.
 
-**Root Cause:** `core_epc_domestic` (the raw 23M EPC certificate table) does not exist in the database. It was dropped after only 2024-2025 transactions were matched with EPC records (~1.49M of 28.9M). The migration file (`005b_epc_update.sql`) noted: "After the full EPC re-ingest, run transactions_epc.py to match older transactions too." This was never done.
+**Status:** `epc_domestic.py` has been fully rewritten (session 29) — a single pipeline run now handles everything end-to-end.
 
-**Fix Required:**
-1. Download the MHCLG domestic EPC bulk ZIP (~4-5 GB) from https://epc.opendatacommunities.org/downloads/domestic (requires registration)
-2. Place at `etl/data/domestic-csv.zip`
-3. Run `python3 pipeline.py --source epc_domestic` to load ~23M certificates
-4. Move `etl/legacy/transactions_epc.py` back to `etl/derived/` and run it to Jaccard address-match ALL 28.9M transactions (not just recent ones)
-5. Run `etl/migrations/absorb_epc.py` to copy matched floor areas to master table
-6. Recompute `lsoa_month_avg_ppsm` and `lsoa_month_avg_ppsft` aggregates
+**Fix (one command):**
+1. Download the MHCLG domestic EPC bulk ZIP (~4-5 GB) from https://epc.opendatacommunities.org/downloads/domestic (requires free registration)
+2. Place at `etl/data/domestic-csv.zip` (or set `EPC_ZIP_PATH` env var)
+3. Run: `python3 pipeline.py --source epc_domestic`
 
-The `transactions_epc.py` script is already written and working — it processes postcodes in batches of 500, doing Jaccard similarity matching between transaction addresses and EPC certificate addresses (threshold ≥ 0.5).
+The pipeline module (`etl/sources/epc_domestic.py`) handles all 4 phases automatically:
+- Load 9-col `core_epc_domestic` (~23M rows)
+- SQL TRANSLATE address-match → UPDATE `core_property_transactions` (floor_area_sqm, habitable_rooms, epc_rating, price_per_sqm, price_per_sqft)
+- Recompute `lsoa_month_avg_ppsm` + `lsoa_month_avg_ppsft` aggregates
+- Verify coverage by year + DROP `core_epc_domestic`
 
 ### Empty Tables
 
 | Table | Issue | Data Source |
 |-------|-------|-------------|
-| `core_noise` | Zero rows. Schema exists but data never ingested. | DEFRA strategic noise maps (road, rail, aviation dB levels). Not yet downloaded. |
-| `core_epc_domestic` | Does not exist. Needed for historical EPC matching. | MHCLG bulk EPC download (requires registration). |
+| `core_epc_domestic` | Does not exist. Needed for historical EPC matching (price_per_sqft pre-2024). | MHCLG bulk EPC download (requires registration). S3 rewrite is next queue item. |
 | `_epc_staging` | Empty staging table. Artifact from previous work. | N/A |
+
+### Tables Fully Ingested (not in original handover)
+- `core_noise` — 1,430,534 rows ✓ (DEFRA 367/367 tiles, session 22)
+- `core_inspire_parcels` — 24,255,962 rows ✓ (318 authorities, session 25-26)
+- `core_llc_charges` — 7,720,311 rows ✓ (141 authorities, session 25-26)
+- `core_flood_zones` — 3,536,992 rows ✓ (EA GeoPackage, FZ2/FZ3 bug fixed, session 27)
 
 ### Data Gaps (Not Code Bugs)
 - **Whitby/North Yorkshire:** E06000065 missing VOA rent data (new unitary authority since April 2023; VOA still uses old Scarborough LAD code)
@@ -526,23 +569,34 @@ These metrics return `parent_value: null` because computing them across thousand
 
 ## 12. Work Queue
 
-### High Priority
-- [ ] **EPC full re-ingest** — Download domestic-csv.zip, load core_epc_domestic, run transactions_epc.py for ALL years, absorb into master. This fixes the price-per-sqft chart data gap.
+See `QUEUE.md` for full ordered work queue. Summary of status:
 
-### Medium Priority
-- [ ] **INSPIRE Index Polygons** — 318 LA zips in ~/Downloads/inspire_polygons/ but 286 are 0 bytes (download failure). Need re-download from Land Registry. Architecture: separate `core_inspire_parcels` table for address-level property search.
-- [ ] **Census Extra LSOA CSVs** — `_ingest_extra()` in census.py is ready; needs LSOA-level CSVs from ONS/Nomis: TS037 (health), TS045 (car), TS066 (economic), TS067 (qualifications), TS004 (born abroad). Data already in DB from migration 007 — only needed for future ETL re-runs.
-- [ ] **Noise data ingest** — core_noise is empty. Need DEFRA strategic noise map data.
-- [ ] **Spatial parent comparisons** — Pre-compute per-LSOA aggregates for nearest_station, green_cover, parks_1km, sports_recreation, nearest_park to enable parent comparisons.
+### Complete
+- [x] EPC full re-ingest (sessions 17-18, 29.2M rows, absorbed into master table)
+- [x] Census Extra LSOA CSVs (sessions 21-22, all TS topics in core_census_lsoa)
+- [x] Noise data ingest (session 22, 1,427,115 rows, 367/367 DEFRA tiles)
+- [x] Spatial parent comparisons (sessions 19-20, core_lsoa_green_space, core_lsoa_transport)
+- [x] INSPIRE parcels ingest (sessions 25-26, 24,255,962 rows, 318 authorities)
+- [x] LLC ingest (sessions 25-26, 7,720,311 rows, 141 authorities)
+- [x] Flood GeoPackage ingest (session 27, 3,536,992 rows, FZ2/FZ3 bug fixed)
+- [x] Metric registry refactor S1-S7 (sessions 25-26)
+- [x] Results.tsx decomposition S6 (session 28, React Context architecture)
 
-### Low Priority
-- [ ] Guildford → "Guilford" typo fix in core_place_names data
-- [ ] LLC (Local Land Charges) — 137 zips in ~/Downloads/llc/ — parked
-- [ ] Census TS027 (national identity), TS031 (religion) — low priority
+### Active / Next
+- [ ] **#13 AWS: Create account, configure eu-west-2** — see `memory/deployment.md` for full spec
+- [ ] **#5 GDrive backups** — 3 rclone processes (INSPIRE/LLC/Flood raw files). Self-completing.
 
-### Parked
-- INSPIRE polygons — user said "keep in queue, we'll get back to it"
-- LLC data — deferred
+### Complete (added sessions 29-32)
+- [x] S3: epc_domestic.py rewrite (session 29) — 4-phase pipeline: load 9-col → SQL match → recompute ppsf aggs → drop table. Run: `python3 pipeline.py --source epc_domestic`
+- [x] S4: personas.ts + personalization.ts overhaul (session 30) — fixed ptal→ptal_score bug, getTakeaway() 60 branches, PERSONA_METRIC_WEIGHTS 45 entries, METRIC_TAB cleaned
+- [x] Phase 2 Review Fixes (sessions 31-32) — 22 items. Security: R16-R20 (nginx CSP, timing attack, proxy headers, Redis AOF, ReportLab escape). Backend: R7, R9, R12, R13, R4, R21 (ETL blue/green for 27 sources). Infra: R22 (postgresql.conf), R24 (Sentry). Frontend: R11, R10, R25, R2, R14, R3, R8, R1 (context split, lazy charts, Zod, 410 re-resolve, manualChunks, ResizeObserver, etc.)
+
+### Pending
+- [ ] AWS: account, t4g.small + 80GB gp3 EBS, Docker, pg_dump/restore, S3+CloudFront, DNS+TLS, CI/CD
+- [ ] R15: Isochrone school catchments (post-AWS, Family persona)
+
+### Low Priority / Parked
+- [ ] Guildford → "Guilford" typo fix in core_place_names
 
 ---
 
@@ -595,8 +649,40 @@ Deep E2E test: 890/891 pass. 4 performance fixes (UK median query 50s→7s). Fro
 ### Session 10 — Exhaustive Audit
 99+ files read line-by-line. 2 bugs found and fixed (census.py missing _ingest_extra, cycling_ptal.py writing to dropped column). All tests passing.
 
-### Session 11 (current) — Parent Comparisons + Transaction Table
-Added /LSOA suffix to transaction volume. Built paginated transaction table endpoint + frontend component. Added parent comparisons to: freehold_leasehold, new_build_proportion, amenities_15min, crime_trend, noise, nhs_facilities. Fixed price-per-sqft chart combined average lines. Added new build trend chart. Added new build caveat note. Identified EPC data gap (floor_area_sqm only covers 2024-2025).
+### Session 11 — Parent Comparisons + Transaction Table
+Added /LSOA suffix to transaction volume. Built paginated transaction table endpoint + frontend component. Added parent comparisons to: freehold_leasehold, new_build_proportion, amenities_15min, crime_trend, noise, nhs_facilities. Identified EPC data gap (floor_area_sqm only covers 2024-2025).
+
+### Sessions 12-18 — EPC Re-ingest + Backfill
+Full re-ingest of 29.2M EPC certificates. Jaccard address-match of all 28.9M transactions. absorb_epc.py copied floor_area_sqm/habitable_rooms/epc_rating to master table. core_epc_domestic subsequently dropped to free disk (backed up to GDrive). lsoa_month_avg_ppsm/ppsft recomputed.
+
+### Sessions 19-22 — Spatial Parent Comparisons + Noise + Census Extra
+All spatial metrics now have parent comparisons via pre-computed tables (core_lsoa_green_space, core_lsoa_transport). Noise data ingested (1,427,115 rows). Census extra TS topics ingested into core_census_lsoa.
+
+### Sessions 23-24 — AWS Spec + DB Migration to SD Card
+AWS deployment spec finalized (memory/deployment.md). Postgres migrated to SD card. METRICS.md rewritten from code truth (60 metrics, 48 with parent).
+
+### Sessions 25-26 — INSPIRE/LLC/Flood Ingests + Metric Registry Refactor
+INSPIRE parcels (24,255,962 rows, 318 authorities), LLC (7,720,311 rows, 141 authorities), Flood GeoPackage (3,536,992 rows) all ingested. Metric registry refactor complete (S1-S2-S7-S5): metric_registry.py, build_metric_contract(), enrich_metrics(), TypeScript nested types.
+
+### Session 27 — Flood Bug Fix + Backup Start
+Flood zone bug found+fixed (was labelling all FZ3 due to wrong column read). Re-ingested with correct FZ2/FZ3 split. 3 rclone backup processes started (INSPIRE/LLC/Flood raw to GDrive).
+
+### Sessions 31-32 — Phase 2 Review Fixes ALL COMPLETE
+22 items across security, backend, infra, and frontend. Key changes:
+- **Security (R16-R20):** Nginx CSP `unsafe-inline` removed; `secrets.compare_digest` for API key; Uvicorn `--proxy-headers`; Redis AOF + localhost bind; ReportLab XML escape.
+- **Backend (R7, R9, R12, R13, R4, R21):** FastAPI CSP middleware removed; choropleth `null` sentinel; spatial thinning (PARTITION BY lsoa_code); quantile dedup; `core_place_boundaries_union` pre-computed; all 27 ETL sources converted to blue/green swap (new `etl/utils.py`).
+- **Infra (R22, R24):** postgresql.conf tuning documented in `memory/deployment.md`; Sentry APM in backend + frontend (conditional on DSN).
+- **Frontend (R11, R10, R25, R2, R14, R3, R8, R1):** ResizeObserver + map.resize() for mobile grid; sold price marker rebuild guard; Vite manualChunks (vendor/map/charts); choropleth URL → MapLibre off-thread parse; `SessionExpiredError` + 410 silent re-resolve; `React.lazy()` for 13 chart components; Zod v4 validation for /area response (`frontend/src/schemas/area.ts`); ResultsContext split into `ResultsDataContext` + `ResultsUIContext` (backward compat `useResults()` kept).
+- **tsc -b 0 errors, vite build clean** throughout.
+
+### Session 30 — Personas.ts + Personalization.ts Overhaul (S4) Complete
+Fixed active bug: `ptal` → `ptal_score` (PTAL takeaways were silently falling through to default fallback for every search). `getTakeaway()` expanded from 42 → 60 metric ID branches — full registry coverage including: connectivity_index, stations_in_area, wfh, noise, green_cover, green_spaces, parks_1km, sports_recreation, median_earnings, good_health, economically_active, degree_educated, no_car, born_abroad, household_size, ethnicity, demographics_overview. `PERSONA_METRIC_WEIGHTS` expanded from 23 → 45 entries. `METRIC_TAB` cleaned: removed phantom `ptal`, added stations_in_area, connectivity_index, household_size, ethnicity, wfh. tsc -b 0 errors.
+
+### Session 29 (latest) — epc_domestic.py Rewrite (S3) Complete
+Full rewrite of `etl/sources/epc_domestic.py`. Old approach: 93-col load + Python Jaccard loop + separate `absorb_epc.py` + manual aggregate rebuild. New approach: 4-phase `run()` — (1) 9-col COPY load, (2) SQL TRANSLATE match → direct UPDATE master, (3) lsoa_month ppsf aggregate recompute, (4) verify + DROP. `pipeline.py` entry updated. Single command: `python3 pipeline.py --source epc_domestic`.
+
+### Session 28 — Results.tsx Decomposition (S6) Complete
+Full decomposition of 721-line Results.tsx into React Context architecture. 8 new files. Zero regressions: 122/123 comprehensive + 21/21 metric refactor. tsc -b clean, vite build clean. Visual diff identical (file sizes within 0.2% of baseline).
 
 ---
 
@@ -615,6 +701,9 @@ Added /LSOA suffix to transaction volume. Built paginated transaction table endp
 | Work queue | `QUEUE.md` |
 | Session notes | `sessions/session1-8.txt`, `sessions/session9.txt`, `sessions/session10.txt` |
 | Frontend API client | `frontend/src/api/client.ts` |
+| Zod response schemas | `frontend/src/schemas/area.ts` |
+| Results context (data) | `frontend/src/context/ResultsContext.tsx` (exports: useResults, useResultsData, useResultsUI) |
+| ETL blue/green swap util | `etl/utils.py` (blue_green_swap) |
 | Metric card component | `frontend/src/components/MetricCard.tsx` |
 | Persona engine | `frontend/src/utils/personas.ts` |
 | Tab config + formatValue | `frontend/src/utils/tabs.ts` |

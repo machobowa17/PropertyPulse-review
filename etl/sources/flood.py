@@ -19,6 +19,7 @@ import psycopg2
 from shapely.geometry import MultiPolygon
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -31,7 +32,7 @@ METADATA = {
     "depends_on":         ["boundaries"],
     "tables_written":     [TABLE_NAMES["flood_zones"]],
     "cache_key_patterns": [],
-    "expected_row_range": (10_000, 500_000),
+    "expected_row_range": (3_000_000, 5_000_000),
 }
 
 # ---------------------------------------------------------------------------
@@ -65,9 +66,10 @@ def run(db_url: str) -> int:
 
     Strategy:
     1. Read GeoPackage with geopandas; reproject to EPSG:4326.
-    2. Truncate core_flood_zones.
+    2. Create core_flood_zones_new staging table.
     3. Insert each Polygon/MultiPolygon feature with flood_zone (2 or 3).
-    4. Return final row count.
+    4. Blue/green swap: rename _new → live table atomically.
+    5. Return final row count.
     """
     gpkg_path = _resolve_gpkg_path()
     print(f"  Flood source: {gpkg_path}", flush=True)
@@ -80,7 +82,8 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['flood_zones']} CASCADE")
+    # Full replace — build into staging table then swap atomically
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['flood_zones']}_new (LIKE {TABLE_NAMES['flood_zones']} INCLUDING ALL)")
     conn.commit()
 
     count = 0
@@ -94,11 +97,12 @@ def run(db_url: str) -> int:
             continue
 
         # Determine flood zone from available attribute columns
-        zone_raw = str(row.get("layer", row.get("type", row.get("ZONE", "3"))))
+        # EA GeoPackage uses 'flood_zone' column with values like '3' or '2'
+        zone_raw = str(row.get("flood_zone", row.get("layer", row.get("type", row.get("ZONE", "3")))))
         flood_zone = "2" if "2" in zone_raw else "3"
 
         cur.execute(
-            f"INSERT INTO {TABLE_NAMES['flood_zones']} (flood_zone, geom) "
+            f"INSERT INTO {TABLE_NAMES['flood_zones']}_new (flood_zone, geom) "
             "VALUES (%s, ST_GeomFromText(%s, 4326))",
             (flood_zone, geom.wkt),
         )
@@ -108,6 +112,8 @@ def run(db_url: str) -> int:
             print(f"    Inserted {count:,}...", flush=True)
 
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['flood_zones'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['flood_zones']}")
     final = cur.fetchone()[0]

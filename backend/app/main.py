@@ -4,20 +4,33 @@ from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger("uvicorn.error")
 
 from app.config import settings
+from app.rate_limit import limiter
 from app.routers import resolve, area, commute, report, health, data_freshness
 
 # ---------------------------------------------------------------------------
-# Rate limiter — configured centrally
+# Sentry APM — initialise before app creation so all errors are captured.
+# Set SENTRY_DSN env var to enable; no-op if unset.
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address, default_limits=[settings.RATE_LIMIT])
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        traces_sample_rate=0.1,   # 10% of requests traced for performance monitoring
+        send_default_pii=False,
+    )
+    logger.info("Sentry APM initialised")
+
+# Rate limiter imported from app.rate_limit (shared so routers can use @limiter.exempt)
 
 app = FastAPI(
     title="UK Property Portal API",
@@ -59,12 +72,8 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; "
-        "script-src 'none'; "
-        "style-src 'none'; "
-        "frame-ancestors 'none';"
-    )
+    # CSP is intentionally omitted here — this is a JSON API, not a page-serving endpoint.
+    # The nginx layer (nginx.conf / nginx-ssl.conf) applies a full CSP to the frontend.
     # Remove server fingerprint
     if "server" in response.headers:
         del response.headers["server"]

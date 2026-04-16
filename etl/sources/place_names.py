@@ -26,6 +26,7 @@ from psycopg2.extras import execute_values
 from pyproj import Transformer
 
 from constants import COUNTRY_PREFIX_BY_NAME, SCHEDULE_FOUNDATION, SUPPORTED_COUNTRY_PREFIXES, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -111,7 +112,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['place_names']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['place_names']}_new (LIKE {TABLE_NAMES['place_names']} INCLUDING ALL)")
     conn.commit()
 
     rows = []
@@ -175,7 +176,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['place_names']} (
+            f"""INSERT INTO {TABLE_NAMES['place_names']}_new (
                     place_name, place_name_lower, place_type,
                     lad_code, ward_code, postcode_prefix,
                     latitude, longitude, population
@@ -184,6 +185,8 @@ def run(db_url: str) -> int:
             page_size=5000,
         )
         conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['place_names'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['place_names']}")
     count = cur.fetchone()[0]

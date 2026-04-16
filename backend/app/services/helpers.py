@@ -1,9 +1,10 @@
 """Shared helpers for tab services. Bible Part 6 response shape."""
 import hashlib
 import json as _json
+from copy import deepcopy
 
 from app.constants import TABLE_NAMES
-from app.metric_registry import METRIC_REGISTRY
+from app.metric_registry import METRIC_REGISTRY, SECTION_IDS
 
 
 def _normalize_scalar(value, fallback="_"):
@@ -75,11 +76,15 @@ def comparison_flag(local, parent):
     """Return comparison_flag per Bible: lower_than_parent / higher_than_parent / equal_to_parent."""
     if local is None or parent is None:
         return None
-    if local < parent:
-        return "lower_than_parent"
-    elif local > parent:
-        return "higher_than_parent"
-    return "equal_to_parent"
+    # Guard against type mismatches (e.g. str vs float from categorical metrics)
+    try:
+        if local < parent:
+            return "lower_than_parent"
+        elif local > parent:
+            return "higher_than_parent"
+        return "equal_to_parent"
+    except TypeError:
+        return None
 
 
 def metric(id: str, name: str, local_value, parent_value, unit: str, details=None):
@@ -126,6 +131,222 @@ def metric(id: str, name: str, local_value, parent_value, unit: str, details=Non
         "quality_notes": reg.get("quality_notes"),
         "details": details,
     }
+
+
+# ---------------------------------------------------------------------------
+# Nested metric contract — enriches flat metric dicts for the frontend.
+# Called as a post-processing step at the router level (area_tabs.py).
+# Tab services remain unchanged — they still emit flat dicts via metric().
+# ---------------------------------------------------------------------------
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _safe_abs_diff(local_value, parent_value):
+    if _is_number(local_value) and _is_number(parent_value):
+        return round(local_value - parent_value, 2)
+    return None
+
+
+def _safe_pct_diff(local_value, parent_value):
+    if _is_number(local_value) and _is_number(parent_value) and parent_value not in (0, 0.0):
+        return round(((local_value - parent_value) / parent_value) * 100, 1)
+    return None
+
+
+def _build_trend_block(details: dict | None, trend_status: str) -> dict:
+    """Build the nested trend sub-object from flat details."""
+    if not details:
+        return {
+            "status": trend_status,
+            "window_label": None,
+            "direction": None,
+            "value": None,
+            "series": None,
+            "parent_series": None,
+            "trend_summary": None,
+        }
+
+    trend_value = None
+    trend_window_label = None
+    trend_direction = None
+    trend_series = None
+    trend_parent_series = None
+    trend_summary = None
+
+    raw_trend = details.get("trend")
+    if isinstance(raw_trend, dict):
+        trend_value = raw_trend.get("value", raw_trend.get("pct"))
+        trend_window_label = raw_trend.get("window_label") or raw_trend.get("period") or raw_trend.get("label")
+        trend_direction = raw_trend.get("direction")
+        trend_series = raw_trend.get("series")
+        trend_parent_series = raw_trend.get("parent_series")
+        trend_summary = raw_trend.get("summary")
+    elif raw_trend is not None:
+        trend_value = raw_trend
+
+    if trend_value is None and details.get("yoy_change_pct") is not None:
+        trend_value = details["yoy_change_pct"]
+        trend_window_label = trend_window_label or "Year-on-year"
+
+    # Infer direction from value
+    if trend_value is not None and not trend_direction and _is_number(trend_value):
+        if trend_value > 0:
+            trend_direction = "up"
+        elif trend_value < 0:
+            trend_direction = "down"
+        else:
+            trend_direction = "flat"
+
+    # Reconcile trend_status with actual data
+    effective_status = trend_status
+    if trend_value is None and effective_status == "trended":
+        effective_status = "not_modelled_yet"
+    elif trend_value is not None and effective_status in ("not_modelled_yet", "no_history"):
+        effective_status = "trended"
+
+    return {
+        "status": effective_status,
+        "window_label": trend_window_label,
+        "direction": trend_direction,
+        "value": trend_value,
+        "series": trend_series,
+        "parent_series": trend_parent_series,
+        "trend_summary": trend_summary,
+    }
+
+
+def _build_capsule(details: dict | None) -> dict | None:
+    """Build capsule sub-object from details text fields."""
+    if not details:
+        return None
+
+    text = None
+    for key in ("capsule_text", "summary_note", "context_note", "method_note"):
+        val = details.get(key)
+        if isinstance(val, str) and val.strip():
+            text = val.strip()
+            break
+
+    tone = None
+    raw_tone = details.get("capsule_tone")
+    if isinstance(raw_tone, str) and raw_tone.strip() and raw_tone.strip() != "neutral":
+        tone = raw_tone.strip()
+
+    if text is None and tone is None:
+        return None
+
+    capsule = {}
+    if text is not None:
+        capsule["text"] = text
+    if tone is not None:
+        capsule["tone"] = tone
+    return capsule
+
+
+def build_metric_contract(flat_metric: dict, parent_name: str | None = None) -> dict:
+    """Enrich a flat metric dict into the nested Metric contract.
+
+    Takes the output of metric() and adds nested sub-objects:
+    - registry: static metadata from METRIC_REGISTRY
+    - headline: value + unit + value_type
+    - comparison: status + value + flag + diff + scope_label
+    - trend: status + direction + value + series
+    - capsule: optional text + tone
+    - map_binding: type extracted from binding string
+    - quality_flags: list of quality caveats
+
+    The flat top-level fields are PRESERVED for backward compatibility.
+    Frontend can migrate gradually from flat to nested access.
+    """
+    mid = flat_metric.get("id", "")
+    reg = METRIC_REGISTRY.get(mid, {})
+    details = flat_metric.get("details") or {}
+    local_value = flat_metric.get("local_value")
+    parent_value = flat_metric.get("parent_value")
+    unit = flat_metric.get("unit", "")
+    comp_flag = flat_metric.get("comparison_flag")
+    comp_status = flat_metric.get("comparison_status", "not_modelled_yet")
+    trend_status = flat_metric.get("trend_status", "not_modelled_yet")
+    interp_dir = flat_metric.get("interpretation_direction", reg.get("interpretation_direction", "neutral"))
+
+    # Build quality_flags list
+    quality_flags = []
+    qn = reg.get("quality_notes")
+    if isinstance(qn, str) and qn:
+        quality_flags.append(qn)
+    elif isinstance(qn, list):
+        quality_flags.extend(qn)
+    for note_key in ("data_note", "data_unavailable_note"):
+        note_val = details.get(note_key)
+        if isinstance(note_val, str) and note_val and note_val not in quality_flags:
+            quality_flags.append(note_val)
+
+    # Extract map_binding type (e.g. "area_layer:choropleth_avg_price" → "area_layer")
+    raw_binding = flat_metric.get("map_binding", reg.get("map_binding", "none"))
+    binding_type = raw_binding.split(":")[0] if ":" in raw_binding else raw_binding
+
+    # Determine scope_label for comparison
+    scope_label = details.get("comparison_scope_label") or details.get("parent_name") or parent_name
+
+    # Build the enriched contract — flat fields preserved, nested added
+    contract = dict(flat_metric)  # shallow copy of all flat fields
+
+    # Nested sub-objects
+    contract["registry"] = {
+        "metric_id": mid,
+        "section_id": reg.get("section_id", "general"),
+        "headline_label": reg.get("label", flat_metric.get("name", mid)),
+        "short_label": reg.get("short_label", flat_metric.get("name", mid)),
+        "description": reg.get("description", ""),
+        "decision_question": reg.get("decision_question", ""),
+        "display_priority": reg.get("sort_priority", 99),
+        "map_binding_type": binding_type,
+        "source_refresh_profile": "periodic",
+        "quality_notes": quality_flags,
+        "comparison_capability": "comparable" if reg.get("supports_parent", True) else "not_comparable",
+        "trend_capability": "trended" if reg.get("supports_trend", False) else "not_modelled_yet",
+        "interpretation_direction": interp_dir,
+        "supports_persona_rendering": reg.get("status") == "core",
+        "value_type": reg.get("value_type", "scalar"),
+    }
+
+    contract["headline"] = {
+        "value": local_value,
+        "unit": unit,
+        "value_type": reg.get("value_type", "scalar"),
+    }
+
+    contract["comparison"] = {
+        "status": comp_status,
+        "value": parent_value,
+        "scope_label": scope_label,
+        "difference_abs": _safe_abs_diff(local_value, parent_value),
+        "difference_pct": _safe_pct_diff(local_value, parent_value),
+        "interpretation_direction": interp_dir,
+        "comparison_flag": comp_flag,
+    }
+
+    contract["trend"] = _build_trend_block(details, trend_status)
+
+    capsule = _build_capsule(details)
+    contract["capsule"] = capsule
+
+    contract["map_binding"] = {"type": binding_type} if binding_type != "none" else None
+
+    contract["quality_flags"] = quality_flags
+
+    return contract
+
+
+def enrich_metrics(flat_metrics: list[dict], parent_name: str | None = None) -> list[dict]:
+    """Post-process a list of flat metric dicts into nested contracts.
+
+    Called at the router level (area_tabs.py, report.py) after tab services
+    return their flat metric lists.
+    """
+    return [build_metric_contract(m, parent_name=parent_name) for m in flat_metrics]
 
 
 async def get_lsoa_centroid(db, lsoa_code: str):
@@ -327,6 +548,9 @@ async def make_lsoa_session(
     place_type: str | None = None,
     display_name: str = "",
     display_lad_name: str | None = None,
+    entity_type: str | None = None,
+    entity_name: str | None = None,
+    query_text: str | None = None,
     **expand_kwargs,
 ) -> tuple:
     """Call expand_lsoa_codes and store comprehensive session in Redis.
@@ -354,15 +578,38 @@ async def make_lsoa_session(
 
     # County self-comparison fix: when the search IS a county, get_parent_lad_info
     # returns the same county's LADs (county compares to itself → ratio ~1.0x).
-    # Escalate to all-England comparison so the benchmark is meaningful.
+    # Escalate to same-region LADs so the benchmark is meaningful without scanning all 300+.
     county_name_kwarg = expand_kwargs.get("county_name")
     if county_name_kwarg and parent_name and parent_name.lower() == county_name_kwarg.lower():
         from sqlalchemy import text as sa_text
-        all_lads_result = await db.execute(
-            sa_text("SELECT lad_code FROM core_lad_boundaries WHERE lad_code IS NOT NULL")
+        region_result = await db.execute(
+            sa_text("""
+                SELECT DISTINCT lb2.lad_code
+                FROM core_lad_boundaries lb1
+                JOIN core_lad_boundaries lb2 ON lb2.region_code = lb1.region_code
+                WHERE lb1.lad_code = :lad AND lb2.lad_code IS NOT NULL
+            """),
+            {"lad": primary_lad},
         )
-        parent_lad_codes = sorted({r["lad_code"] for r in all_lads_result.mappings().all() if r["lad_code"]})
-        parent_name = "England"
+        region_lads = sorted({r["lad_code"] for r in region_result.mappings().all() if r["lad_code"]})
+        if len(region_lads) > 1:
+            parent_lad_codes = region_lads
+            # Fetch region name for display
+            rn_result = await db.execute(
+                sa_text("SELECT region_name FROM core_lad_boundaries WHERE lad_code = :lad"),
+                {"lad": primary_lad},
+            )
+            rn_row = rn_result.mappings().first()
+            parent_name = rn_row["region_name"] if rn_row and rn_row["region_name"] else "England"
+        else:
+            # Fallback: if region data isn't populated, use all LADs in same country prefix
+            country_prefix = primary_lad[0] if primary_lad else "E"
+            all_lads_result = await db.execute(
+                sa_text("SELECT lad_code FROM core_lad_boundaries WHERE lad_code LIKE :prefix"),
+                {"prefix": f"{country_prefix}%"},
+            )
+            parent_lad_codes = sorted({r["lad_code"] for r in all_lads_result.mappings().all() if r["lad_code"]})
+            parent_name = {"E": "England", "W": "Wales", "S": "Scotland"}.get(country_prefix, "England")
 
     # Deterministic session key
     key_parts = {"lad": lad_code, "ward": ward_code, "lsoa": lsoa_code}
@@ -411,6 +658,14 @@ async def make_lsoa_session(
         # Display context
         "display_name": display_name,
         "display_breadcrumbs": breadcrumbs,
+        # Geo entity metadata (from resolve)
+        "entity_type": entity_type,
+        "entity_name": entity_name,
+        "query_text": query_text,
+        "geo": {
+            "entity": {"display_name": display_name or entity_name or None},
+            "comparison_scope": {"name": parent_name},
+        },
     }, ttl=86400)
 
     return lsoa_codes, lat, lon, mode, local_lads, session_key

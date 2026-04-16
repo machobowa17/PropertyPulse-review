@@ -24,6 +24,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -120,12 +121,13 @@ def run(db_url: str) -> int:
 
     print(f"  Collected {len(ptal_rows):,} PTAL rows (London)", flush=True)
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['ptal_lsoa']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['ptal_lsoa']}_new (LIKE {TABLE_NAMES['ptal_lsoa']} INCLUDING ALL)")
+    conn.commit()
     if ptal_rows:
         execute_values(
             cur,
             f"""
-            INSERT INTO {TABLE_NAMES['ptal_lsoa']} (lsoa_code, avg_ptai, ptal_band)
+            INSERT INTO {TABLE_NAMES['ptal_lsoa']}_new (lsoa_code, avg_ptai, ptal_band)
             VALUES %s
             ON CONFLICT (lsoa_code) DO UPDATE SET
                 avg_ptai  = EXCLUDED.avg_ptai,
@@ -134,6 +136,7 @@ def run(db_url: str) -> int:
             ptal_rows,
         )
     conn.commit()
+    blue_green_swap(conn, TABLE_NAMES['ptal_lsoa'])
 
     # ------------------------------------------------------------------
     # Part 2: core_cycling_lsoa — Census 2021 TS061
@@ -158,12 +161,13 @@ def run(db_url: str) -> int:
 
     print(f"  Collected {len(cycling_rows):,} cycling rows", flush=True)
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['cycling_lsoa']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['cycling_lsoa']}_new (LIKE {TABLE_NAMES['cycling_lsoa']} INCLUDING ALL)")
+    conn.commit()
     if cycling_rows:
         execute_values(
             cur,
             f"""
-            INSERT INTO {TABLE_NAMES['cycling_lsoa']}
+            INSERT INTO {TABLE_NAMES['cycling_lsoa']}_new
                 (lsoa_code, total_workers, cycling_count, pct_cycling)
             VALUES %s
             ON CONFLICT (lsoa_code) DO UPDATE SET
@@ -174,6 +178,7 @@ def run(db_url: str) -> int:
             cycling_rows,
         )
     conn.commit()
+    blue_green_swap(conn, TABLE_NAMES['cycling_lsoa'])
 
     # Return row count for primary table (cycling_lsoa)
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['cycling_lsoa']}")

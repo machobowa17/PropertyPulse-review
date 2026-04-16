@@ -21,7 +21,8 @@ import psycopg2
 import requests
 from psycopg2.extras import execute_values
 
-from constants import AMENITY_OSM_TAGS, AMENITY_TYPES, ENGLAND_BBOX, SCHEDULE_QUARTERLY, TABLE_NAMES
+from constants import AMENITY_OSM_TAGS, AMENITY_TYPES, GB_BBOX, SCHEDULE_QUARTERLY, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -67,8 +68,8 @@ def _fetch_osm_pois():
         query = (
             f'[out:json][timeout:300];\n'
             f'(\n'
-            f'  node["{key}"="{value}"]({ENGLAND_BBOX});\n'
-            f'  way["{key}"="{value}"]({ENGLAND_BBOX});\n'
+            f'  node["{key}"="{value}"]({GB_BBOX});\n'
+            f'  way["{key}"="{value}"]({GB_BBOX});\n'
             f');\n'
             f'out center;\n'
         )
@@ -117,7 +118,7 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['osm_amenities']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['osm_amenities']}_new (LIKE {TABLE_NAMES['osm_amenities']} INCLUDING ALL)")
     conn.commit()
 
     rows = []
@@ -144,7 +145,7 @@ def run(db_url: str) -> int:
     if rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['osm_amenities']}
+            f"""INSERT INTO {TABLE_NAMES['osm_amenities']}_new
                     (osm_id, name, amenity_type, latitude, longitude)
                 VALUES %s""",
             rows,
@@ -153,11 +154,13 @@ def run(db_url: str) -> int:
         conn.commit()
 
     cur.execute(f"""
-        UPDATE {TABLE_NAMES['osm_amenities']}
+        UPDATE {TABLE_NAMES['osm_amenities']}_new
         SET geom = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
         WHERE latitude IS NOT NULL
     """)
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['osm_amenities'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['osm_amenities']}")
     count = cur.fetchone()[0]

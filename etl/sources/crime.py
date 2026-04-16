@@ -37,6 +37,7 @@ import requests
 from psycopg2.extras import execute_values
 
 from constants import GMP_LAD_CODES, SCHEDULE_MONTHLY, SUPPORTED_COUNTRY_PREFIXES, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -207,9 +208,10 @@ def _normalize_bulk_counts(counts, wales_crosswalk):
 
 
 def _ingest_bulk(conn, zip_path):
-    """Truncate crime table and load all months from the bulk ZIP."""
+    """Load all months from the bulk ZIP into the _new staging table."""
     cur = conn.cursor()
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['crime_lsoa']} CASCADE")
+
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['crime_lsoa']}_new (LIKE {TABLE_NAMES['crime_lsoa']} INCLUDING ALL)")
     conn.commit()
 
     wales_crosswalk = _load_wales_lsoa_crosswalk(conn)
@@ -256,7 +258,7 @@ def _ingest_bulk(conn, zip_path):
     if all_rows:
         execute_values(
             cur,
-            f"""INSERT INTO {TABLE_NAMES['crime_lsoa']}
+            f"""INSERT INTO {TABLE_NAMES['crime_lsoa']}_new
                     (lsoa_code, month, crime_type, crime_count)
                 VALUES %s
                 ON CONFLICT DO NOTHING""",
@@ -350,10 +352,10 @@ def _ingest_gmp(conn):
     lsoas = _get_gmp_lsoa_polygons(conn)
     print(f"  GMP LSOAs: {len(lsoas)}", flush=True)
 
-    # Skip LSOAs that already have data
+    # Skip LSOAs that already have data (query the staging table populated by Phase 1)
     cur = conn.cursor()
     cur.execute(f"""
-        SELECT DISTINCT lsoa_code FROM {TABLE_NAMES['crime_lsoa']}
+        SELECT DISTINCT lsoa_code FROM {TABLE_NAMES['crime_lsoa']}_new
         WHERE lsoa_code IN (
             SELECT b.lsoa_code
             FROM {TABLE_NAMES['lsoa_boundaries']} b
@@ -389,7 +391,7 @@ def _ingest_gmp(conn):
             cur = conn.cursor()
             execute_values(
                 cur,
-                f"""INSERT INTO {TABLE_NAMES['crime_lsoa']}
+                f"""INSERT INTO {TABLE_NAMES['crime_lsoa']}_new
                         (lsoa_code, month, crime_type, crime_count)
                     VALUES %s
                     ON CONFLICT DO NOTHING""",
@@ -433,6 +435,7 @@ def run(db_url: str) -> int:
     _ingest_gmp(conn)
 
     cur = conn.cursor()
+    blue_green_swap(conn, TABLE_NAMES['crime_lsoa'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['crime_lsoa']}")
     count = cur.fetchone()[0]
     cur.close()

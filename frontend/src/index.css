@@ -101,3 +101,21 @@ html { scroll-behavior: smooth; }
 .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
 .stagger-children > *:nth-child(7) { animation-delay: 360ms; }
 .stagger-children > *:nth-child(8) { animation-delay: 420ms; }
+
+/* Dropdown appear animation (replaces framer-motion) */
+@keyframes dropdown-appear {
+  from { opacity: 0; transform: translateY(-8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-dropdown-appear {
+  animation: dropdown-appear 0.15s ease-out both;
+}
+
+/* Tab content fade-slide animation (replaces framer-motion) */
+@keyframes tab-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-tab-enter {
+  animation: tab-enter 0.25s ease-out both;
+}

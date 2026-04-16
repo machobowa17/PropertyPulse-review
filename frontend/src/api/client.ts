@@ -1,4 +1,5 @@
-import type { ResolveResponse, AreaResponse, TabName } from '../types';
+import type { ResolveResponse, AreaResponse, TabName, CoverageMetadata } from '../types';
+import { AreaResponseSchema } from '../schemas/area';
 
 const BASE = '/api/v1';
 
@@ -8,14 +9,28 @@ export async function resolveSearch(query: string): Promise<ResolveResponse> {
   return res.json();
 }
 
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('SESSION_EXPIRED');
+    this.name = 'SessionExpiredError';
+  }
+}
+
 export async function fetchAreaTab(
   sessionKey: string,
   tab: TabName,
 ): Promise<AreaResponse> {
   const url = `${BASE}/area?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
   const res = await fetch(url);
+  if (res.status === 410) throw new SessionExpiredError();
   if (!res.ok) throw new Error(`Area fetch failed: ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  // R8: validate response shape — surface parse errors early rather than blank MetricCard panels
+  const parsed = AreaResponseSchema.safeParse(json);
+  if (!parsed.success) {
+    console.warn('[client] /area response failed schema validation:', parsed.error.flatten());
+  }
+  return json as AreaResponse;
 }
 
 export interface DataFreshnessItem {
@@ -39,13 +54,7 @@ export async function fetchDataFreshness(): Promise<DataFreshnessResponse | null
   }
 }
 
-export interface CoverageMetadata {
-  live_countries: string[];
-  partial_countries?: string[];
-  planned_countries?: string[];
-  parked_countries?: string[];
-  coverage_message?: string | null;
-}
+export type { CoverageMetadata };
 
 export interface Suggestion {
   label: string;
@@ -258,12 +267,16 @@ export interface ChoroplethResponse extends GeoJSON.FeatureCollection {
   metadata: ChoroplethMetadata;
 }
 
+export function buildChoroplethUrl(sessionKey: string, layer: string): string {
+  return `${BASE}/map-choropleth?session_key=${encodeURIComponent(sessionKey)}&layer=${encodeURIComponent(layer)}`;
+}
+
 export async function fetchChoropleth(
   sessionKey: string,
   layer: string,
 ): Promise<ChoroplethResponse | null> {
   try {
-    const url = `${BASE}/map-choropleth?session_key=${encodeURIComponent(sessionKey)}&layer=${encodeURIComponent(layer)}`;
+    const url = buildChoroplethUrl(sessionKey, layer);
     const res = await fetch(url);
     if (!res.ok) return null;
     return res.json();

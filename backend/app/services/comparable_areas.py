@@ -13,52 +13,51 @@ from sqlalchemy import text
 from app.constants import PRICE_TYPES
 
 
-FEATURES_SQL = text(
+# Pre-computed materialized view — refreshed after each price data load.
+# Falls back to a live CTE query if the MV doesn't exist yet.
+FEATURES_SQL_MV = text(
+    "SELECT lad_code, lad_name, avg_price, median_rent, earnings, pm25, hpi_yoy "
+    "FROM mv_lad_comparable_features"
+)
+
+FEATURES_SQL_LIVE = text(
     """
-    WITH features AS (
-        SELECT
-            lb.lad_code,
-            lb.lad_name,
-            (
-                SELECT AVG(price)
-                FROM core_property_transactions
-                WHERE lsoa_code IN (
-                    SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = lb.lad_code
-                )
-                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                  AND property_type = ANY(:price_types)
-            ) AS avg_price,
-            (
-                SELECT r.median_rent_all
-                FROM core_voa_rents_lad r
-                WHERE r.lad_code = lb.lad_code
-                ORDER BY r.period DESC
-                LIMIT 1
-            ) AS median_rent,
-            (
-                SELECT e.median_annual_earnings
-                FROM core_earnings_lad e
-                WHERE e.lad_code = lb.lad_code
-            ) AS earnings,
-            (
-                SELECT aq.pm25_ugm3
-                FROM core_air_quality_lad aq
-                WHERE aq.lad_code = lb.lad_code
-                ORDER BY aq.year DESC
-                LIMIT 1
-            ) AS pm25,
-            (
-                SELECT h.yearly_change_pct
-                FROM core_hpi_lad h
-                WHERE h.lad_code = lb.lad_code
-                ORDER BY h.date DESC
-                LIMIT 1
-            ) AS hpi_yoy
-        FROM core_lad_boundaries lb
+    WITH price_agg AS (
+        SELECT lad_code, AVG(price) AS avg_price
+        FROM core_property_transactions
+        WHERE date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+          AND property_type = ANY(:price_types)
+        GROUP BY lad_code
+    ),
+    rent_latest AS (
+        SELECT DISTINCT ON (lad_code) lad_code, median_rent_all
+        FROM core_voa_rents_lad
+        ORDER BY lad_code, period DESC
+    ),
+    hpi_latest AS (
+        SELECT DISTINCT ON (lad_code) lad_code, yearly_change_pct
+        FROM core_hpi_lad
+        ORDER BY lad_code, date DESC
+    ),
+    aq_latest AS (
+        SELECT DISTINCT ON (lad_code) lad_code, pm25_ugm3
+        FROM core_air_quality_lad
+        ORDER BY lad_code, year DESC
     )
-    SELECT *
-    FROM features
-    WHERE avg_price IS NOT NULL
+    SELECT
+        lb.lad_code,
+        lb.lad_name,
+        p.avg_price,
+        r.median_rent_all AS median_rent,
+        e.median_annual_earnings AS earnings,
+        aq.pm25_ugm3 AS pm25,
+        h.yearly_change_pct AS hpi_yoy
+    FROM core_lad_boundaries lb
+    JOIN price_agg p ON p.lad_code = lb.lad_code
+    LEFT JOIN rent_latest r ON r.lad_code = lb.lad_code
+    LEFT JOIN core_earnings_lad e ON e.lad_code = lb.lad_code
+    LEFT JOIN aq_latest aq ON aq.lad_code = lb.lad_code
+    LEFT JOIN hpi_latest h ON h.lad_code = lb.lad_code
     """
 )
 
@@ -82,7 +81,7 @@ def _normalise_rows(rows: list[dict]) -> list[dict]:
         for field in numeric_fields:
             value = item.get(field)
             mean, std = stats[field]
-            item[f"n_{field}"] = 0.0 if value is None else (float(value) - mean) / std
+            item[f"n_{field}"] = None if value is None else (float(value) - mean) / std
         normalised.append(item)
     return normalised
 
@@ -101,13 +100,20 @@ def _aggregate_scope(rows: Sequence[dict], *, name: str, code: str, scope_type: 
         values = [float(row[field]) for row in rows if row.get(field) is not None]
         aggregated[field] = sum(values) / len(values) if values else None
         n_values = [float(row[f"n_{field}"]) for row in rows if row.get(field) is not None]
-        aggregated[f"n_{field}"] = sum(n_values) / len(n_values) if n_values else 0.0
+        aggregated[f"n_{field}"] = sum(n_values) / len(n_values) if n_values else None
     return aggregated
 
 
 def _distance(a: dict, b: dict) -> float:
     dims = ["avg_price", "median_rent", "earnings", "pm25", "hpi_yoy"]
-    return sum((float(a[f"n_{dim}"]) - float(b[f"n_{dim}"])) ** 2 for dim in dims) ** 0.5
+    terms = []
+    for dim in dims:
+        va, vb = a[f"n_{dim}"], b[f"n_{dim}"]
+        if va is not None and vb is not None:
+            terms.append((float(va) - float(vb)) ** 2)
+    if not terms:
+        return float("inf")
+    return sum(terms) ** 0.5
 
 
 def _similarity(distance: float) -> float:
@@ -117,8 +123,13 @@ def _similarity(distance: float) -> float:
 
 
 async def _fetch_normalised_lad_rows(db) -> list[dict]:
-    result = await db.execute(FEATURES_SQL, {"price_types": list(PRICE_TYPES)})
-    rows = [dict(row) for row in result.mappings().all()]
+    try:
+        result = await db.execute(FEATURES_SQL_MV)
+        rows = [dict(row) for row in result.mappings().all()]
+    except Exception:
+        # MV doesn't exist yet — fall back to live query
+        result = await db.execute(FEATURES_SQL_LIVE, {"price_types": list(PRICE_TYPES)})
+        rows = [dict(row) for row in result.mappings().all()]
     return _normalise_rows(rows)
 
 

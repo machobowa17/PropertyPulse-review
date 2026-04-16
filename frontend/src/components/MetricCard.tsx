@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   ChevronRight, TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
   PoundSterling, BarChart3, Activity, Scale, Building2, Home,
@@ -15,19 +14,34 @@ import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
 import { formatValue, METRIC_ICONS } from '../utils/tabs';
 import { getTakeaway } from '../utils/personas';
 import TransactionTable from './TransactionTable';
-import NewBuildTrendChart from './NewBuildTrendChart';
-import AmenityRadarChart from './AmenityRadarChart';
-import PriceByTypeChart from './PriceByTypeChart';
-import DistrictPriceHistoryChart from './DistrictPriceHistoryChart';
-import EpcRatingChart from './EpcRatingChart';
-import TransportModeChart from './TransportModeChart';
-import PtalGauge from './PtalGauge';
-import FloodRiskGauge from './FloodRiskGauge';
-import DemographicsCards from './DemographicsCards';
-import ImdDeprivationBlock from './ImdDeprivationBlock';
-import CouncilTaxBandGrid from './CouncilTaxBandGrid';
-import RentByBedroomChart from './RentByBedroomChart';
-import BroadbandPanel from './BroadbandPanel';
+// R3: lazy-load chart components — only parsed when the metric card is expanded
+const NewBuildTrendChart      = lazy(() => import('./NewBuildTrendChart'));
+const AmenityRadarChart       = lazy(() => import('./AmenityRadarChart'));
+const PriceByTypeChart        = lazy(() => import('./PriceByTypeChart'));
+const DistrictPriceHistoryChart = lazy(() => import('./DistrictPriceHistoryChart'));
+const EpcRatingChart          = lazy(() => import('./EpcRatingChart'));
+const TransportModeChart      = lazy(() => import('./TransportModeChart'));
+const PtalGauge               = lazy(() => import('./PtalGauge'));
+const FloodRiskGauge          = lazy(() => import('./FloodRiskGauge'));
+const DemographicsCards       = lazy(() => import('./DemographicsCards'));
+const ImdDeprivationBlock     = lazy(() => import('./ImdDeprivationBlock'));
+const CouncilTaxBandGrid      = lazy(() => import('./CouncilTaxBandGrid'));
+const RentByBedroomChart      = lazy(() => import('./RentByBedroomChart'));
+const BroadbandPanel          = lazy(() => import('./BroadbandPanel'));
+
+// Runtime-safe accessors for details: Record<string, unknown>
+// Replaces 40+ unsafe `as` casts with type-checked reads.
+type D = Record<string, unknown>;
+const num = (d: D, k: string): number | null =>
+  typeof d[k] === 'number' ? d[k] : null;
+const str = (d: D, k: string): string | null =>
+  typeof d[k] === 'string' ? d[k] : null;
+const bool = (d: D, k: string): boolean | undefined =>
+  typeof d[k] === 'boolean' ? d[k] : undefined;
+const arr = (d: D, k: string): D[] =>
+  Array.isArray(d[k]) ? (d[k] as D[]) : [];
+const rec = <T,>(d: D, k: string): T | null =>
+  d[k] != null && typeof d[k] === 'object' && !Array.isArray(d[k]) ? (d[k] as T) : null;
 
 const ICON_MAP: Record<string, React.ElementType> = {
   PoundSterling, BarChart3, Activity, Scale, Building2, Home,
@@ -172,12 +186,28 @@ function comparisonColor(
 
 export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const detailsRef = useRef<HTMLDivElement>(null);
   const takeaway = getTakeaway(metric, persona);
-  const trend = (metric.details as Record<string, unknown> | null)?.trend as Trend | undefined;
+  // Prefer nested trend object from contract; fall back to details.trend for backward compat
+  const trendNested = metric.trend?.status === 'trended' && metric.trend.direction
+    ? { direction: metric.trend.direction, pct: typeof metric.trend.value === 'number' ? metric.trend.value : 0 }
+    : null;
+  const trend: Trend | undefined = trendNested ?? (metric.details ? rec<Trend>(metric.details, 'trend') ?? undefined : undefined);
   const colours = COLOUR_STYLES[takeaway.colour];
   const iconName = METRIC_ICONS[metric.id] || 'BarChart3';
   const Icon = ICON_MAP[iconName] || BarChart3;
   const hasDetails = metric.details && Object.keys(metric.details).length > 0;
+  const handleToggle = useCallback(() => {
+    if (!hasDetails) return;
+    const opening = !expanded;
+    setExpanded(opening);
+    if (opening && detailsRef.current && window.innerWidth < 1024) {
+      detailsRef.current.addEventListener('transitionend', function scrollOnce() {
+        detailsRef.current?.removeEventListener('transitionend', scrollOnce);
+        detailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+  }, [expanded, hasDetails]);
 
   const ComparisonIcon = metric.comparison_flag === 'higher_than_parent'
     ? TrendingUp
@@ -201,7 +231,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
     >
       {/* ═══ DESKTOP: Table Row (Bible 6.2.1: Metric | Local | Parent | So What | Watch Out) ═══ */}
       <button
-        onClick={() => hasDetails && setExpanded(!expanded)}
+        onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
         className={`w-full text-left group hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:items-center lg:gap-4 lg:px-5 lg:py-3.5 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
@@ -230,10 +260,15 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         {/* Parent */}
         <div className={`flex items-center gap-1.5 text-sm ${compColourClass}`}>
           {metric.parent_value !== null ? (
-            <>
+            <span
+              className="inline-flex items-center gap-1.5"
+              title={metric.comparison?.difference_pct != null
+                ? `${metric.comparison.difference_pct > 0 ? '+' : ''}${metric.comparison.difference_pct.toFixed(1)}% vs ${metric.comparison.scope_label || parentName}`
+                : undefined}
+            >
               <ComparisonIcon className="w-3.5 h-3.5 shrink-0" />
               {formatValue(metric.parent_value, metric.unit)}
-            </>
+            </span>
           ) : metric.comparison_status === 'not_modelled_yet' ? (
             <span className="text-[11px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
           ) : (
@@ -274,7 +309,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
 
       {/* ═══ MOBILE: Card Layout ═══ */}
       <button
-        onClick={() => hasDetails && setExpanded(!expanded)}
+        onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
         className={`w-full flex items-center gap-3 p-4 text-left group lg:hidden ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
@@ -326,15 +361,13 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
       )}
 
       {/* ═══ Expanded details (shared) ═══ */}
-      <AnimatePresence>
-        {expanded && metric.details && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
+      <div
+        ref={detailsRef}
+        className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
+        style={{ gridTemplateRows: expanded && metric.details ? '1fr' : '0fr', opacity: expanded && metric.details ? 1 : 0 }}
+      >
+        <div className="overflow-hidden">
+          <Suspense fallback={null}>
             <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
               {priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
                 <DistrictPriceHistoryChart
@@ -348,18 +381,21 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 />
               )}
               <DetailsRenderer
-                details={priceByTypeData
-                  ? Object.fromEntries(Object.entries(metric.details as Record<string, unknown>).filter(([k]) => !['detached', 'semi', 'terraced', 'flat', 'uk_median', 'parent_median'].includes(k)))
-                  : metric.details as Record<string, unknown>
+                details={priceByTypeData && metric.details
+                  ? Object.fromEntries(Object.entries(metric.details).filter(([k]) => !['detached', 'semi', 'terraced', 'flat', 'uk_median', 'parent_median'].includes(k)))
+                  : metric.details ?? {}
                 }
                 unit={metric.unit}
               />
               {metric.id === 'transaction_volume' && sessionKey && (
                 <TransactionTable sessionKey={sessionKey} />
               )}
-              {metric.quality_notes && (
+              {/* Quality flags (prefer nested array, fall back to flat string) */}
+              {(metric.quality_flags?.length > 0 || metric.quality_notes) && (
                 <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200/60 text-[11px] text-amber-800">
-                  {metric.quality_notes}
+                  {metric.quality_flags?.length > 0
+                    ? metric.quality_flags.map((flag, i) => <p key={i}>{flag}</p>)
+                    : metric.quality_notes}
                 </div>
               )}
               {METRIC_SOURCES[metric.id] && (
@@ -373,9 +409,9 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 </div>
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </Suspense>
+        </div>
+      </div>
     </div>
   );
 }
@@ -406,7 +442,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (Array.isArray(details.schools)) {
     return (
       <div className="space-y-2 mt-2">
-        {(details.schools as Record<string, unknown>[]).map((s, i) => (
+        {arr(details, 'schools').map((s, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
             <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-xs font-bold text-brand-600">
               {i + 1}
@@ -429,13 +465,13 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   }
 
   if (Array.isArray(details.stations)) {
-    const modeCounts = details.mode_counts_1km as Record<string, number> | null | undefined;
+    const modeCounts = rec<Record<string, number>>(details, 'mode_counts_1km');
     return (
       <div className="space-y-2 mt-2">
         {modeCounts && Object.keys(modeCounts).length > 0 && (
           <TransportModeChart modeCounts={modeCounts} />
         )}
-        {(details.stations as Record<string, unknown>[]).map((s, i) => (
+        {arr(details, 'stations').map((s, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
             <Train className="w-4 h-4 text-ink-faint shrink-0" />
             <span className="text-sm text-ink flex-1 truncate">{String(s.name)}</span>
@@ -453,7 +489,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (Array.isArray(details.parks)) {
     return (
       <div className="space-y-2 mt-2">
-        {(details.parks as Record<string, unknown>[]).map((p, i) => (
+        {arr(details, 'parks').map((p, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
             <TreePine className="w-4 h-4 text-signal-green shrink-0" />
             <div className="flex-1 min-w-0">
@@ -470,7 +506,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
 
   // NHS facilities: type_summary + list
   if (Array.isArray(details.facilities)) {
-    const typeSummary = details.type_summary as Record<string, { count: number; nearest_m: number | null }> | null | undefined;
+    const typeSummary = rec<Record<string, { count: number; nearest_m: number | null }>>(details, 'type_summary');
     const TYPE_ORDER = ['GP', 'Hospital', 'Pharmacy', 'Dentist', 'Optician', 'Care Home'];
     const summaryEntries = typeSummary
       ? [...TYPE_ORDER.filter((t) => t in typeSummary), ...Object.keys(typeSummary).filter((t) => !TYPE_ORDER.includes(t))]
@@ -497,7 +533,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
           </div>
         )}
         {/* Individual facility list */}
-        {(details.facilities as Record<string, unknown>[]).map((f, i) => (
+        {arr(details, 'facilities').map((f, i) => (
           <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
             <Stethoscope className="w-4 h-4 text-brand-600 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -513,23 +549,23 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
 
   // Demographics overview cards
   if (details.cards && typeof details.cards === 'object' && !Array.isArray(details.cards)) {
-    return <DemographicsCards cards={details.cards as Record<string, { label: string; value: number | null; unit: string; parent?: number | null }>} />;
+    return <DemographicsCards cards={rec<Record<string, { label: string; value: number | null; unit: string; parent?: number | null }>>(details, 'cards')!} />;
   }
 
   // IMD deprivation block
   if (details.decile != null) {
     return (
       <ImdDeprivationBlock
-        decile={details.decile as number}
-        rank={details.rank as number | null}
-        parentAvgDecile={details.parent_avg_decile as number | null}
-        income={details.income as number | null}
-        employment={details.employment as number | null}
-        education={details.education as number | null}
-        health={details.health as number | null}
-        crime={details.crime as number | null}
-        barriers={details.barriers as number | null}
-        livingEnvironment={details.living_environment as number | null}
+        decile={num(details, 'decile')!}
+        rank={num(details, 'rank')}
+        parentAvgDecile={num(details, 'parent_avg_decile')}
+        income={num(details, 'income')}
+        employment={num(details, 'employment')}
+        education={num(details, 'education')}
+        health={num(details, 'health')}
+        crime={num(details, 'crime')}
+        barriers={num(details, 'barriers')}
+        livingEnvironment={num(details, 'living_environment')}
       />
     );
   }
@@ -538,14 +574,14 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (details.flood_level != null) {
     return (
       <FloodRiskGauge
-        floodLevel={details.flood_level as string}
-        riskScore={details.risk_score as number ?? 5}
-        zone3Pct={details.zone_3_pct as number | null}
-        zone2Pct={details.zone_2_pct as number | null}
-        highRiskLsoaCount={details.high_risk_lsoa_count as number | null}
-        mediumRiskLsoaCount={details.medium_risk_lsoa_count as number | null}
-        totalLsoas={details.total_lsoas as number | null}
-        parentZone3Pct={details.parent_zone_3_pct as number | null}
+        floodLevel={str(details, 'flood_level') ?? ''}
+        riskScore={num(details, 'risk_score') ?? 5}
+        zone3Pct={num(details, 'zone_3_pct')}
+        zone2Pct={num(details, 'zone_2_pct')}
+        highRiskLsoaCount={num(details, 'high_risk_lsoa_count')}
+        mediumRiskLsoaCount={num(details, 'medium_risk_lsoa_count')}
+        totalLsoas={num(details, 'total_lsoas')}
+        parentZone3Pct={num(details, 'parent_zone_3_pct')}
       />
     );
   }
@@ -554,12 +590,12 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (details.band != null) {
     return (
       <PtalGauge
-        band={details.band as string}
-        ptaiScore={details.ptai_score as number | null}
-        parentAvgPtai={details.parent_avg_ptai as number | null}
-        busStops640m={details.bus_stops_640m as number | null}
-        heavyStops960m={details.heavy_stops_960m as number | null}
-        tflData={details.tfl_data as boolean | undefined}
+        band={str(details, 'band') ?? ''}
+        ptaiScore={num(details, 'ptai_score')}
+        parentAvgPtai={num(details, 'parent_avg_ptai')}
+        busStops640m={num(details, 'bus_stops_640m')}
+        heavyStops960m={num(details, 'heavy_stops_960m')}
+        tflData={bool(details, 'tfl_data')}
       />
     );
   }
@@ -568,12 +604,12 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (details.detached != null || details.semi != null || details.terraced != null || details.flat != null) {
     return (
       <PriceByTypeChart
-        detached={details.detached as number | null}
-        semi={details.semi as number | null}
-        terraced={details.terraced as number | null}
-        flat={details.flat as number | null}
-        ukMedian={details.uk_median as number | null}
-        parentMedian={details.parent_median as number | null}
+        detached={num(details, 'detached')}
+        semi={num(details, 'semi')}
+        terraced={num(details, 'terraced')}
+        flat={num(details, 'flat')}
+        ukMedian={num(details, 'uk_median')}
+        parentMedian={num(details, 'parent_median')}
       />
     );
   }
@@ -582,24 +618,24 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (details.pct_a != null || details.pct_b != null || details.pct_c != null) {
     return (
       <EpcRatingChart
-        pctA={details.pct_a as number | null}
-        pctB={details.pct_b as number | null}
-        pctC={details.pct_c as number | null}
-        pctD={details.pct_d as number | null}
-        pctE={details.pct_e as number | null}
-        pctF={details.pct_f as number | null}
-        pctG={details.pct_g as number | null}
-        avgScore={details.avg_energy_score as number | null}
-        parentAvgScore={details.parent_avg_score as number | null}
-        parentRatings={details.parent_ratings as Record<string, number | null> | null}
-        heatGasPct={details.heat_gas_pct as number | null}
-        heatElectricPct={details.heat_electric_pct as number | null}
-        heatOilPct={details.heat_oil_pct as number | null}
-        heatDistrictPct={details.heat_district_pct as number | null}
-        heatOtherPct={details.heat_other_pct as number | null}
-        heatNonePct={details.heat_none_pct as number | null}
-        cPlusPct={details.c_plus_pct as number | null}
-        parentCPlusPct={details.parent_c_plus_pct as number | null}
+        pctA={num(details, 'pct_a')}
+        pctB={num(details, 'pct_b')}
+        pctC={num(details, 'pct_c')}
+        pctD={num(details, 'pct_d')}
+        pctE={num(details, 'pct_e')}
+        pctF={num(details, 'pct_f')}
+        pctG={num(details, 'pct_g')}
+        avgScore={num(details, 'avg_energy_score')}
+        parentAvgScore={num(details, 'parent_avg_score')}
+        parentRatings={rec<Record<string, number | null>>(details, 'parent_ratings')}
+        heatGasPct={num(details, 'heat_gas_pct')}
+        heatElectricPct={num(details, 'heat_electric_pct')}
+        heatOilPct={num(details, 'heat_oil_pct')}
+        heatDistrictPct={num(details, 'heat_district_pct')}
+        heatOtherPct={num(details, 'heat_other_pct')}
+        heatNonePct={num(details, 'heat_none_pct')}
+        cPlusPct={num(details, 'c_plus_pct')}
+        parentCPlusPct={num(details, 'parent_c_plus_pct')}
       />
     );
   }
@@ -609,17 +645,16 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   // gross_yield details: { 1bed: %, rent_1bed: £rent, ... }
   if (details['1bed'] != null || details['rent_1bed'] != null) {
     const isRentCard = details['yield_1bed'] != null || details['rent_1bed'] == null;
-    const n = (k: string) => details[k] as number | null | undefined;
     return (
       <RentByBedroomChart
-        rent1bed={isRentCard ? n('1bed')      : n('rent_1bed')}
-        rent2bed={isRentCard ? n('2bed')      : n('rent_2bed')}
-        rent3bed={isRentCard ? n('3bed')      : n('rent_3bed')}
-        rent4bed={isRentCard ? n('4bed')      : n('rent_4bed')}
-        yield1bed={isRentCard ? n('yield_1bed') : n('1bed')}
-        yield2bed={isRentCard ? n('yield_2bed') : n('2bed')}
-        yield3bed={isRentCard ? n('yield_3bed') : n('3bed')}
-        yield4bed={isRentCard ? n('yield_4bed') : n('4bed')}
+        rent1bed={isRentCard ? num(details, '1bed')      : num(details, 'rent_1bed')}
+        rent2bed={isRentCard ? num(details, '2bed')      : num(details, 'rent_2bed')}
+        rent3bed={isRentCard ? num(details, '3bed')      : num(details, 'rent_3bed')}
+        rent4bed={isRentCard ? num(details, '4bed')      : num(details, 'rent_4bed')}
+        yield1bed={isRentCard ? num(details, 'yield_1bed') : num(details, '1bed')}
+        yield2bed={isRentCard ? num(details, 'yield_2bed') : num(details, '2bed')}
+        yield3bed={isRentCard ? num(details, 'yield_3bed') : num(details, '3bed')}
+        yield4bed={isRentCard ? num(details, 'yield_4bed') : num(details, '4bed')}
       />
     );
   }
@@ -627,39 +662,38 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   // Council tax band grid
   if (details.band_a != null || details.band_d != null) {
     const bands = {
-      band_a: details.band_a as number | null,
-      band_b: details.band_b as number | null,
-      band_c: details.band_c as number | null,
-      band_d: details.band_d as number | null,
-      band_e: details.band_e as number | null,
-      band_f: details.band_f as number | null,
-      band_g: details.band_g as number | null,
-      band_h: details.band_h as number | null,
+      band_a: num(details, 'band_a'),
+      band_b: num(details, 'band_b'),
+      band_c: num(details, 'band_c'),
+      band_d: num(details, 'band_d'),
+      band_e: num(details, 'band_e'),
+      band_f: num(details, 'band_f'),
+      band_g: num(details, 'band_g'),
+      band_h: num(details, 'band_h'),
     };
     const parents = {
-      parent_a: details.parent_a as number | null,
-      parent_b: details.parent_b as number | null,
-      parent_c: details.parent_c as number | null,
-      parent_d: details.parent_d as number | null,
-      parent_e: details.parent_e as number | null,
-      parent_f: details.parent_f as number | null,
-      parent_g: details.parent_g as number | null,
-      parent_h: details.parent_h as number | null,
+      parent_a: num(details, 'parent_a'),
+      parent_b: num(details, 'parent_b'),
+      parent_c: num(details, 'parent_c'),
+      parent_d: num(details, 'parent_d'),
+      parent_e: num(details, 'parent_e'),
+      parent_f: num(details, 'parent_f'),
+      parent_g: num(details, 'parent_g'),
+      parent_h: num(details, 'parent_h'),
     };
     return <CouncilTaxBandGrid bands={bands} parents={parents} />;
   }
 
   // Broadband panel: coverage bars (Ofcom Connected Nations data)
   if (details.full_fibre_pct != null || details.superfast_pct != null || details.gigabit_pct != null) {
-    const n = (k: string) => details[k] as number | null | undefined ?? null;
     return (
       <BroadbandPanel
-        fullFibrePct={n('full_fibre_pct')}
-        superfastPct={n('superfast_pct')}
-        gigabitPct={n('gigabit_pct')}
-        parentFullFibrePct={n('parent_full_fibre_pct')}
-        parentSuperfastPct={n('parent_superfast_pct')}
-        parentGigabitPct={n('parent_gigabit_pct')}
+        fullFibrePct={num(details, 'full_fibre_pct')}
+        superfastPct={num(details, 'superfast_pct')}
+        gigabitPct={num(details, 'gigabit_pct')}
+        parentFullFibrePct={num(details, 'parent_full_fibre_pct')}
+        parentSuperfastPct={num(details, 'parent_superfast_pct')}
+        parentGigabitPct={num(details, 'parent_gigabit_pct')}
       />
     );
   }
@@ -668,8 +702,8 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (details.counts && typeof details.counts === 'object' && !Array.isArray(details.counts)) {
     return (
       <AmenityRadarChart
-        counts={details.counts as Record<string, number>}
-        nearest={details.nearest as Array<{ type: string; name: string; distance_m?: number }> | undefined}
+        counts={rec<Record<string, number>>(details, 'counts')!}
+        nearest={Array.isArray(details.nearest) ? details.nearest as Array<{ type: string; name: string; distance_m?: number }> : undefined}
       />
     );
   }
@@ -678,14 +712,14 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   if (Array.isArray(details.nb_trend)) {
     return (
       <NewBuildTrendChart
-        trend={details.nb_trend as Array<{ year: number; new_builds: number; total: number; pct: number }>}
+        trend={arr(details, 'nb_trend') as Array<{ year: number; new_builds: number; total: number; pct: number }>}
       />
     );
   }
 
   // Housing-stock context (Census 2021 dwelling types)
   if (details.housing_stock && typeof details.housing_stock === 'object' && !Array.isArray(details.housing_stock)) {
-    const hs = details.housing_stock as Record<string, number | null>;
+    const hs = rec<Record<string, number | null>>(details, 'housing_stock')!;
     const types = [
       { label: 'Detached', key: 'pct_detached', parentKey: 'parent_pct_detached', icon: Home },
       { label: 'Semi-detached', key: 'pct_semi', parentKey: 'parent_pct_semi', icon: Building2 },
@@ -724,9 +758,9 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
               const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
               const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
               const display = typeof value === 'number'
-                ? isGbp ? '£' + (value as number).toLocaleString('en-GB', { maximumFractionDigits: 0 })
-                : String(key).includes('pct') ? (value as number).toFixed(1) + '%'
-                : (value as number).toLocaleString('en-GB', { maximumFractionDigits: 1 })
+                ? isGbp ? '£' + Number(value).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+                : String(key).includes('pct') ? Number(value).toFixed(1) + '%'
+                : Number(value).toLocaleString('en-GB', { maximumFractionDigits: 1 })
                 : String(value);
               return (
                 <div key={key} className="p-2.5 rounded-xl bg-surface">

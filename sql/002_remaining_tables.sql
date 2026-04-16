@@ -217,5 +217,6 @@ CREATE TABLE IF NOT EXISTS core_council_tax_lad (
     band_e              NUMERIC(8,2),
     band_f              NUMERIC(8,2),
     band_g              NUMERIC(8,2),
-    band_h              NUMERIC(8,2)
+    band_h              NUMERIC(8,2),
+    band_i              NUMERIC(8,2)
 );

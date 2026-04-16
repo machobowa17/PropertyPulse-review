@@ -1,31 +1,32 @@
 """
-sources/schools.py — DfE GIAS + Ofsted + KS2/KS4 → core_schools
+sources/schools.py — DfE GIAS + Ofsted + KS2/KS4 + StatsWales → core_schools
 
-Consolidated ingestion replacing three separate legacy scripts:
-    ingest_schools.py      — GIAS + KS2/KS4
-    ingest_schools_ofsted.py — GIAS + Ofsted upsert
-    ingest_ofsted.py       — Ofsted ratings update
-
-This module does everything in one run:
+England + Wales school ingestion:
   1. Download GIAS JSON from GitHub (cached in etl/data/).
   2. Load KS2 progress scores (etl/data/ks2_school_2024.csv) — optional.
   3. Load KS4 progress/attainment scores (etl/data/ks4_school_2024.csv) — optional.
-  4. Load Ofsted ratings from etl/data/ofsted_latest.csv.
-  5. Upsert all open English schools into core_schools (ON CONFLICT DO UPDATE).
-  6. Mark schools absent from the open set as is_open = false.
-  7. Rebuild PostGIS geometry column.
+  4. Load Ofsted ratings from etl/data/ofsted_latest.csv (England only).
+  5. Load Welsh school phases from etl/data/statswales_schools.csv (optional).
+     GIAS marks all Welsh schools as phase "Not applicable"; the StatsWales
+     PLASC dataset provides the actual sector (Primary/Secondary/etc.).
+     Matching is by school name + local authority with normalization.
+     Welsh schools have no Ofsted/KS scores (Estyn abolished gradings in 2022).
+  6. Upsert all open E+W schools into core_schools (ON CONFLICT DO UPDATE).
+  7. Mark schools absent from the open set as is_open = false.
+  8. Rebuild PostGIS geometry column.
 
 Standard interface:
     METADATA  dict
     run(db_url: str) -> int   (returns open school count in core_schools)
 
 Data files in etl/data/ (required):
-    ofsted_latest.csv     — from https://www.gov.uk/government/statistics/
-                              state-funded-schools-inspections-and-outcomes-as-at-31-august
+    ofsted_latest.csv        — from https://www.gov.uk/government/statistics/
+                                 state-funded-schools-inspections-and-outcomes-as-at-31-august
 
-Data files in etl/data/ (optional — KS scores will be NULL if absent):
-    ks2_school_2024.csv   — from DfE key stage 2 performance tables
-    ks4_school_2024.csv   — from DfE key stage 4 performance tables
+Data files in etl/data/ (optional — scores/phases will be NULL if absent):
+    ks2_school_2024.csv      — from DfE key stage 2 performance tables
+    ks4_school_2024.csv      — from DfE key stage 4 performance tables
+    statswales_schools.csv   — from https://stats.gov.wales/ (PLASC school census)
 
 GIAS JSON is auto-downloaded from:
     https://dfe-digital.github.io/gias-data/schools.json
@@ -34,6 +35,7 @@ GIAS JSON is auto-downloaded from:
 import csv
 import json
 import os
+import re
 
 import psycopg2
 import requests
@@ -47,12 +49,12 @@ from constants import SCHEDULE_MONTHLY, TABLE_NAMES
 
 METADATA = {
     "name":        "schools",
-    "description": "DfE GIAS + Ofsted ratings + KS2/KS4 scores → core_schools.",
+    "description": "DfE GIAS + Ofsted ratings + KS2/KS4 scores + Welsh Gov phases → core_schools (E+W).",
     "schedule":           SCHEDULE_MONTHLY,
     "depends_on":         ["postcodes"],
     "tables_written":     [TABLE_NAMES["schools"]],
     "cache_key_patterns": ["area:*"],
-    "expected_row_range": (20_000, 35_000),
+    "expected_row_range": (20_000, 36_500),  # ~23K England + ~1.4K Wales
 }
 
 # ---------------------------------------------------------------------------
@@ -64,6 +66,7 @@ _GIAS_PATH        = os.path.join(_DATA_DIR, "gias_schools.json")
 _OFSTED_PATH      = os.path.join(_DATA_DIR, "ofsted_latest.csv")
 _KS2_PATH         = os.path.join(_DATA_DIR, "ks2_school_2024.csv")
 _KS4_PATH         = os.path.join(_DATA_DIR, "ks4_school_2024.csv")
+_WELSH_DIR_PATH   = os.path.join(_DATA_DIR, "welsh_schools_directory.ods")
 
 _GIAS_JSON_URL    = "https://dfe-digital.github.io/gias-data/schools.json"
 
@@ -77,6 +80,15 @@ _PHASE_MAP = {
     "16 plus":                    "16 plus",
     "Not applicable":             "Not applicable",   # nurseries, special, AP
     "Nursery":                    "Nursery",
+}
+
+# Welsh Government sector → our phase label
+_WELSH_SECTOR_TO_PHASE = {
+    "Primary":   "Primary",
+    "Secondary": "Secondary",
+    "Middle":    "All-through",
+    "Special":   "Not applicable",
+    "Nursery":   "Nursery",
 }
 
 # Ofsted numeric code → readable label
@@ -192,13 +204,118 @@ def _load_ofsted():
     return ratings
 
 
+def _load_welsh_phases(gias_schools: list[dict]) -> dict[int, str]:
+    """
+    Load Welsh school phases from the Welsh Government maintained schools
+    directory ODS. Returns {urn: phase_label} for Welsh schools that can be
+    matched to GIAS by postcode+LA, name+LA, or partial name+LA.
+
+    The Welsh directory has authoritative sector labels (Primary, Secondary,
+    Middle, Special, Nursery). GIAS marks all Welsh schools as phase
+    "Not applicable", so this lookup is the only way to assign correct phases.
+
+    Download from:
+        https://www.gov.wales/addresses-and-phone-numbers-schools-and-pupil-referral-units
+    """
+    if not os.path.exists(_WELSH_DIR_PATH):
+        print(f"  Welsh schools directory not found at {_WELSH_DIR_PATH} — "
+              "Welsh schools will have phase 'Not applicable'", flush=True)
+        return {}
+
+    import pandas as pd
+
+    wd = pd.read_excel(_WELSH_DIR_PATH, sheet_name="Maintained",
+                        header=0, engine="odf")
+    print(f"  Welsh directory loaded: {len(wd):,} schools", flush=True)
+
+    def norm_pc(pc):
+        return str(pc).strip().upper().replace(" ", "") if pd.notna(pc) else ""
+
+    def norm_name(n):
+        return re.sub(r"[^a-z0-9]", "", str(n).strip().lower())
+
+    # Build GIAS indexes for Welsh schools only
+    welsh_gias = [s for s in gias_schools
+                  if s.get("administritive_district_code", "").startswith("W")
+                  and s.get("status") in ("Open", "Open, but proposed to close")]
+
+    gias_by_pc_la: dict[tuple[str, str], list[dict]] = {}
+    gias_by_name_la: dict[tuple[str, str], list[dict]] = {}
+    for s in welsh_gias:
+        pc = norm_pc(s.get("postcode", ""))
+        la = str(s.get("local_authority_code", "")).strip()
+        name = norm_name(s.get("name", ""))
+        gias_by_pc_la.setdefault((pc, la), []).append(s)
+        gias_by_name_la.setdefault((name, la), []).append(s)
+
+    result: dict[int, str] = {}
+
+    for _, row in wd.iterrows():
+        sector_raw = str(row.get("Sector", "")).strip()
+        phase = _WELSH_SECTOR_TO_PHASE.get(sector_raw)
+        if not phase:
+            continue
+
+        pc = norm_pc(row.get("Postcode", ""))
+        la_raw = row.get("LA Code")
+        la = str(int(la_raw)).strip() if pd.notna(la_raw) else ""
+        name = norm_name(row.get("School Name", ""))
+
+        matched_urn = None
+
+        # Strategy 1: unique postcode + LA match
+        candidates = gias_by_pc_la.get((pc, la), [])
+        if len(candidates) == 1:
+            matched_urn = candidates[0]["urn"]
+        elif len(candidates) > 1:
+            # Strategy 2: postcode + LA + exact name
+            for c in candidates:
+                if norm_name(c["name"]) == name:
+                    matched_urn = c["urn"]
+                    break
+            else:
+                # Strategy 2b: postcode + LA + name containment
+                for c in candidates:
+                    cn = norm_name(c["name"])
+                    if name in cn or cn in name:
+                        matched_urn = c["urn"]
+                        break
+
+        if matched_urn is None:
+            # Strategy 3: exact name + LA
+            candidates = gias_by_name_la.get((name, la), [])
+            if len(candidates) == 1:
+                matched_urn = candidates[0]["urn"]
+
+        if matched_urn is None:
+            # Strategy 4: partial name + LA (for renamed/merged schools)
+            for s in welsh_gias:
+                if str(s.get("local_authority_code", "")).strip() != la:
+                    continue
+                cn = norm_name(s.get("name", ""))
+                if len(name) >= 8 and (name in cn or cn in name):
+                    if s["urn"] not in result:
+                        matched_urn = s["urn"]
+                        break
+
+        if matched_urn is not None:
+            result[int(matched_urn)] = phase
+
+    print(f"  Welsh phases matched: {len(result):,} URNs "
+          f"(Primary={sum(1 for v in result.values() if v == 'Primary')}, "
+          f"Secondary={sum(1 for v in result.values() if v == 'Secondary')}, "
+          f"other={sum(1 for v in result.values() if v not in ('Primary', 'Secondary'))})",
+          flush=True)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Main run function
 # ---------------------------------------------------------------------------
 
 def run(db_url: str) -> int:
     """
-    Ingest GIAS + KS2/KS4 + Ofsted → core_schools.
+    Ingest GIAS + KS2/KS4 + Ofsted + Welsh phases → core_schools.
     Returns count of open schools.
     """
     _download_gias()
@@ -210,11 +327,16 @@ def run(db_url: str) -> int:
         schools = json.load(f)
     print(f"  GIAS schools: {len(schools):,}", flush=True)
 
+    # Load Welsh school phases from Welsh Government directory
+    welsh_phases = _load_welsh_phases(schools)
+
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
     cur  = conn.cursor()
 
     rows = []
+    welsh_included = 0
+    welsh_skipped = 0
     for s in schools:
         status = s.get("status", "")
         if status not in ("Open", "Open, but proposed to close"):
@@ -228,14 +350,23 @@ def run(db_url: str) -> int:
         except (ValueError, TypeError):
             continue
 
-        phase = s.get("phase_of_education", "")
-        if phase not in _PHASE_MAP:
+        lad_code = s.get("administritive_district_code", "")
+        if not (lad_code.startswith("E") or lad_code.startswith("W")):
             continue
 
-        # England only: administrative district code starts with 'E'
-        lad_code = s.get("administritive_district_code", "")
-        if not lad_code.startswith("E"):
-            continue
+        # Resolve phase: English schools use GIAS phase_of_education,
+        # Welsh schools use the Welsh Government directory lookup.
+        if lad_code.startswith("W"):
+            phase = welsh_phases.get(urn)
+            if not phase:
+                welsh_skipped += 1
+                continue  # Not in Welsh maintained directory — skip
+            welsh_included += 1
+        else:
+            phase = s.get("phase_of_education", "")
+            if phase not in _PHASE_MAP:
+                continue
+            phase = _PHASE_MAP[phase]
 
         try:
             lat_f = float(s["latitude"])  if s.get("latitude")  else None
@@ -255,7 +386,7 @@ def run(db_url: str) -> int:
             urn,
             s.get("name", ""),
             s.get("type", ""),
-            _PHASE_MAP[phase],
+            phase,
             s.get("postcode", ""),
             lat_f, lon_f,
             lad_code,
@@ -268,7 +399,9 @@ def run(db_url: str) -> int:
             True,   # is_open
         ))
 
-    print(f"  Prepared {len(rows):,} rows for upsert", flush=True)
+    print(f"  Prepared {len(rows):,} rows for upsert "
+          f"(Welsh: {welsh_included:,} included, {welsh_skipped:,} skipped — "
+          f"not in maintained directory)", flush=True)
 
     execute_values(
         cur,

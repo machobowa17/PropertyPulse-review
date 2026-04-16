@@ -56,7 +56,70 @@ export interface ResolveResponse {
   suggestions?: ResolveSuggestion[];
 }
 
+// ---------------------------------------------------------------------------
+// Nested Metric contract sub-types
+// ---------------------------------------------------------------------------
+
+export interface MetricRegistryMeta {
+  metric_id: string;
+  section_id: string;
+  headline_label: string;
+  short_label: string;
+  description: string;
+  decision_question: string;
+  display_priority: number;
+  map_binding_type: string;
+  source_refresh_profile: string;
+  quality_notes: string[];
+  comparison_capability?: string;
+  trend_capability?: string;
+  interpretation_direction?: string;
+  supports_persona_rendering?: boolean;
+  value_type?: string;
+}
+
+export interface MetricHeadline {
+  value: number | string | null;
+  unit: string;
+  value_type: string;
+}
+
+export interface MetricComparison {
+  status: string;
+  value: number | string | null;
+  scope_label: string | null;
+  difference_abs: number | null;
+  difference_pct: number | null;
+  interpretation_direction: string;
+  comparison_flag: 'lower_than_parent' | 'higher_than_parent' | 'equal_to_parent' | null;
+}
+
+export interface MetricTrend {
+  status: string;
+  window_label: string | null;
+  direction: 'up' | 'down' | 'flat' | null;
+  value: number | string | null;
+  series: unknown;
+  parent_series: unknown;
+  trend_summary: string | null;
+}
+
+export interface MetricCapsule {
+  text?: string | null;
+  tone?: 'positive' | 'cautionary' | 'neutral' | 'mixed' | string;
+}
+
+export interface MetricMapBinding {
+  type: string;
+}
+
+// ---------------------------------------------------------------------------
+// Metric — the unified contract shape.
+// Flat fields preserved for backward compatibility; nested sub-objects added.
+// ---------------------------------------------------------------------------
+
 export interface Metric {
+  // Flat fields (preserved from original contract)
   id: string;
   name: string;
   local_value: number | string | null;
@@ -65,11 +128,19 @@ export interface Metric {
   comparison_flag: 'lower_than_parent' | 'higher_than_parent' | 'equal_to_parent' | null;
   comparison_status: 'comparable' | 'not_comparable' | 'not_modelled_yet';
   trend_status: 'trended' | 'no_history' | 'not_modelled_yet';
-  map_binding: string;
+  map_binding: string | MetricMapBinding | null;
   decision_question?: string | null;
   interpretation_direction?: 'lower_is_better' | 'higher_is_better' | 'neutral';
   quality_notes?: string | null;
   details: Record<string, unknown> | null;
+
+  // Nested sub-objects (new — from build_metric_contract())
+  registry: MetricRegistryMeta;
+  headline: MetricHeadline;
+  comparison: MetricComparison;
+  trend: MetricTrend;
+  capsule: MetricCapsule | null;
+  quality_flags: string[];
 }
 
 export interface AreaResponse {

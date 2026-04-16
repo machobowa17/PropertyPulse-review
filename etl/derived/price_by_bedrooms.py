@@ -24,6 +24,7 @@ Schema of core_price_by_bedrooms_lad:
 import psycopg2
 
 from constants import PRICE_TYPES, SCHEDULE_MONTHLY, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -75,14 +76,14 @@ def run(db_url: str) -> int:
     )
     conn.commit()
 
-    print("  Truncating core_price_by_bedrooms_lad...", flush=True)
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['price_by_bedrooms_lad']} CASCADE")
+    print("  Creating staging table for core_price_by_bedrooms_lad...", flush=True)
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['price_by_bedrooms_lad']}_new (LIKE {TABLE_NAMES['price_by_bedrooms_lad']} INCLUDING ALL)")
     conn.commit()
 
     print("  Aggregating price by bedroom from master table...", flush=True)
     cur.execute(
         f"""
-        INSERT INTO {TABLE_NAMES['price_by_bedrooms_lad']}
+        INSERT INTO {TABLE_NAMES['price_by_bedrooms_lad']}_new
             (lad_code, year, property_type, bedrooms, avg_price, transaction_count)
         SELECT
             t.lad_code,
@@ -102,6 +103,7 @@ def run(db_url: str) -> int:
     )
     conn.commit()
 
+    blue_green_swap(conn, TABLE_NAMES['price_by_bedrooms_lad'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['price_by_bedrooms_lad']}")
     count = cur.fetchone()[0]
     cur.close()

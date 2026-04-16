@@ -20,6 +20,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from constants import SCHEDULE_ONE_TIME, TABLE_NAMES
+from utils import blue_green_swap
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -97,13 +98,13 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    cur.execute(f"TRUNCATE TABLE {TABLE_NAMES['imd_lsoa']} CASCADE")
+    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['imd_lsoa']}_new (LIKE {TABLE_NAMES['imd_lsoa']} INCLUDING ALL)")
     conn.commit()
 
     execute_values(
         cur,
         f"""
-        INSERT INTO {TABLE_NAMES['imd_lsoa']}
+        INSERT INTO {TABLE_NAMES['imd_lsoa']}_new
             (lsoa_code, imd_score, imd_rank, imd_decile,
              income_score, employment_score, education_score, health_score,
              crime_score, barriers_score, living_env_score)
@@ -114,6 +115,8 @@ def run(db_url: str) -> int:
         page_size=5_000,
     )
     conn.commit()
+
+    blue_green_swap(conn, TABLE_NAMES['imd_lsoa'])
 
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['imd_lsoa']}")
     count = cur.fetchone()[0]
