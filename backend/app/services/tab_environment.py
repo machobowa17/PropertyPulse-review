@@ -41,6 +41,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows}
 
     crime_data_unavailable = False
+    used_msoa_fallback = False
 
     # MSOA-level fallback: LSOAs absent or sparse in crime dataset (incl. GMP partial coverage)
     if local_total == 0:
@@ -63,18 +64,14 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             local_total = sum(int(r["cnt"]) for r in crime_rows_msoa)
             local_months = max((int(r["months_count"]) for r in crime_rows_msoa), default=0)
             crime_breakdown = {r["crime_type"]: int(r["cnt"]) for r in crime_rows_msoa}
+            used_msoa_fallback = True
         elif lad_code in GMP_LAD_CODES:
             crime_data_unavailable = True
 
-    # Get local population — try direct LSOA first, then MSOA fallback (deduped)
-    pop_result = await db.execute(
-        text("SELECT SUM(total_population) as total_population FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)"),
-        {"codes": lsoa_codes},
-    )
-    pop_row = pop_result.mappings().first()
-    local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
-
-    if not local_pop:
+    # Get local population — must match the geography used for crime counts.
+    # If MSOA fallback was used, population MUST cover the full MSOA to avoid
+    # dividing MSOA crime counts by single-LSOA population (rate inflation).
+    if used_msoa_fallback:
         pop_result = await db.execute(
             text("""
                 SELECT SUM(d.total_population) as total_population
@@ -91,27 +88,43 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         )
         pop_row = pop_result.mappings().first()
         local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
+    else:
+        pop_result = await db.execute(
+            text("SELECT SUM(total_population) as total_population FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)"),
+            {"codes": lsoa_codes},
+        )
+        pop_row = pop_result.mappings().first()
+        local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
 
-    # Parent average crime rate (parent comparison group, per 1000 pop)
-    # Use 12-month rolling window to smooth out single-month coverage gaps (e.g. GMP API ingest)
+        if not local_pop:
+            pop_result = await db.execute(
+                text("""
+                    SELECT SUM(d.total_population) as total_population
+                    FROM core_census_lsoa d
+                    WHERE d.lsoa_code IN (
+                        SELECT DISTINCT p2.lsoa_code FROM core_postcodes p2
+                        WHERE p2.msoa_code IN (
+                            SELECT DISTINCT msoa_code FROM core_postcodes
+                            WHERE lsoa_code = ANY(:codes) AND msoa_code IS NOT NULL
+                        )
+                    )
+                """),
+                {"codes": lsoa_codes},
+            )
+            pop_row = pop_result.mappings().first()
+            local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
+
+    # Parent average crime rate — from pre-computed MV (avoids 6M row scan)
     parent_result = await db.execute(
         text("""
-            WITH parent_lsoas AS (
-                SELECT DISTINCT c.lsoa_code
-                FROM core_crime_lsoa c
-                JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
-                WHERE l.lad_code = ANY(:parent_lads)
-                  AND c.month > :window_start AND c.month <= :window_end
-            )
-            SELECT SUM(c.crime_count) as total_crimes,
-                   COUNT(DISTINCT c.month) as months_count,
-                   (SELECT SUM(d.total_population) FROM core_census_lsoa d
-                    WHERE d.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)) as total_pop
-            FROM core_crime_lsoa c
-            WHERE c.lsoa_code IN (SELECT lsoa_code FROM parent_lsoas)
-              AND c.month > :window_start AND c.month <= :window_end
+            SELECT SUM(total_crimes) as total_crimes,
+                   COUNT(DISTINCT month) as months_count,
+                   MAX(total_pop) as total_pop
+            FROM mv_parent_crime_rate
+            WHERE parent_comparison = :parent_name
+              AND month > :window_start AND month <= :window_end
         """),
-        {"parent_lads": parent_lads,
+        {"parent_name": parent_name,
          "window_start": latest_month - relativedelta(years=1),
          "window_end": latest_month},
     )
@@ -389,18 +402,16 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         {"codes": lsoa_codes},
     )
     noise_row = noise_result.mappings().first()
-    # Parent noise average
+    # Parent noise average — from pre-computed MV (avoids 1.4M row seq scan)
     parent_noise = None
     if noise_row and noise_row["road_noise_db"] and parent_lads:
         noise_parent_res = await db.execute(
             text("""
-                SELECT AVG(n.road_noise_db) as avg_road
-                FROM core_noise n
-                JOIN core_postcodes p ON p.postcode = n.postcode
-                JOIN core_lsoa_boundaries l ON l.lsoa_code = p.lsoa_code
-                WHERE l.lad_code = ANY(:parent_lads)
+                SELECT avg_road
+                FROM mv_parent_noise_avg
+                WHERE parent_comparison = :parent_name
             """),
-            {"parent_lads": parent_lads},
+            {"parent_name": parent_name},
         )
         noise_parent_row = noise_parent_res.mappings().first()
         parent_noise = round(float(noise_parent_row["avg_road"]), 1) if noise_parent_row and noise_parent_row["avg_road"] else None

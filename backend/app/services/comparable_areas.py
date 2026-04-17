@@ -167,8 +167,9 @@ async def find_comparable_scopes(
     )
 
     candidates: list[dict] = []
+    target_set = set(target_lad_codes)
     for row in normalised_rows:
-        if row["lad_code"] in set(target_lad_codes):
+        if row["lad_code"] in target_set:
             continue
         candidate = _aggregate_scope(
             [row],

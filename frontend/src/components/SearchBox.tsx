@@ -42,7 +42,9 @@ function readRecentSearches(): RecentSearchEntry[] {
 
 function writeRecentSearches(entries: RecentSearchEntry[]): void {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(entries.slice(0, MAX_RECENT_SEARCHES)));
+  try {
+    window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(entries.slice(0, MAX_RECENT_SEARCHES)));
+  } catch { /* Safari private browsing or quota exceeded — safe to ignore */ }
 }
 
 function saveRecentSearch(label: string): RecentSearchEntry[] {

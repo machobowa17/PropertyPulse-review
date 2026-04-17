@@ -37,7 +37,7 @@ import requests
 from psycopg2.extras import execute_values
 
 from constants import GMP_LAD_CODES, SCHEDULE_MONTHLY, SUPPORTED_COUNTRY_PREFIXES, TABLE_NAMES
-from utils import blue_green_swap
+from utils import blue_green_swap, create_staging_table, recreate_indexes
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -211,8 +211,7 @@ def _ingest_bulk(conn, zip_path):
     """Load all months from the bulk ZIP into the _new staging table."""
     cur = conn.cursor()
 
-    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['crime_lsoa']}_new (LIKE {TABLE_NAMES['crime_lsoa']} INCLUDING ALL)")
-    conn.commit()
+    create_staging_table(conn, TABLE_NAMES['crime_lsoa'])
 
     wales_crosswalk = _load_wales_lsoa_crosswalk(conn)
 
@@ -435,6 +434,9 @@ def run(db_url: str) -> int:
     _ingest_gmp(conn)
 
     cur = conn.cursor()
+    print("  Rebuilding indexes on staging table...", flush=True)
+    recreate_indexes(conn, TABLE_NAMES['crime_lsoa'])
+
     blue_green_swap(conn, TABLE_NAMES['crime_lsoa'])
     cur.execute(f"SELECT COUNT(*) FROM {TABLE_NAMES['crime_lsoa']}")
     count = cur.fetchone()[0]

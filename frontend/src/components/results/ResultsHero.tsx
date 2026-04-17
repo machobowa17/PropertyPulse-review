@@ -1,4 +1,5 @@
-import { Heart, BellRing, FileDown } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Heart, BellRing, FileDown, Loader2 } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import { LSOA_SUFFIX } from '../../utils/resultsConstants';
 
@@ -45,6 +46,27 @@ function LsoaContextBlurb({ resolved, areaName }: { resolved: any; areaName: str
 
 export function ResultsHero() {
   const { areaName, parentName, savedCollections, toggleSave, sessionKey, resolved } = useResults();
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = useCallback(async () => {
+    if (!sessionKey || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/v1/report?session_key=${encodeURIComponent(sessionKey)}`);
+      if (!res.ok) throw new Error(`Report failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PropertyPulse-${areaName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [sessionKey, areaName, downloading]);
 
   return (
     <div className="bg-gradient-to-r from-brand-950 via-brand-900 to-brand-800 border-b border-brand-800/50">
@@ -86,16 +108,19 @@ export function ResultsHero() {
               {savedCollections.watchlist ? 'Watching' : 'Watch'}
             </button>
             {sessionKey && (
-              <a
-                href={`/api/v1/report?session_key=${encodeURIComponent(sessionKey)}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
                 aria-label={`Download PDF report for ${areaName}`}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/10 text-white hover:bg-white/15 active:scale-95 transition-all backdrop-blur-sm border border-white/10 self-start"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-white/10 text-white hover:bg-white/15 active:scale-95 transition-all backdrop-blur-sm border border-white/10 self-start disabled:opacity-60"
               >
-                <FileDown className="w-4 h-4" aria-hidden="true" />
-                Download Report
-              </a>
+                {downloading
+                  ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  : <FileDown className="w-4 h-4" aria-hidden="true" />
+                }
+                {downloading ? 'Generating…' : 'Download Report'}
+              </button>
             )}
           </div>
         </div>

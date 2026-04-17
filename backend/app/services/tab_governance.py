@@ -66,18 +66,31 @@ async def fetch_local_governance(
         ct_parent = await db.execute(
             text(
                 """
-                SELECT AVG(band_a) AS avg_a,
-                       AVG(band_b) AS avg_b,
-                       AVG(band_c) AS avg_c,
-                       AVG(band_d) AS avg_d,
-                       AVG(band_e) AS avg_e,
-                       AVG(band_f) AS avg_f,
-                       AVG(band_g) AS avg_g,
-                       AVG(band_h) AS avg_h,
-                       AVG(band_i) AS avg_i,
-                       AVG(band_d) AS avg_band_d
-                FROM core_council_tax_lad
-                WHERE lad_code = ANY(:lads)
+                WITH weighted AS (
+                    SELECT ct.band_a, ct.band_b, ct.band_c, ct.band_d,
+                           ct.band_e, ct.band_f, ct.band_g, ct.band_h, ct.band_i,
+                           COALESCE(pop.total_pop, 1) AS weight
+                    FROM core_council_tax_lad ct
+                    LEFT JOIN (
+                        SELECT l.lad_code, SUM(c.total_population) AS total_pop
+                        FROM core_lsoa_boundaries l
+                        JOIN core_census_lsoa c ON c.lsoa_code = l.lsoa_code
+                        WHERE l.lad_code = ANY(:lads)
+                        GROUP BY l.lad_code
+                    ) pop ON pop.lad_code = ct.lad_code
+                    WHERE ct.lad_code = ANY(:lads)
+                )
+                SELECT SUM(band_a * weight) / NULLIF(SUM(weight), 0) AS avg_a,
+                       SUM(band_b * weight) / NULLIF(SUM(weight), 0) AS avg_b,
+                       SUM(band_c * weight) / NULLIF(SUM(weight), 0) AS avg_c,
+                       SUM(band_d * weight) / NULLIF(SUM(weight), 0) AS avg_d,
+                       SUM(band_e * weight) / NULLIF(SUM(weight), 0) AS avg_e,
+                       SUM(band_f * weight) / NULLIF(SUM(weight), 0) AS avg_f,
+                       SUM(band_g * weight) / NULLIF(SUM(weight), 0) AS avg_g,
+                       SUM(band_h * weight) / NULLIF(SUM(weight), 0) AS avg_h,
+                       SUM(band_i * weight) / NULLIF(SUM(weight), 0) AS avg_i,
+                       SUM(band_d * weight) / NULLIF(SUM(weight), 0) AS avg_band_d
+                FROM weighted
                 """
             ),
             {"lads": parent_lads},

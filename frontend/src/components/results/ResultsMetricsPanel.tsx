@@ -29,6 +29,7 @@ export function ResultsMetricsPanel() {
     aqHistory,
     priceByType,
     comparable,
+    decisionMode,
     setMetricElementRef,
   } = useResults();
 
@@ -66,7 +67,7 @@ export function ResultsMetricsPanel() {
 
           {/* Persona score card */}
           {(tabData?.metrics?.length ?? 0) > 0 && (
-            <PersonaScoreCard metrics={tabData!.metrics} persona={persona} />
+            <PersonaScoreCard metrics={tabData!.metrics} persona={persona} decisionMode={decisionMode} />
           )}
           {/* Desktop table header */}
           {(tabData?.metrics?.length ?? 0) > 0 ? (

@@ -19,7 +19,7 @@ import psycopg2
 from shapely.geometry import MultiPolygon
 
 from constants import SCHEDULE_ANNUAL, TABLE_NAMES
-from utils import blue_green_swap
+from utils import blue_green_swap, create_staging_table, recreate_indexes
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -82,9 +82,8 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur  = conn.cursor()
 
-    # Full replace — build into staging table then swap atomically
-    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['flood_zones']}_new (LIKE {TABLE_NAMES['flood_zones']} INCLUDING ALL)")
-    conn.commit()
+    # Full replace — staging table WITHOUT indexes for fast bulk insert
+    create_staging_table(conn, TABLE_NAMES['flood_zones'])
 
     count = 0
     for _, row in gdf.iterrows():
@@ -112,6 +111,9 @@ def run(db_url: str) -> int:
             print(f"    Inserted {count:,}...", flush=True)
 
     conn.commit()
+
+    print("  Rebuilding indexes on staging table...", flush=True)
+    recreate_indexes(conn, TABLE_NAMES['flood_zones'])
 
     blue_green_swap(conn, TABLE_NAMES['flood_zones'])
 

@@ -35,7 +35,7 @@ import psycopg2.extras
 from pyproj import Transformer
 
 from constants import SCHEDULE_ONE_TIME, TABLE_NAMES
-from utils import blue_green_swap
+from utils import blue_green_swap, create_staging_table, recreate_indexes
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -271,9 +271,8 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur = conn.cursor()
 
-    # Full replace
-    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['llc_charges']}_new (LIKE {TABLE_NAMES['llc_charges']} INCLUDING ALL)")
-    conn.commit()
+    # Full replace — staging table WITHOUT indexes for fast bulk insert
+    create_staging_table(conn, TABLE_NAMES['llc_charges'])
 
     total_count = 0
     skipped = []
@@ -334,6 +333,9 @@ def run(db_url: str) -> int:
                 print(f"    {charge_type}: {file_count:,} ({file_size_mb:.1f} MB)", flush=True)
 
         total_count += authority_count
+
+    print("  Rebuilding indexes on staging table...", flush=True)
+    recreate_indexes(conn, TABLE_NAMES['llc_charges'])
 
     blue_green_swap(conn, TABLE_NAMES['llc_charges'])
 

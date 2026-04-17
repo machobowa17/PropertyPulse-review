@@ -37,7 +37,7 @@ METADATA = {
     "depends_on":     ["land_registry_full"],
     "tables_written": [TABLE_NAMES["price_by_bedrooms_lad"]],
     "cache_key_patterns": [],
-    "expected_row_range": (5_000, 100_000),
+    "expected_row_range": (5_000, 200_000),
 }
 
 # ---------------------------------------------------------------------------

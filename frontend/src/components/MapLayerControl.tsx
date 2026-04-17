@@ -214,7 +214,7 @@ function LayerRow({
   );
 }
 
-export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince, focusMode = 'section', focusLabel = null, focusReason = null }: Props) {
+export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince, focusMode = 'section', focusLabel = null }: Props) {
   const [open, setOpen] = useState(false);
   const baseLayers = TAB_LAYERS[activeTab] || TAB_LAYERS['Local Governance'];
   const tabGuidance = TAB_GUIDANCE[activeTab] || TAB_GUIDANCE['Local Governance'];
@@ -318,9 +318,6 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
                     {focusMode === 'metric' ? 'Metric-led' : focusMode === 'manual' ? 'Manual' : focusMode === 'metric-fallback' ? 'Context-only' : 'Section-led'}
                   </span>
                 </div>
-                {focusReason && (
-                  <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">{focusReason}</p>
-                )}
               </div>
             )}
             <div className="mt-3 rounded-xl border border-divider bg-white px-3 py-2">

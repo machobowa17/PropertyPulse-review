@@ -17,10 +17,15 @@ export default function TabBar({ active, onChange }: Props) {
   const [pillStyle, setPillStyle] = useState({ left: 0, width: 0 });
 
   useEffect(() => {
-    const el = ref.current?.querySelector(`[data-tab="${active}"]`) as HTMLElement | null;
-    if (el) {
-      setPillStyle({ left: el.offsetLeft, width: el.offsetWidth });
-    }
+    const update = () => {
+      const el = ref.current?.querySelector(`[data-tab="${active}"]`) as HTMLElement | null;
+      if (el) {
+        setPillStyle({ left: el.offsetLeft, width: el.offsetWidth });
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, [active]);
 
   return (

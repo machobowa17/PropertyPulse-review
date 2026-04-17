@@ -672,10 +672,10 @@ async def get_map_choropleth(
     # --- Adaptive simplification ---
     n = len(scope_codes)
     if n > 1000:
-        geom_expr = "ST_Simplify(lb.geom, 0.001)"
+        geom_expr = "ST_SimplifyPreserveTopology(lb.geom, 0.001)"
         prec = 4
     elif n > 200:
-        geom_expr = "ST_Simplify(lb.geom, 0.0003)"
+        geom_expr = "ST_SimplifyPreserveTopology(lb.geom, 0.0003)"
         prec = 5
     else:
         geom_expr = "lb.geom"

@@ -3,6 +3,7 @@
  * Adapted from Manus's personalization layer to work with our flat metric response shape.
  */
 import type { Metric, PersonaId, TabName } from '../types';
+import type { DecisionMode } from '../components/DecisionModeSelector';
 import { getTakeaway, PERSONAS } from './personas';
 
 export type PersonalizationSignal = {
@@ -47,9 +48,7 @@ export const PERSONA_METRIC_WEIGHTS: Record<string, Partial<Record<PersonaId, nu
   affordability: { young_professional: 3, student: 3, family: 2, investor: 1, retired: 1, expat: 2 },
   price_trend_yoy: { investor: 3, family: 2, young_professional: 1, retired: 1, student: 0, expat: 1 },
   nearest_station: { young_professional: 3, student: 3, family: 2, retired: 1, investor: 1, expat: 2 },
-  fifteen_min_score: { retired: 3, family: 2, young_professional: 2, student: 2, investor: 1, expat: 2 },
   amenities_15min:   { retired: 2, family: 2, young_professional: 2, student: 2, investor: 1, expat: 1 },
-  connectivity_index: { young_professional: 3, student: 2, family: 2, expat: 2, investor: 1, retired: 1 },
   stations_in_area:  { young_professional: 2, student: 2, family: 1, expat: 1, investor: 1, retired: 1 },
   cycling:           { young_professional: 2, student: 1, family: 1, retired: 1, investor: 0, expat: 1 },
   mobile_coverage:   { young_professional: 2, student: 1, family: 1, expat: 1, investor: 1, retired: 1 },
@@ -66,7 +65,6 @@ export const PERSONA_METRIC_WEIGHTS: Record<string, Partial<Record<PersonaId, nu
   parks_1km:     { family: 2, retired: 2, young_professional: 1, student: 1, investor: 0, expat: 1 },
   sports_recreation: { young_professional: 2, family: 2, student: 1, retired: 1, investor: 0, expat: 1 },
   epc_rating:    { investor: 2, family: 2, young_professional: 1, retired: 1, student: 1, expat: 1 },
-  esg_score:     { investor: 2, family: 2, young_professional: 1, retired: 1, student: 1, expat: 1 },
   primary_schools: { family: 3, expat: 3, young_professional: 0, investor: 0, retired: 0, student: 0 },
   secondary_schools: { family: 3, expat: 3, young_professional: 0, investor: 0, retired: 0, student: 0 },
   deprivation: { family: 3, retired: 2, young_professional: 1, investor: 2, student: 1, expat: 2 },
@@ -89,6 +87,61 @@ export const PERSONA_METRIC_WEIGHTS: Record<string, Partial<Record<PersonaId, nu
   price_per_sqft: { investor: 2, family: 1, young_professional: 1, retired: 1, student: 0, expat: 1 },
 };
 
+/**
+ * Decision mode weight multipliers.
+ * Applied on top of persona weights to shift scoring based on user intent.
+ * A multiplier of 0 zeroes out the metric; 3 triples its importance.
+ * Metrics not listed default to 1 (unchanged).
+ */
+const DECISION_MODE_MULTIPLIERS: Record<DecisionMode, Record<string, number>> = {
+  buy: {
+    // Buy already aligns with default persona weights — minor boosts
+    avg_price: 1.5,
+    median_price: 1.5,
+    affordability: 1.5,
+    price_trend_yoy: 1.5,
+    freehold_leasehold: 1.5,
+    primary_schools: 1.5,
+    secondary_schools: 1.5,
+    // Suppress rental metrics
+    median_rent: 0.3,
+    gross_yield: 0.3,
+  },
+  rent: {
+    // Rental affordability and liveability dominate
+    median_rent: 3,
+    affordability: 3,
+    nearest_station: 2,
+    amenities_15min: 2,
+    broadband: 1.5,
+    commute_distance: 2,
+    crime_rate: 1.5,
+    // Capital growth is irrelevant to renters
+    price_trend_yoy: 0,
+    investment_grade: 0,
+    gross_yield: 0,
+    freehold_leasehold: 0,
+    new_build_proportion: 0,
+  },
+  invest: {
+    // Yield, demand indicators, and downside risk
+    gross_yield: 3,
+    price_trend_yoy: 2,
+    investment_grade: 2,
+    median_rent: 2,
+    median_earnings: 1.5,
+    economically_active: 1.5,
+    deprivation: 1.5,
+    transaction_volume: 1.5,
+    epc_rating: 1.5,
+    // Liveability factors less relevant for investors
+    nearest_park: 0.3,
+    sports_recreation: 0.3,
+    noise: 0.5,
+    cycling: 0.3,
+  },
+};
+
 /** Static metric → tab mapping. Our backend registry uses 'section' which maps to tab name. */
 const METRIC_TAB: Record<string, TabName> = {
   avg_price: 'Property & Market', median_price: 'Property & Market', transaction_volume: 'Property & Market',
@@ -97,18 +150,18 @@ const METRIC_TAB: Record<string, TabName> = {
   affordability: 'Property & Market', median_earnings: 'Property & Market', investment_grade: 'Property & Market',
   epc_rating: 'Property & Market', epc_energy_score: 'Property & Market', epc_rating_c_plus: 'Property & Market',
   nearest_station: 'Lifestyle & Connectivity', stations_in_area: 'Lifestyle & Connectivity',
-  ptal_score: 'Lifestyle & Connectivity', connectivity_index: 'Lifestyle & Connectivity',
+  ptal_score: 'Lifestyle & Connectivity',
   cycling: 'Lifestyle & Connectivity', broadband: 'Lifestyle & Connectivity', mobile_coverage: 'Lifestyle & Connectivity',
   ev_chargers: 'Lifestyle & Connectivity', amenities_15min: 'Lifestyle & Connectivity',
-  fifteen_min_score: 'Lifestyle & Connectivity', commute_distance: 'Lifestyle & Connectivity',
+  commute_distance: 'Lifestyle & Connectivity',
   flood_risk: 'Environment & Safety', air_quality_no2: 'Environment & Safety', air_quality_pm25: 'Environment & Safety',
   noise: 'Environment & Safety', nearest_park: 'Environment & Safety', green_cover: 'Environment & Safety',
   green_spaces: 'Environment & Safety', parks_1km: 'Environment & Safety', sports_recreation: 'Environment & Safety',
-  crime_rate: 'Environment & Safety', crime_trend: 'Environment & Safety', esg_score: 'Environment & Safety',
+  crime_rate: 'Environment & Safety', crime_trend: 'Environment & Safety',
   demographics_overview: 'Community & Education', population_density: 'Community & Education',
   median_age: 'Community & Education', household_composition: 'Community & Education',
   housing_tenure: 'Community & Education', housing_type: 'Community & Education',
-  household_size: 'Community & Education', ethnicity: 'Community & Education',
+  household_size: 'Community & Education', ethnicity: 'Community & Education', religion: 'Community & Education',
   good_health: 'Community & Education', economically_active: 'Community & Education',
   degree_educated: 'Community & Education', no_car: 'Community & Education', born_abroad: 'Community & Education',
   wfh: 'Community & Education',
@@ -141,8 +194,10 @@ function colourPriority(colour: string): number {
   return 0;
 }
 
-function buildSignal(metric: Metric, persona: PersonaId): PersonalizationSignal | null {
-  const weight = PERSONA_METRIC_WEIGHTS[metric.id]?.[persona] ?? 1;
+function buildSignal(metric: Metric, persona: PersonaId, decisionMode: DecisionMode = 'buy'): PersonalizationSignal | null {
+  const baseWeight = PERSONA_METRIC_WEIGHTS[metric.id]?.[persona] ?? 1;
+  const modeMultiplier = DECISION_MODE_MULTIPLIERS[decisionMode]?.[metric.id] ?? 1;
+  const weight = baseWeight * modeMultiplier;
   if (weight === 0) return null;
 
   const takeaway = getTakeaway(metric, persona);
@@ -160,14 +215,14 @@ function buildSignal(metric: Metric, persona: PersonaId): PersonalizationSignal 
   };
 }
 
-export function collectPersonaSignals(metrics: Metric[], persona: PersonaId): PersonalizationSignal[] {
+export function collectPersonaSignals(metrics: Metric[], persona: PersonaId, decisionMode: DecisionMode = 'buy'): PersonalizationSignal[] {
   return metrics
-    .map((m) => buildSignal(m, persona))
+    .map((m) => buildSignal(m, persona, decisionMode))
     .filter((s): s is PersonalizationSignal => s !== null);
 }
 
-export function buildPersonaFitSummary(metrics: Metric[], persona: PersonaId): PersonaFitSummary | null {
-  const signals = collectPersonaSignals(metrics, persona);
+export function buildPersonaFitSummary(metrics: Metric[], persona: PersonaId, decisionMode: DecisionMode = 'buy'): PersonaFitSummary | null {
+  const signals = collectPersonaSignals(metrics, persona, decisionMode);
   if (signals.length === 0) return null;
 
   const totalWeight = signals.reduce((sum, s) => sum + s.weight, 0);
@@ -210,10 +265,10 @@ export function buildPersonaFitSummary(metrics: Metric[], persona: PersonaId): P
   };
 }
 
-export function rankSectionsForPersona(metrics: Metric[], persona: PersonaId): RankedSection[] {
+export function rankSectionsForPersona(metrics: Metric[], persona: PersonaId, decisionMode: DecisionMode = 'buy'): RankedSection[] {
   const grouped = new Map<TabName, PersonalizationSignal[]>();
 
-  for (const signal of collectPersonaSignals(metrics, persona)) {
+  for (const signal of collectPersonaSignals(metrics, persona, decisionMode)) {
     const existing = grouped.get(signal.section) ?? [];
     existing.push(signal);
     grouped.set(signal.section, existing);

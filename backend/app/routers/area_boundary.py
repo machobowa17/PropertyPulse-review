@@ -84,7 +84,7 @@ async def get_boundary(
         if cached:
             return JSONResponse(content=cached)
         res = await db.execute(
-            text("SELECT lad_name, ST_AsGeoJSON(geom, 6) as geojson FROM core_lad_boundaries WHERE lad_code = :code"),
+            text("SELECT lad_name, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.0002), 6) as geojson FROM core_lad_boundaries WHERE lad_code = :code"),
             {"code": bid},
         )
         row = res.mappings().first()
@@ -105,7 +105,7 @@ async def get_boundary(
         if cached:
             return JSONResponse(content=cached)
         res = await db.execute(
-            text("SELECT county_name, ST_AsGeoJSON(geom, 6) as geojson FROM core_county_boundaries WHERE county_name = :name"),
+            text("SELECT county_name, ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.0005), 6) as geojson FROM core_county_boundaries WHERE county_name = :name"),
             {"name": bid},
         )
         row = res.mappings().first()
@@ -131,20 +131,25 @@ async def get_boundary(
 
         # Use pre-computed ST_Union from core_place_boundaries_union.
         # Avoids live spatial aggregation under concurrent load.
-        # Falls back to on-the-fly ST_Union if row is missing (e.g. ETL not yet re-run).
-        res = await db.execute(
-            text(f"SELECT ST_AsGeoJSON(geom, 6) AS geojson FROM {TABLE_NAMES['place_boundaries_union']} WHERE place_name = :name AND lad_code = :lad"),
-            {"name": pn, "lad": plad},
-        )
-        row = res.mappings().first()
+        # Falls back to on-the-fly ST_Union if row/table is missing (e.g. ETL not yet re-run).
+        row = None
+        try:
+            res = await db.execute(
+                text(f"SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.0003), 6) AS geojson FROM {TABLE_NAMES['place_boundaries_union']} WHERE place_name = :name AND lad_code = :lad"),
+                {"name": pn, "lad": plad},
+            )
+            row = res.mappings().first()
+        except Exception:
+            # Table may not exist yet; fall through to live ST_Union
+            await db.rollback()
 
-        if not row or not row["geojson"]:
+        if not row or not row.get("geojson"):
             use_town = pt in ('City', 'Town')
             primary = TABLE_NAMES["place_lsoa_mapping_town"] if use_town else TABLE_NAMES["place_lsoa_mapping"]
             fallback_tbl = TABLE_NAMES["place_lsoa_mapping"] if use_town else TABLE_NAMES["place_lsoa_mapping_town"]
             res2 = await db.execute(
                 text(f"""
-                    SELECT ST_AsGeoJSON(ST_Union(lb.geom), 6) as geojson
+                    SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Union(lb.geom), 0.0003), 6) as geojson
                     FROM core_lsoa_boundaries lb
                     JOIN {primary} m ON lb.lsoa_code = m.lsoa_code
                     WHERE m.place_name = :name AND m.lad_code = :lad
@@ -155,7 +160,7 @@ async def get_boundary(
             if not row or not row["geojson"]:
                 res3 = await db.execute(
                     text(f"""
-                        SELECT ST_AsGeoJSON(ST_Union(lb.geom), 6) as geojson
+                        SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(ST_Union(lb.geom), 0.0003), 6) as geojson
                         FROM core_lsoa_boundaries lb
                         JOIN {fallback_tbl} m ON lb.lsoa_code = m.lsoa_code
                         WHERE m.place_name = :name AND m.lad_code = :lad

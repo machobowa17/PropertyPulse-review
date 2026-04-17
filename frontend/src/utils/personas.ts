@@ -184,20 +184,7 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
   // TAB 2: LIFESTYLE & CONNECTIVITY
   // ═══════════════════════════════════════════
 
-  // --- 15-Min Score ---
-  if (id === 'fifteen_min_score') {
-    if (val >= 70) {
-      if (persona === 'retired') return { soWhat: 'Walk to everything', watchOut: 'Can be busy', colour: 'green' };
-      if (persona === 'young_professional') return { soWhat: 'Vibrant neighbourhood', watchOut: 'None', colour: 'green' };
-      return { soWhat: 'Great walkability', watchOut: 'None', colour: 'green' };
-    }
-    if (val >= 40) {
-      return { soWhat: 'Decent amenities', watchOut: 'Some car trips', colour: 'amber' };
-    }
-    if (persona === 'retired') return { soWhat: 'Car dependent', watchOut: 'Isolation risk', colour: 'red' };
-    if (persona === 'student') return { soWhat: 'Far from shops', watchOut: 'Transport needed', colour: 'red' };
-    return { soWhat: 'Limited walkability', watchOut: 'Car essential', colour: 'red' };
-  }
+
 
   // --- Amenities count ---
   if (id === 'amenities_15min') {
@@ -293,19 +280,7 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     return { soWhat: 'Patchy coverage', watchOut: 'Check your network', colour: 'amber' };
   }
 
-  // --- Connectivity Index (non-London composite) ---
-  if (id === 'connectivity_index') {
-    if (isHigher) {
-      if (persona === 'young_professional') return { soWhat: 'Highly connected area', watchOut: 'None', colour: 'green' };
-      if (persona === 'expat') return { soWhat: 'Good all-round connectivity', watchOut: 'None', colour: 'green' };
-      return { soWhat: 'Well connected', watchOut: 'None', colour: 'green' };
-    }
-    if (isLower) {
-      if (persona === 'young_professional') return { soWhat: 'Connectivity gap', watchOut: 'Commute + WFH impact', colour: 'amber' };
-      if (persona === 'investor') return { soWhat: 'Connectivity lag', watchOut: 'Demand suppression', colour: 'amber' };
-      return { soWhat: 'Below average connectivity', watchOut: 'Worth checking specifics', colour: 'amber' };
-    }
-  }
+
 
   // --- Rail/Metro Stations in Area ---
   if (id === 'stations_in_area') {
@@ -448,18 +423,6 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'family') return { soWhat: 'Older housing stock', watchOut: 'Higher bills', colour: 'amber' };
       return { soWhat: 'Fewer efficient homes', watchOut: 'Energy costs', colour: 'amber' };
     }
-  }
-
-  // --- ESG Score ---
-  if (id === 'esg_score') {
-    if (val >= 70) {
-      if (persona === 'family') return { soWhat: 'Sustainable area', watchOut: 'None', colour: 'green' };
-      if (persona === 'investor') return { soWhat: 'Future-proofed', watchOut: 'None', colour: 'green' };
-      return { soWhat: 'High ESG rating', watchOut: 'None', colour: 'green' };
-    }
-    if (val >= 45) return { soWhat: 'Moderate ESG', watchOut: 'Room for improvement', colour: 'amber' };
-    if (persona === 'investor') return { soWhat: 'ESG risk', watchOut: 'Regulatory risk', colour: 'red' };
-    return { soWhat: 'Low ESG score', watchOut: 'Environmental concerns', colour: 'red' };
   }
 
   // --- Noise ---

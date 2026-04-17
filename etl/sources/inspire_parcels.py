@@ -30,7 +30,7 @@ import psycopg2.extras
 from pyproj import Transformer
 
 from constants import SCHEDULE_ONE_TIME, TABLE_NAMES
-from utils import blue_green_swap
+from utils import blue_green_swap, create_staging_table, recreate_indexes
 
 # ---------------------------------------------------------------------------
 # Module metadata (read by pipeline.py)
@@ -250,9 +250,8 @@ def run(db_url: str) -> int:
     conn.autocommit = False
     cur = conn.cursor()
 
-    # Full replace
-    cur.execute(f"CREATE UNLOGGED TABLE {TABLE_NAMES['inspire_parcels']}_new (LIKE {TABLE_NAMES['inspire_parcels']} INCLUDING ALL)")
-    conn.commit()
+    # Full replace — staging table WITHOUT indexes for fast bulk insert
+    create_staging_table(conn, TABLE_NAMES['inspire_parcels'])
 
     total_count = 0
     skipped_authorities = []
@@ -307,6 +306,9 @@ def run(db_url: str) -> int:
 
         total_count += authority_count
         print(f"    {authority_count:,} parcels ({total_count:,} cumulative)", flush=True)
+
+    print("  Rebuilding indexes on staging table...", flush=True)
+    recreate_indexes(conn, TABLE_NAMES['inspire_parcels'])
 
     blue_green_swap(conn, TABLE_NAMES['inspire_parcels'])
 

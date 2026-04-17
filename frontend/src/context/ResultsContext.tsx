@@ -185,17 +185,24 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     setSavedCollections((prev) => ({ ...prev, [collection]: !prev[collection] }));
   };
 
-  // Pre-fetch all tabs in the background as soon as sessionKey is available
+  // Pre-fetch remaining tabs with staggered delays to avoid a 4-request burst.
+  // Adjacent tab fires immediately; others stagger at 2s intervals.
   useEffect(() => {
     if (!sessionKey) return;
-    for (const tab of ALL_TABS) {
-      if (tab === activeTab) continue;
-      queryClient.prefetchQuery({
-        queryKey: ['area', sessionKey, tab],
-        queryFn: () => fetchAreaTab(sessionKey, tab),
-        staleTime: 5 * 60 * 1000,
-      });
-    }
+    const otherTabs = ALL_TABS.filter((t) => t !== activeTab);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    otherTabs.forEach((tab, i) => {
+      const delay = i === 0 ? 0 : i * 2000;
+      const timer = setTimeout(() => {
+        queryClient.prefetchQuery({
+          queryKey: ['area', sessionKey, tab],
+          queryFn: () => fetchAreaTab(sessionKey, tab),
+          staleTime: 5 * 60 * 1000,
+        });
+      }, delay);
+      timers.push(timer);
+    });
+    return () => timers.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 

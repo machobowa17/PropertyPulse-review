@@ -60,7 +60,6 @@ export const METRIC_MAP_BINDINGS: Record<string, MetricMapBinding> = {
   gross_yield: { mode: 'context', label: 'Local analysis boundary', reason: 'Computed from numeric evidence rather than a rent surface.' },
   investment_grade: { mode: 'context', label: 'Local analysis boundary', reason: 'Composite decision metric without a standalone spatial layer.' },
   amenities_15min: { mode: 'layer', layerKey: 'amenity', label: 'Nearby amenities', reason: 'Mapped place evidence available.' },
-  fifteen_min_score: { mode: 'layer', layerKey: 'amenity', label: 'Nearby amenities', reason: 'Grounded in mapped amenity evidence.' },
   mobile_coverage: { mode: 'layer', layerKey: 'choropleth_mobile_coverage', label: '4G outdoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },
   mobile_4g_indoor: { mode: 'layer', layerKey: 'choropleth_mobile_4g_indoor', label: '4G indoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },
   mobile_5g_outdoor: { mode: 'layer', layerKey: 'choropleth_mobile_5g_outdoor', label: '5G outdoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },

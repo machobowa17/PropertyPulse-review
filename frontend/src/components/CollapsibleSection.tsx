@@ -28,7 +28,7 @@ export default function CollapsibleSection({ title, defaultOpen = true, children
 
       <div
         className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
-        style={{ gridTemplateRows: open ? '1fr' : '0fr', opacity: open ? 1 : 0 }}
+        style={{ gridTemplateRows: open ? '1fr' : '0fr', opacity: open ? 1 : 0, visibility: open ? 'visible' : 'hidden' }}
       >
         <div ref={contentRef} className="overflow-hidden">
           <div className="px-4 pb-4 pt-1 border-t border-divider/50">

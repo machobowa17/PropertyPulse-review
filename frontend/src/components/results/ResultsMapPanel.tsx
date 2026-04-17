@@ -52,6 +52,7 @@ export function ResultsMobileMap() {
         style={{
           gridTemplateRows: !isDesktop && showMap && resolved?.coordinates?.lat ? '1fr' : '0fr',
           opacity: !isDesktop && showMap && resolved?.coordinates?.lat ? 1 : 0,
+          visibility: !isDesktop && showMap && resolved?.coordinates?.lat ? 'visible' : 'hidden',
         }}
       >
         <div className="overflow-hidden">

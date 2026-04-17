@@ -1,6 +1,6 @@
 """Tab 4: Community & Education — Bible Part 4, Tab 4.
-Queries: core_census_lsoa (consolidated), core_census_ethnicity_ward, core_schools,
-         core_imd_lsoa, core_nhs_facilities.
+Queries: core_census_lsoa (consolidated), core_census_ethnicity_ward, core_census_religion_ward,
+         core_schools, core_imd_lsoa, core_nhs_facilities.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
 from app.services.helpers import metric
@@ -320,7 +320,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         ))
 
     # --- Ethnicity (TS022, ward-level) ---
-    # For ward searches use single ward; for LAD/county/place, average across all wards in scope
+    # For postcode/ward: use single ward. For place/LAD/county: derive wards from
+    # the session's LSOA set so that place searches reflect the actual area's
+    # ethnic profile, not the entire LAD average.
     if ward_code and ward_code != "_":
         ethnicity_local = await db.execute(
             text("""
@@ -331,7 +333,25 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             """),
             {"ward": ward_code},
         )
+    elif lsoa_codes and len(lsoa_codes) > 0:
+        # Derive distinct ward codes from the session's LSOA set via postcodes,
+        # then average ethnicity across those wards only.
+        ethnicity_local = await db.execute(
+            text("""
+                SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
+                       AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
+                       AVG(e.pct_other) as pct_other
+                FROM core_census_ethnicity_ward e
+                WHERE e.ward_code IN (
+                    SELECT DISTINCT p.ward_code FROM core_postcodes p
+                    WHERE p.lsoa_code = ANY(:codes)
+                      AND p.ward_code IS NOT NULL
+                )
+            """),
+            {"codes": lsoa_codes},
+        )
     else:
+        # Fallback: average across all wards in the LAD
         ethnicity_local = await db.execute(
             text("""
                 SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
@@ -370,6 +390,82 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 "pct_black": _r(eth_row["pct_black"]),
                 "pct_mixed": _r(eth_row["pct_mixed"]),
                 "pct_other": _r(eth_row["pct_other"]),
+            },
+        ))
+
+    # --- Religion (Census 2021 TS031, ward-level) ---
+    # Same ward-derivation strategy as ethnicity.
+    if ward_code and ward_code != "_":
+        religion_local = await db.execute(
+            text("""
+                SELECT AVG(pct_christian) as pct_christian, AVG(pct_muslim) as pct_muslim,
+                       AVG(pct_hindu) as pct_hindu, AVG(pct_sikh) as pct_sikh,
+                       AVG(pct_jewish) as pct_jewish, AVG(pct_buddhist) as pct_buddhist,
+                       AVG(pct_no_religion) as pct_no_religion, AVG(pct_other) as pct_other
+                FROM core_census_religion_ward WHERE ward_code = :ward
+            """),
+            {"ward": ward_code},
+        )
+    elif lsoa_codes and len(lsoa_codes) > 0:
+        religion_local = await db.execute(
+            text("""
+                SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
+                       AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
+                       AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
+                       AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+                FROM core_census_religion_ward r
+                WHERE r.ward_code IN (
+                    SELECT DISTINCT p.ward_code FROM core_postcodes p
+                    WHERE p.lsoa_code = ANY(:codes)
+                      AND p.ward_code IS NOT NULL
+                )
+            """),
+            {"codes": lsoa_codes},
+        )
+    else:
+        religion_local = await db.execute(
+            text("""
+                SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
+                       AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
+                       AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
+                       AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+                FROM core_census_religion_ward r
+                JOIN core_ward_boundaries wb ON wb.ward_code = r.ward_code
+                WHERE wb.lad_code = ANY(:local_lads)
+            """),
+            {"local_lads": local_lads or [lad_code]},
+        )
+    rel_row = religion_local.mappings().first()
+
+    religion_parent = await db.execute(
+        text("""
+            SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
+                   AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
+                   AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
+                   AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+            FROM core_census_religion_ward r
+            JOIN core_ward_boundaries wb ON wb.ward_code = r.ward_code
+            WHERE wb.lad_code = ANY(:parent_lads)
+        """),
+        {"parent_lads": parent_lads},
+    )
+    rel_parent_row = religion_parent.mappings().first()
+
+    if rel_row and rel_row["pct_christian"] is not None:
+        metrics.append(metric(
+            "religion", "Religion",
+            _r(rel_row["pct_christian"]),
+            _r(rel_parent_row["pct_christian"]) if rel_parent_row else None,
+            "% Christian",
+            details={
+                "pct_christian": _r(rel_row["pct_christian"]),
+                "pct_muslim": _r(rel_row["pct_muslim"]),
+                "pct_hindu": _r(rel_row["pct_hindu"]),
+                "pct_sikh": _r(rel_row["pct_sikh"]),
+                "pct_jewish": _r(rel_row["pct_jewish"]),
+                "pct_buddhist": _r(rel_row["pct_buddhist"]),
+                "pct_no_religion": _r(rel_row["pct_no_religion"]),
+                "pct_other": _r(rel_row["pct_other"]),
             },
         ))
 

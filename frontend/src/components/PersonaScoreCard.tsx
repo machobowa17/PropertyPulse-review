@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import type { Metric, PersonaId } from '../types';
+import type { DecisionMode } from './DecisionModeSelector';
 import { PERSONAS } from '../utils/personas';
 import { buildPersonaFitSummary } from '../utils/personalization';
 
 interface Props {
   metrics: Metric[];
   persona: PersonaId;
+  decisionMode?: DecisionMode;
 }
 
 function CircularDial({ score, size = 80 }: { score: number; size?: number }) {
@@ -47,10 +49,10 @@ function CircularDial({ score, size = 80 }: { score: number; size?: number }) {
   );
 }
 
-export default function PersonaScoreCard({ metrics, persona }: Props) {
+export default function PersonaScoreCard({ metrics, persona, decisionMode = 'buy' }: Props) {
   const summary = useMemo(
-    () => buildPersonaFitSummary(metrics, persona),
-    [metrics, persona],
+    () => buildPersonaFitSummary(metrics, persona, decisionMode),
+    [metrics, persona, decisionMode],
   );
 
   if (!summary || metrics.length === 0) return null;

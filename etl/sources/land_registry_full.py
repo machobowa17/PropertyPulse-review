@@ -27,7 +27,7 @@ from constants import (
     SCHEDULE_MONTHLY,
     TABLE_NAMES,
 )
-from utils import blue_green_swap
+from utils import blue_green_swap, create_staging_table, recreate_indexes
 
 # ---------------------------------------------------------------------------
 # Module metadata
@@ -248,13 +248,10 @@ def run(db_url: str) -> int:
     buf    = io.BufferedReader(stream, buffer_size=65_536)
 
     cur = conn.cursor()
-    # Create staging table; COPY into it so the live table stays intact during load.
-    # If COPY fails, just drop the staging table — no data loss.
-    staging = f"{TABLE_NAMES['property_transactions']}_new"
-    cur.execute(f"DROP TABLE IF EXISTS {staging}")
-    cur.execute(f"CREATE UNLOGGED TABLE {staging} (LIKE {TABLE_NAMES['property_transactions']} INCLUDING ALL)")
-    conn.commit()
-    print(f"  Created staging table {staging}", flush=True)
+    # Create staging table WITHOUT indexes for fast bulk insert.
+    # Indexes are rebuilt after COPY completes — orders of magnitude faster for 30M rows.
+    staging = create_staging_table(conn, TABLE_NAMES['property_transactions'])
+    print(f"  Created staging table {staging} (no indexes)", flush=True)
 
     copy_sql = (
         f"COPY {staging} "
@@ -265,6 +262,11 @@ def run(db_url: str) -> int:
     conn.commit()
     print(f"  COPY committed successfully", flush=True)
     cur.close()
+
+    # Rebuild indexes on staging table AFTER bulk load (fast sequential scan)
+    print("  Rebuilding indexes on staging table...", flush=True)
+    idx_count = recreate_indexes(conn, TABLE_NAMES['property_transactions'])
+    print(f"  {idx_count} indexes created on staging table", flush=True)
 
     blue_green_swap(conn, TABLE_NAMES['property_transactions'])
 

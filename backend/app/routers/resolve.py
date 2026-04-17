@@ -4,11 +4,12 @@ GET /api/v1/search/suggest?q={partial}
 Build Bible Part 6, Section 6.1 — Geo-Resolution + Autocomplete
 """
 import re
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import http_error
 from app.services.geo_resolver import resolve_search
 from app.services.helpers import make_lsoa_session, get_lsoa_session
 from app.cache import cache_get, cache_set
@@ -78,6 +79,10 @@ async def resolve(
     q: str = Query(..., min_length=2, max_length=100, description="Search key: postcode or place name"),
     db: AsyncSession = Depends(get_db),
 ):
+    # Sanitise: strip null bytes and control characters that break PostgreSQL text columns
+    q = q.replace("\x00", "").strip()
+    if len(q) < 2:
+        raise http_error(422, "INVALID_QUERY", "Query too short after sanitisation")
     cache_key = f"resolve:{q.strip().lower()}"
     cached = await cache_get(cache_key)
     if cached:
@@ -156,8 +161,9 @@ async def _build_and_store_session(db, result: dict, codes: dict) -> tuple:
 
 
 @router.get("/search/suggest")
-@limiter.exempt
+@limiter.limit("300/minute")
 async def suggest(
+    request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Partial search query"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -190,9 +196,17 @@ async def suggest(
         # return distinct districts rather than individual full postcodes.
         is_partial_district = " " not in q_clean and len(compact) <= 4
         if is_partial_district:
-            # Extract district portion: 3 chars for 1-letter areas (E1W→3), 4 chars for 2-letter (SW1A→4)
-            # Filter: district must start exactly with our input prefix
-            dist_len = 4 if len(compact) >= 2 and compact[0].isalpha() and compact[1].isalpha() else 3
+            # Use Postgres regex to extract the outward code dynamically.
+            # Pattern ^[A-Z]{1,2}[0-9][A-Z]? handles all UK formats:
+            #   E1, N1, M1 (1-letter + digit)
+            #   SW1, EC2 (2-letter + digit)
+            #   SW1A, EC2A (2-letter + digit + alpha suffix)
+            #   CR5, LS1 (2-letter + digit — NOT forced to 4 chars)
+            # The optional suffix is [A-Z] only (not [A-Z0-9]) because
+            # the digit after the area digit is always the start of the
+            # inward code (e.g. CR51RA → outward=CR5, inward=1RA).
+            outward_regex = r'^[A-Z]{1,2}[0-9][A-Z]?'
+
             # For a partial input ending in a digit (e.g. "SW1", "E1"), we want districts
             # where the next character after the input is a LETTER (SW1A not SW10).
             # If input already ends in a letter (e.g. "SW1A"), just prefix-match normally.
@@ -207,7 +221,7 @@ async def suggest(
                     sa_text("""
                         WITH candidates AS (
                             SELECT
-                                SUBSTRING(postcode_compact FROM 1 FOR :dist_len) AS label,
+                                SUBSTRING(postcode_compact FROM :outward_regex) AS label,
                                 CASE WHEN postcode_compact SIMILAR TO :letter_prefix THEN 0 ELSE 1 END AS pref,
                                 lad_name,
                                 COUNT(*) AS cnt
@@ -225,14 +239,14 @@ async def suggest(
                         ORDER BY pref, label
                         LIMIT 6
                     """),
-                    {"dist_len": dist_len, "letter_prefix": letter_prefix, "alnum_prefix": alnum_prefix},
+                    {"outward_regex": outward_regex, "letter_prefix": letter_prefix, "alnum_prefix": alnum_prefix},
                 )
             else:
                 res = await db.execute(
                     sa_text("""
                         WITH candidates AS (
                             SELECT
-                                SUBSTRING(postcode_compact FROM 1 FOR :dist_len) AS label,
+                                SUBSTRING(postcode_compact FROM :outward_regex) AS label,
                                 lad_name, COUNT(*) AS cnt
                             FROM core_postcodes
                             WHERE postcode_compact LIKE :prefix
@@ -246,7 +260,7 @@ async def suggest(
                                NULL AS comparison, 'Postcode area' AS secondary
                         FROM dominant ORDER BY label LIMIT 6
                     """),
-                    {"dist_len": dist_len, "prefix": compact + "%"},
+                    {"outward_regex": outward_regex, "prefix": compact + "%"},
                 )
         else:
             res = await db.execute(

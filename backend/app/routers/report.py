@@ -344,7 +344,7 @@ async def generate_report(
         all_tabs[tab_name] = enrich_metrics(flat, parent_name=parent_name)
 
     try:
-        pdf_bytes = _build_pdf(area_name, lad_code, all_tabs)
+        pdf_bytes = await asyncio.to_thread(_build_pdf, area_name, lad_code, all_tabs)
     except Exception as e:
         raise http_error(500, "PDF_GENERATION_FAILED", f"PDF generation failed: {e}")
 

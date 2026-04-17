@@ -412,6 +412,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         zoom,
       );
 
+      // Cap individual (non-cluster) DOM markers to prevent mobile stutter
+      const MAX_INDIVIDUAL_MARKERS = 150;
+      let individualCount = 0;
+
       for (const feature of clusters) {
         const coords = feature.geometry.coordinates as [number, number];
         if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
@@ -433,9 +437,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           el.addEventListener('click', () => {
             const expZoom = index.getClusterExpansionZoom(clusterId);
             if (expZoom > 16) {
-              // All points overlap — fan them out in a spider pattern
+              // All points overlap — fan them out in a spider pattern (cap at 30 to prevent DOM freeze)
               clearSpider(map);
-              const leaves = index.getLeaves(clusterId, Infinity) as Supercluster.PointFeature<Record<string, unknown>>[];
+              const leaves = index.getLeaves(clusterId, 30) as Supercluster.PointFeature<Record<string, unknown>>[];
               spiderRef.current.center = coords;
               spiderRef.current.leaves = leaves;
               renderSoldPriceMarkersRef.current?.(map);
@@ -449,7 +453,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
             .addTo(map);
           soldMarkersRef.current.push(marker);
         } else {
-          // Individual sold price pill
+          // Individual sold price pill — cap to prevent DOM churn on mobile
+          if (individualCount >= MAX_INDIVIDUAL_MARKERS) continue;
+          individualCount++;
           const el = createPricePillElement(props.price as number, props.property_type as string | undefined);
           const marker = new maplibregl.Marker({ element: el })
             .setLngLat(coords)
@@ -782,6 +788,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         position: absolute; bottom: 8px; right: 8px; background: white;
         border-radius: 8px; padding: 8px 10px; font-size: 10px;
         box-shadow: 0 1px 4px rgba(0,0,0,0.15); z-index: 5; pointer-events: none;
+        max-width: min(200px, calc(100% - 16px)); word-wrap: break-word;
       `;
       const layerLabels: Record<string, string> = {
         avg_price: 'Average price',

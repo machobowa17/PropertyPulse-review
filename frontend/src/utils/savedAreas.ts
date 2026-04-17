@@ -50,7 +50,9 @@ function readRaw(): SavedAreaEntry[] {
 
 function writeRaw(entries: SavedAreaEntry[]): void {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  } catch { /* Safari private browsing or quota exceeded — safe to ignore */ }
 }
 
 export function buildSavedAreaId(areaName: string, collection: SavedAreaCollection, decisionMode: string): string {

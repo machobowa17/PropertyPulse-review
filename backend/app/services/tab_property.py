@@ -37,22 +37,8 @@ async def fetch_property_market(
     price_types = list(PRICE_TYPES)
 
     if is_lad_or_coarser:
-        local_txn_filter = """
-            t.lsoa_code IN (
-                SELECT DISTINCT lsoa_code
-                FROM core_postcodes
-                WHERE lad_code = ANY(:local_lads)
-                  AND lsoa_code IS NOT NULL
-            )
-        """
-        local_txn_filter_plain = """
-            lsoa_code IN (
-                SELECT DISTINCT lsoa_code
-                FROM core_postcodes
-                WHERE lad_code = ANY(:local_lads)
-                  AND lsoa_code IS NOT NULL
-            )
-        """
+        local_txn_filter = "t.lad_code = ANY(:local_lads)"
+        local_txn_filter_plain = "lad_code = ANY(:local_lads)"
         local_txn_params = {"local_lads": local_lads, "price_types": price_types}
     else:
         local_txn_filter = "t.lsoa_code = ANY(:lsoa_codes)"
@@ -351,17 +337,14 @@ async def fetch_property_market(
     ppsm_parent = await db.execute(
         text(
             """
-            SELECT AVG(price::numeric / NULLIF(floor_area_sqm::numeric, 0)) AS avg_ppsm
-            FROM core_property_transactions
-            WHERE lsoa_code IN (
-                SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)
-            )
-              AND floor_area_sqm > 0
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '25 months'
-              AND property_type = ANY(:price_types)
+            SELECT avg_ppsf * 10.7639 AS avg_ppsm
+            FROM mv_parent_rolling_price_stats
+            WHERE parent_comparison = :parent_name
+              AND property_type = 'ALL'
+              AND avg_ppsf IS NOT NULL
             """
         ),
-        {"lads": parent_lads, "price_types": price_types},
+        {"parent_name": parent_name},
     )
     ppsm_parent_row = ppsm_parent.mappings().first()
 
@@ -438,12 +421,7 @@ async def fetch_property_market(
                 SELECT COUNT(*) FILTER (WHERE duration = 'F') AS fh,
                        COUNT(*) FILTER (WHERE duration = 'L') AS lh
                 FROM core_property_transactions
-                WHERE lsoa_code IN (
-                    SELECT DISTINCT lsoa_code
-                    FROM core_postcodes
-                    WHERE lad_code = ANY(:lads)
-                      AND lsoa_code IS NOT NULL
-                )
+                WHERE lad_code = ANY(:lads)
                   AND property_type = ANY(:price_types)
                   AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
                 """
@@ -534,12 +512,7 @@ async def fetch_property_market(
                 SELECT COUNT(*) FILTER (WHERE old_new = 'Y') AS nb,
                        COUNT(*) AS txn
                 FROM core_property_transactions
-                WHERE lsoa_code IN (
-                    SELECT DISTINCT lsoa_code
-                    FROM core_postcodes
-                    WHERE lad_code = ANY(:lads)
-                      AND lsoa_code IS NOT NULL
-                )
+                WHERE lad_code = ANY(:lads)
                   AND property_type = ANY(:price_types)
                   AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
                 """
@@ -590,13 +563,16 @@ async def fetch_property_market(
     hpi_parent = await db.execute(
         text(
             """
-            SELECT AVG(yearly_change_pct) AS avg_yoy
-            FROM core_hpi_lad
-            WHERE lad_code = ANY(:lads)
-              AND date = (SELECT MAX(date) FROM core_hpi_lad WHERE lad_code = ANY(:ref_lads))
+            WITH latest_per_lad AS (
+                SELECT DISTINCT ON (lad_code) yearly_change_pct
+                FROM core_hpi_lad
+                WHERE lad_code = ANY(:lads)
+                ORDER BY lad_code, date DESC
+            )
+            SELECT AVG(yearly_change_pct) AS avg_yoy FROM latest_per_lad
             """
         ),
-        {"lads": parent_lads, "ref_lads": local_lads or ["_"]},
+        {"lads": parent_lads},
     )
     hpi_parent_row = hpi_parent.mappings().first()
 

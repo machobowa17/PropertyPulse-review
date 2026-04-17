@@ -1,6 +1,6 @@
 # PropertyPulse — Complete Metrics Reference
 
-**Last verified against code: 2026-04-14 (session 24)**
+**Last verified against code: 2026-04-16 (session 33)**
 **Source of truth: `backend/app/services/tab_*.py`**
 
 **Legend:**

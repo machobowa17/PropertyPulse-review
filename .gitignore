@@ -14,3 +14,7 @@ etl/*.gz
 dump.rdb
 frontend/test-results/
 *.rdb
+*.dump
+.env.production
+baseline_screenshots/
+post_screenshots/

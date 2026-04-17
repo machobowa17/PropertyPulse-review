@@ -81,7 +81,6 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   mobile_coverage:        { label: 'Ofcom Connected Nations', licence: 'OGL v3' },
   ev_chargers:            { label: 'DfT EVCD Register', licence: 'OGL v3' },
   amenities_15min:        { label: 'OpenStreetMap', licence: 'ODbL' },
-  fifteen_min_score:      { label: 'OpenStreetMap', licence: 'ODbL' },
   wfh:                    { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   commute_distance:       { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   // Environment & Safety
@@ -96,7 +95,6 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   sports_recreation:      { label: 'OS Open Greenspace', licence: 'OGL v3' },
   crime_rate:             { label: 'Home Office Crime Statistics', licence: 'OGL v3' },
   crime_trend:            { label: 'Home Office Crime Statistics', licence: 'OGL v3' },
-  esg_score:              { label: 'Multi-source composite', licence: 'OGL v3' },
   // Community & Education
   demographics_overview:  { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   population_density:     { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
@@ -109,6 +107,8 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   degree_educated:        { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   no_car:                 { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   born_abroad:            { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  ethnicity:              { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  religion:               { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   primary_schools:        { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
   secondary_schools:      { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
   deprivation:            { label: 'MHCLG English Indices of Deprivation 2025', licence: 'OGL v3' },
@@ -302,7 +302,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         {hasDetails ? (
           <ChevronRight
             className={`w-4 h-4 text-ink-faint shrink-0 transition-transform duration-200
-                        ${expanded ? 'rotate-90' : 'group-hover:translate-x-0.5'}`}
+                        ${expanded ? 'rotate-90' : '[@media(hover:hover)]:group-hover:translate-x-0.5'}`}
           />
         ) : <div className="w-4" />}
       </button>
@@ -341,7 +341,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         {hasDetails && (
           <ChevronRight
             className={`w-4 h-4 text-ink-faint shrink-0 transition-transform duration-200
-                        ${expanded ? 'rotate-90' : 'group-hover:translate-x-0.5'}`}
+                        ${expanded ? 'rotate-90' : '[@media(hover:hover)]:group-hover:translate-x-0.5'}`}
           />
         )}
       </button>
@@ -364,7 +364,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
       <div
         ref={detailsRef}
         className="grid transition-[grid-template-rows,opacity] duration-200 ease-out"
-        style={{ gridTemplateRows: expanded && metric.details ? '1fr' : '0fr', opacity: expanded && metric.details ? 1 : 0 }}
+        style={{ gridTemplateRows: expanded && metric.details ? '1fr' : '0fr', opacity: expanded && metric.details ? 1 : 0, visibility: expanded && metric.details ? 'visible' : 'hidden' }}
       >
         <div className="overflow-hidden">
           <Suspense fallback={null}>

@@ -1,8 +1,8 @@
 # PropertyPulse — Complete Handover Document
 
-**Date:** 2026-04-16 (session 32)
+**Date:** 2026-04-16 (session 35)
 **Branch:** `main`
-**Status:** Production-ready for England + Wales. Phase 2 Review Fixes ALL COMPLETE (22 items: security hardening, ETL blue/green swap, Sentry APM, R1-R25 frontend+backend). Next: AWS deployment (Phase 3).
+**Status:** Production-ready for England + Wales. Phase 2 (22 items) + Phase 2.5 (11 items) + Phase 2.6 (4 critical fixes) + Phase 2.7 (13 hardening fixes) + Phase 2.8 (H14-H16 + brutal test suite) ALL COMPLETE. Public review repo: https://github.com/machobowa17/PropertyPulse-review. Next: AWS deployment (Phase 3).
 
 ---
 
@@ -100,6 +100,7 @@ etl/
   constants.py           — TABLE_NAMES, SCHEDULE_* constants (mirrors backend constants)
   sources/               — 29 source modules (each has METADATA + run(db_url))
   derived/               — 4 derived modules (query core_* → new core_* tables)
+                           flood_lsoa.py, spatial_lsoa_stats.py, etc.
   legacy/                — Superseded modules (kept for reference, NOT used)
   migrations/            — Numbered SQL migration files (001-007+)
   data/                  — Local data files (CSVs, ZIPs, GeoJSON, etc.)
@@ -287,6 +288,7 @@ The ETL pipeline invalidates relevant cache patterns after successful runs. Cach
 | `core_inspire_parcels` | 24,255,962 | OS INSPIRE land parcel polygons (318 authorities) |
 | `core_llc_charges` | 7,720,311 | Local Land Charges (141 authorities) |
 | `core_flood_zones` | 3,536,992 | EA flood zones (FZ2 82.6%, FZ3 17.4%) |
+| `core_flood_lsoa` | 33,755 | Per-LSOA flood zone exposure (in_zone_2, in_zone_3) — derived from core_flood_zones |
 
 ### Master Table Columns (core_property_transactions)
 
@@ -313,9 +315,8 @@ The 40 columns include:
 - **Note:** `core_price_sqm_lsoa_yearly` is NOT dropped — actively queried by `/price-history` for historical PPSF chart enrichment (3M rows, UCL data)
 - core_census_demographics_lsoa, core_census_housing_lsoa, core_census_hh_size_lsoa, core_census_commute_lsoa, core_census_extra_lsoa (consolidated into core_census_lsoa)
 
-### Empty Tables (data never ingested)
-- `core_noise` — schema exists (postcode, road_noise_db, rail_noise_db, air_noise_db, noise_band) but zero rows. Would need DEFRA strategic noise map data.
-- `core_epc_domestic` — was dropped after EPC absorption. Would need re-download from MHCLG (see Known Issues).
+### Dropped Tables (no longer needed)
+- `core_epc_domestic` — was dropped after EPC absorption into master table. Re-download from MHCLG needed for full historical backfill (see Known Issues). GDrive backup: `gdrive:PropertyPulse/core_epc_domestic.dump`.
 
 ---
 
@@ -494,7 +495,7 @@ See `etl/DATA_SOURCES.md` for the complete list of 31 data sources with URLs, li
 ## 10. Testing
 
 ### Playwright Browser Tests
-- **Main suite:** `test_playwright_comprehensive.py` — **122/123 passing** (1 pre-existing Scotland postcode failure)
+- **Main suite:** `test_playwright_comprehensive.py` — **117/123 passing** (1 Scotland, 1 chart toggle, 2 Governance timing, 2 warnings — 0 regressions)
   - 10 sections: all 5 tabs × 3 search types, charts, map, null handling, tab switching, responsive, errors, navigation
 - **Metric refactor suite:** `test_metric_refactor.py` — **21/21 passing**
 - **Map tests:** `test_map_e2e.py` (needs 8s wait for sold markers), `test_map_edge_cases.py`
@@ -540,12 +541,11 @@ The pipeline module (`etl/sources/epc_domestic.py`) handles all 4 phases automat
 - Recompute `lsoa_month_avg_ppsm` + `lsoa_month_avg_ppsft` aggregates
 - Verify coverage by year + DROP `core_epc_domestic`
 
-### Empty Tables
+### Dropped/Missing Tables
 
 | Table | Issue | Data Source |
 |-------|-------|-------------|
-| `core_epc_domestic` | Does not exist. Needed for historical EPC matching (price_per_sqft pre-2024). | MHCLG bulk EPC download (requires registration). S3 rewrite is next queue item. |
-| `_epc_staging` | Empty staging table. Artifact from previous work. | N/A |
+| `core_epc_domestic` | Does not exist (dropped after absorption). Needed for full historical EPC matching (price_per_sqft pre-2024). | MHCLG bulk EPC download (requires registration). `epc_domestic.py` handles full 4-phase re-ingest. |
 
 ### Tables Fully Ingested (not in original handover)
 - `core_noise` — 1,430,534 rows ✓ (DEFRA 367/367 tiles, session 22)
@@ -558,45 +558,16 @@ The pipeline module (`etl/sources/epc_domestic.py`) handles all 4 phases automat
 - **Scotland/Wales:** No postcode-level data (England-only postcode table in core_postcodes)
 - **LS1 Terraced:** No "Last 12m" data (no recent terraced sales in Leeds city centre)
 - **Land Registry new-build flag:** Unreliable for house-to-flat conversions. Solicitors often mark conversions as "not new build" (old_new = 'N'). A caveat note is displayed on the new_build_proportion metric.
-- **Guildford:** "Guilford" typo in `core_place_names` data (data fix, not code bug)
+- ~~**Guildford:** "Guilford" typo~~ — verified correct in DB ("Guildford" spelled correctly)
 
-### Parent Comparisons Not Yet Implemented (Spatial Metrics)
-These metrics return `parent_value: null` because computing them across thousands of parent-region LSOAs is too expensive at query time:
-- `nearest_station`, `nearest_park`, `parks_1km`, `green_cover`, `sports_recreation`
-- Fix would require pre-computed per-LSOA aggregate tables (similar pattern to `core_nhs_lsoa`)
+### Spatial Parent Comparisons — COMPLETE
+Previously `nearest_station`, `nearest_park`, `parks_1km`, `green_cover`, `sports_recreation` returned `parent_value: null`. Now pre-computed via `etl/derived/spatial_lsoa_stats.py` → `core_lsoa_green_space` + `core_lsoa_transport` tables. All 5 spatial metrics have parent comparisons.
 
 ---
 
 ## 12. Work Queue
 
-See `QUEUE.md` for full ordered work queue. Summary of status:
-
-### Complete
-- [x] EPC full re-ingest (sessions 17-18, 29.2M rows, absorbed into master table)
-- [x] Census Extra LSOA CSVs (sessions 21-22, all TS topics in core_census_lsoa)
-- [x] Noise data ingest (session 22, 1,427,115 rows, 367/367 DEFRA tiles)
-- [x] Spatial parent comparisons (sessions 19-20, core_lsoa_green_space, core_lsoa_transport)
-- [x] INSPIRE parcels ingest (sessions 25-26, 24,255,962 rows, 318 authorities)
-- [x] LLC ingest (sessions 25-26, 7,720,311 rows, 141 authorities)
-- [x] Flood GeoPackage ingest (session 27, 3,536,992 rows, FZ2/FZ3 bug fixed)
-- [x] Metric registry refactor S1-S7 (sessions 25-26)
-- [x] Results.tsx decomposition S6 (session 28, React Context architecture)
-
-### Active / Next
-- [ ] **#13 AWS: Create account, configure eu-west-2** — see `memory/deployment.md` for full spec
-- [ ] **#5 GDrive backups** — 3 rclone processes (INSPIRE/LLC/Flood raw files). Self-completing.
-
-### Complete (added sessions 29-32)
-- [x] S3: epc_domestic.py rewrite (session 29) — 4-phase pipeline: load 9-col → SQL match → recompute ppsf aggs → drop table. Run: `python3 pipeline.py --source epc_domestic`
-- [x] S4: personas.ts + personalization.ts overhaul (session 30) — fixed ptal→ptal_score bug, getTakeaway() 60 branches, PERSONA_METRIC_WEIGHTS 45 entries, METRIC_TAB cleaned
-- [x] Phase 2 Review Fixes (sessions 31-32) — 22 items. Security: R16-R20 (nginx CSP, timing attack, proxy headers, Redis AOF, ReportLab escape). Backend: R7, R9, R12, R13, R4, R21 (ETL blue/green for 27 sources). Infra: R22 (postgresql.conf), R24 (Sentry). Frontend: R11, R10, R25, R2, R14, R3, R8, R1 (context split, lazy charts, Zod, 410 re-resolve, manualChunks, ResizeObserver, etc.)
-
-### Pending
-- [ ] AWS: account, t4g.small + 80GB gp3 EBS, Docker, pg_dump/restore, S3+CloudFront, DNS+TLS, CI/CD
-- [ ] R15: Isochrone school catchments (post-AWS, Family persona)
-
-### Low Priority / Parked
-- [ ] Guildford → "Guilford" typo fix in core_place_names
+**See `QUEUE.md` — the single source of truth for all task tracking.**
 
 ---
 
@@ -678,7 +649,61 @@ Flood zone bug found+fixed (was labelling all FZ3 due to wrong column read). Re-
 ### Session 30 — Personas.ts + Personalization.ts Overhaul (S4) Complete
 Fixed active bug: `ptal` → `ptal_score` (PTAL takeaways were silently falling through to default fallback for every search). `getTakeaway()` expanded from 42 → 60 metric ID branches — full registry coverage including: connectivity_index, stations_in_area, wfh, noise, green_cover, green_spaces, parks_1km, sports_recreation, median_earnings, good_health, economically_active, degree_educated, no_car, born_abroad, household_size, ethnicity, demographics_overview. `PERSONA_METRIC_WEIGHTS` expanded from 23 → 45 entries. `METRIC_TAB` cleaned: removed phantom `ptal`, added stations_in_area, connectivity_index, household_size, ethnicity, wfh. tsc -b 0 errors.
 
-### Session 29 (latest) — epc_domestic.py Rewrite (S3) Complete
+### Session 33 (latest) — Phase 2.5 AI Studio Review Fixes (G1-G11) Complete
+11 fixes from Google AI Studio code review, all verified. Key changes:
+- **G1:** Crime trend 0-is-falsy — `is not None` checks in `tab_environment.py`
+- **G2:** LsoaContextBlurb missing `lad` type — added `|| type === 'lad'` in `ResultsHero.tsx`
+- **G3:** flood_lsoa ETL missing — created `etl/derived/flood_lsoa.py` (ST_Intersects derivation)
+- **G4:** Schools ST_Within perf — removed spatial join from 4 parent queries, use `s.lad_code` directly
+- **G5:** Suggest rate limit lockout — `@limiter.exempt` on suggest endpoint (superseded by C3 in session 34: replaced with `300/minute`)
+- **G6:** "London" → wrong entity — `'greater ' || :q` match in geo_resolver + suggest county query
+- **G7:** Map POI flash-blank — `placeholderData: (prev) => prev` on mapPois useQuery
+- **G8:** Mobile map auto-open — removed `setShowMap(true)` from `handleMetricMapFocus`
+- **G9:** localStorage cross-tab — `storage` event listener in `ResultsContext.tsx`
+- **G10:** MetricCard scroll-into-view — `transitionend` + `scrollIntoView` on mobile expand
+- **G11:** Comparable null imputation — `None` instead of `0.0` for missing dims; skip in `_distance()`
+- Deferred: G12 (DecisionMode wiring — done in session 34 as C1)
+- Public GitHub repo created: `machobowa17/PropertyPulse-review`
+- Codebase uploaded to GDrive: `gdrive:PropertyPulse/codebase_review_20260416/` (344 files)
+- **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric + 117/121 comprehensive (1 pre-existing Scotland, 3 timing/rate-limit)
+
+### Session 35 (latest) — H14-H16 + Brutal Test Suite + 13 AI Studio Hardening Fixes (H1-H13) Complete
+
+**Phase 2.8:** 3 deferred AI Studio items resolved + 2 bugs found by brutal test suite:
+- **H14:** Stagger tab prefetch — 4 tabs fired simultaneously on page load, potential request burst on t4g.small. Staggered: tab 0 at 0ms, tab 1 at 2s, tab 2 at 4s, tab 3 at 6s. Cleanup function clears timers.
+- **H15:** `ST_SimplifyPreserveTopology` for boundaries — LAD (0.0002), place (0.0003), county (0.0005). Also choropleth in `area_map.py`. `ST_Simplify` produced invalid geometry on 100% of counties tested — `PreserveTopology` verified correct on all.
+- **H16:** Ethnicity LSOA→ward derivation — place searches now derive distinct ward_codes from session's LSOA set via `core_postcodes`, avoiding entire-LAD averaging. Verified: Brixton ethnicity (50.59%) differs from Lambeth LAD (55.04%).
+- **B1:** Null bytes in `/resolve` caused 500 — input sanitisation strips `\x00` + validates length post-strip.
+- **B2:** Place boundary 500 when `core_place_boundaries_union` table missing — try/except + `db.rollback()` falls through to live `ST_Union`.
+- **Brutal test suite:** `test_brutal.py` — 13 sections, 447 tests covering adversarial inputs, math correctness, boundary integrity, ethnicity accuracy, choropleth layers, report PDF, cross-search consistency, 5×5 tab×search matrix, Playwright UI. All 447 pass.
+- **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric refactor, 117/123 comprehensive (0 regressions), 447/447 brutal.
+
+**Phase 2.7 (earlier in session 35):**
+13 fixes from third-round AI Studio review (31+10 items triaged; 16 already fixed in sessions 31-34, 3 deferred). All verified:
+- **H1:** PDF `_build_pdf()` blocks ASGI loop — wrapped with `await asyncio.to_thread()` in `report.py`
+- **H2:** DB pool exhaustion (pool_size=20 × 4 workers > max_connections=100) — reduced to `pool_size=5, max_overflow=5` in `database.py`
+- **H3:** MSOA crime rate population mismatch — `used_msoa_fallback` flag → query MSOA-level population instead of single-LSOA (prevents 500% inflation) in `tab_environment.py`
+- **H4:** HPI parent drops lagging LADs — `DISTINCT ON (lad_code) ORDER BY date DESC` in `tab_property.py`
+- **H5:** Council tax parent unweighted average — population-weighted CTE in `tab_governance.py`
+- **H6:** GZipMiddleware burns CPU — removed from `main.py` (Nginx handles compression)
+- **H7:** Rate limiter per-process in-memory — `storage_uri=settings.REDIS_URL` in `rate_limit.py`
+- **H8:** `set()` created inside loop — moved outside in `comparable_areas.py`
+- **H9:** localStorage.setItem crash (Safari private) — try/catch in `SearchBox.tsx`
+- **H10:** localStorage.setItem crash (savedAreas) — try/catch in `savedAreas.ts`
+- **H11:** `getLeaves(Infinity)` DOM freeze — capped at 30 in `MapView.tsx`
+- **H12:** Collapsed content in keyboard focus order — `visibility: hidden` on `CollapsibleSection.tsx`, `MetricCard.tsx`, `ResultsMapPanel.tsx`
+- **H13:** DHE-RSA cipher Logjam vulnerability — removed from `nginx-ssl.conf`
+- **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric refactor, 117/123 comprehensive (0 regressions; 4 pre-existing: 1 Scotland, 1 chart toggle, 2 Governance timing).
+
+### Session 34 — 4 AI Studio Critical Fixes (C1-C4) Complete
+4 critical flaws from second-round AI Studio review, all fixed and tested:
+- **C1:** DecisionMode placebo toggle — added `DECISION_MODE_MULTIPLIERS` matrix in `personalization.ts`; threaded `decisionMode` through all scoring functions (`buildSignal`, `collectPersonaSignals`, `buildPersonaFitSummary`, `rankSectionsForPersona`); updated `PersonaScoreCard` + `ResultsMetricsPanel` call sites. Buy/Rent/Invest now meaningfully changes persona scores.
+- **C2:** Postcode district substring truncation — replaced Python `dist_len` heuristic with Postgres regex `SUBSTRING(postcode_compact FROM '^[A-Z]{1,2}[0-9][A-Z]?')` in `resolve.py` suggest endpoint. Verified: CR5→CR5 ✓, SW1→SW1A/SW1E ✓, E1→E1/E1W ✓.
+- **C3:** Suggest endpoint DoS vector — replaced `@limiter.exempt` with `@limiter.limit("300/minute")` + `request: Request` param. 5x default limit for typeahead UX, still protected against abuse.
+- **C4:** ETL `INCLUDING ALL` bottleneck — created `create_staging_table()` (UNLOGGED, no indexes) + `recreate_indexes()` (from pg_indexes) in `etl/utils.py`. Converted 5 large-table modules: land_registry_full (30M), inspire_parcels (24M), llc (7.7M), crime (6M), flood (3.5M).
+- **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric refactor, 114/123 comprehensive (0 regressions; 4 pre-existing: 1 Scotland, 1 chart toggle, 2 Governance timing).
+
+### Session 29 — epc_domestic.py Rewrite (S3) Complete
 Full rewrite of `etl/sources/epc_domestic.py`. Old approach: 93-col load + Python Jaccard loop + separate `absorb_epc.py` + manual aggregate rebuild. New approach: 4-phase `run()` — (1) 9-col COPY load, (2) SQL TRANSLATE match → direct UPDATE master, (3) lsoa_month ppsf aggregate recompute, (4) verify + DROP. `pipeline.py` entry updated. Single command: `python3 pipeline.py --source epc_domestic`.
 
 ### Session 28 — Results.tsx Decomposition (S6) Complete
@@ -713,3 +738,18 @@ Full decomposition of 721-line Results.tsx into React Context architecture. 8 ne
 | SQL migrations | `etl/migrations/` |
 | Legacy ETL scripts | `etl/legacy/` |
 | Data files | `etl/data/` |
+| Flood LSOA derivation | `etl/derived/flood_lsoa.py` |
+| Spatial LSOA stats | `etl/derived/spatial_lsoa_stats.py` |
+| Rate limiter | `backend/app/rate_limit.py` |
+| Public review repo | https://github.com/machobowa17/PropertyPulse-review |
+
+### Google Drive Assets
+
+| Item | Location |
+|------|----------|
+| DB dump v2 | `gdrive:PropertyPulse/ukproperty_20260413_v2.dump` |
+| core_epc_domestic backup | `gdrive:PropertyPulse/core_epc_domestic.dump` (1.2 GB) |
+| INSPIRE raw | `gdrive:PropertyPulse/raw_downloads/INSPIRE/` |
+| LLC raw | `gdrive:PropertyPulse/raw_downloads/LLC/` |
+| Flood GeoPackage | `gdrive:PropertyPulse/raw_downloads/` |
+| Codebase snapshot (latest) | `gdrive:PropertyPulse/codebase_review_20260416/` (344 files, 39.5 MiB) |

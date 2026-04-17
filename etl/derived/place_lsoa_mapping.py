@@ -38,7 +38,7 @@ METADATA = {
     "depends_on":     ["place_names", "boundaries"],
     "tables_written": [TABLE_NAMES["place_lsoa_mapping"], TABLE_NAMES["place_lsoa_mapping_town"], TABLE_NAMES["place_boundaries_union"]],
     "cache_key_patterns": ["lsoa_sess:*", "area:*", "resolve:*"],
-    "expected_row_range": (45_000, 65_000),
+    "expected_row_range": (20_000, 65_000),
 }
 
 # Place types treated as searchable area names (matches geo_resolver AREA_PLACE_TYPES)

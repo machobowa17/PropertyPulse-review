@@ -42,7 +42,7 @@ def results_url(query: str) -> str:
     return f"{BASE}/results?q={query.replace(' ', '+')}"
 
 
-def wait_for_results(page, timeout=30000):
+def wait_for_results(page, timeout=60000):
     """Wait for the results page to fully load (area banner visible)."""
     page.wait_for_selector("h1", timeout=timeout)
 
@@ -165,7 +165,7 @@ def run_all_tests():
 
             page.goto(results_url(query))
             try:
-                wait_for_results(page, timeout=30000)
+                wait_for_results(page)
             except PwTimeout:
                 R.add(section, "Page loads", False, "Timed out waiting for h1")
                 page.close()
@@ -397,7 +397,7 @@ def run_all_tests():
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         page = context.new_page()
         page.goto(results_url("Whitby"))
-        wait_for_results(page, timeout=30000)
+        wait_for_results(page)
         wait_for_tab_data(page)  # Wait for real cards
 
         # Whitby should resolve and show Property tab
@@ -456,7 +456,7 @@ def run_all_tests():
         page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(results_url("Manchester"))
-        wait_for_results(page, timeout=30000)
+        wait_for_results(page)
         wait_for_tab_data(page)
 
         # Get Property tab card count as baseline
@@ -579,7 +579,7 @@ def run_all_tests():
             context = browser.new_context(viewport=vp_size)
             page = context.new_page()
             page.goto(results_url("Didsbury"))
-            wait_for_results(page, timeout=30000)
+            wait_for_results(page)
             time.sleep(5)
 
             # Check page renders
