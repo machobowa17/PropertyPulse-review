@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-17 (session 38)
+Last updated: 2026-04-17 (session 40)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -154,6 +154,34 @@ Source: Session 38. Google's 4th-round review (codebase + live site). ~34 items 
 
 ---
 
+### Phase 5: Google AI Studio Review Round 5 (COMPLETE ✓)
+
+Source: Sessions 39-40. Two batches from Google (17 + 14 items). Google admitted batch 1 was reviewing stale code. Combined triage: ~22 items already fixed (sessions 32-38), 8 genuinely new — all fixed. Full triage in `memory/google_review_5.md`. tsc -b 0 errors, vite build clean, 21/21 metric tests.
+
+| # | Task | Status | Fix |
+|---|------|--------|-----|
+| G5-1 | MapLibre hover feature-state — polygon highlight + tooltip | DONE | `promoteId: 'lsoa_code'`, `setFeatureState`, `fill-opacity` feature-state expression, mousemove tooltip + hover popup in `MapView.tsx` |
+| G5-2 | IntersectionObserver scroll-follow — replace layout thrashing | DONE | Replaced rAF+getBoundingClientRect with `IntersectionObserver` (`rootMargin: '-35% 0px -35% 0px'`) in `useResultsMap.ts` |
+| G5-3 | Simpson's Paradox — population-weighted census averages | DONE | `SUM(weight * pct) / NULLIF(SUM(weight), 0)` across 7 files: `tab_community.py` (demographics, health, housing, household size, ethnicity, religion), `tab_property.py` (stock + EPC), `tab_lifestyle.py` (cycling, commute), `tab_environment.py` (EPC), `area_price.py` (bedroom prices). Weights: `total_population`, `total_households`, `total_workers`, `total_certs`, `total_pop`, `transaction_count`. |
+| G5-4 | Schools + NHS ST_Within in area-mode local queries | DONE | Replaced `JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)` with `JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')` for schools (4 queries) and NHS facilities (2 queries) in `tab_community.py` |
+| G5-5 | Sold-price spatial bias | VERIFIED | Already uses `ROW_NUMBER() PARTITION BY lsoa_code` — stratified sample. Not broken. |
+| G5-6 | LLC + INSPIRE ST_CollectionExtract defensive fix | DONE | Wrapped `ST_MakeValid()` in `ST_CollectionExtract(..., 3)` in `llc.py` (2 sites) and `inspire_parcels.py` (1 site) |
+| G5-7 | Choropleth quantile edge case (<5 unique values) | DONE | Dynamic bucket count from actual data. Maps fewer buckets to evenly-spaced colours from the 5-colour ramp in `MapView.tsx` |
+| G5-8 | Mobile map touch-action (two-finger pan) | DONE | `cooperativeGestures: window.matchMedia('(pointer: coarse)').matches` in MapLibre init (`MapView.tsx`) |
+
+#### Already fixed (confirmed in triage — Google reviewing stale code)
+Batch 1: #4 a11y (H12), #6 Z-score (G11), #7 ethnicity (H16), #8 crime falsy (G1), #14 DecisionMode (C1), #15 CR5 (C2), #16 cross-tab (G9), #17 rate limit (C3).
+Batch 2: ASGI thread (H1), TRUNCATE (C4), mega-context (session 32), GeoJSON off-thread (R2), PDF XML escape (session 35), chart lazy (H12).
+
+#### Not fixing (justified)
+- `geom::geography` index bypass — ST_DWithin uses GiST index for bounding box pre-filter. Not a seq scan.
+- Pagination OFFSET — scoped to 13 months of single area. Max ~1000 rows.
+- Overpass API — ETL-only, data already ingested.
+- EPC backfill index bloat — one-time script, already run.
+- Query consolidation (5× queries) — different column sets, optimisation not a bug.
+
+---
+
 ### Post-AWS
 
 | # | Task | Status | Notes |
@@ -197,7 +225,7 @@ Source: Session 38. Google's 4th-round review (codebase + live site). ~34 items 
 | INSPIRE raw | `gdrive:PropertyPulse/raw_downloads/INSPIRE/` |
 | LLC raw | `gdrive:PropertyPulse/raw_downloads/LLC/` |
 | Flood GeoPackage | `gdrive:PropertyPulse/raw_downloads/` |
-| Codebase snapshot (latest) | `gdrive:PropertyPulse/codebase_review_20260416/` (344 files, 39.5 MiB) |
+| Codebase snapshot (latest) | `gdrive:PropertyPulse/codebase_review_20260417/` (360 files) |
 | Public review repo | https://github.com/machobowa17/PropertyPulse-review |
 
 ---

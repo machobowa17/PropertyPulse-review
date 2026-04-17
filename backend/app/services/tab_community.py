@@ -17,14 +17,14 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     demo_local = await db.execute(
         text("""
             SELECT SUM(total_population) as total_population,
-                   AVG(population_density) as population_density,
-                   AVG(median_age) as median_age,
-                   AVG(pct_age_0_15) as pct_age_0_15,
-                   AVG(pct_age_16_64) as pct_age_16_64,
-                   AVG(pct_age_65_plus) as pct_age_65_plus,
-                   AVG(pct_families) as pct_families,
-                   AVG(pct_singles) as pct_singles,
-                   AVG(pct_sharers) as pct_sharers
+                   SUM(total_population * population_density) / NULLIF(SUM(total_population), 0) as population_density,
+                   SUM(total_population * median_age) / NULLIF(SUM(total_population), 0) as median_age,
+                   SUM(total_population * pct_age_0_15) / NULLIF(SUM(total_population), 0) as pct_age_0_15,
+                   SUM(total_population * pct_age_16_64) / NULLIF(SUM(total_population), 0) as pct_age_16_64,
+                   SUM(total_population * pct_age_65_plus) / NULLIF(SUM(total_population), 0) as pct_age_65_plus,
+                   SUM(total_households * pct_families) / NULLIF(SUM(total_households), 0) as pct_families,
+                   SUM(total_households * pct_singles) / NULLIF(SUM(total_households), 0) as pct_singles,
+                   SUM(total_households * pct_sharers) / NULLIF(SUM(total_households), 0) as pct_sharers
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -34,12 +34,15 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # Parent averages (parent comparison group — e.g. all London boroughs)
     demo_parent = await db.execute(
         text("""
-            SELECT AVG(population_density) as avg_density, AVG(median_age) as avg_age,
-                   AVG(pct_families) as avg_families, AVG(pct_singles) as avg_singles,
-                   AVG(pct_sharers) as avg_sharers,
-                   AVG(pct_age_0_15) as avg_0_15, AVG(pct_age_16_64) as avg_16_64,
-                   AVG(pct_age_65_plus) as avg_65plus,
-                   SUM(total_population) as total_population
+            SELECT SUM(d.total_population * d.population_density) / NULLIF(SUM(d.total_population), 0) as avg_density,
+                   SUM(d.total_population * d.median_age) / NULLIF(SUM(d.total_population), 0) as avg_age,
+                   SUM(d.total_households * d.pct_families) / NULLIF(SUM(d.total_households), 0) as avg_families,
+                   SUM(d.total_households * d.pct_singles) / NULLIF(SUM(d.total_households), 0) as avg_singles,
+                   SUM(d.total_households * d.pct_sharers) / NULLIF(SUM(d.total_households), 0) as avg_sharers,
+                   SUM(d.total_population * d.pct_age_0_15) / NULLIF(SUM(d.total_population), 0) as avg_0_15,
+                   SUM(d.total_population * d.pct_age_16_64) / NULLIF(SUM(d.total_population), 0) as avg_16_64,
+                   SUM(d.total_population * d.pct_age_65_plus) / NULLIF(SUM(d.total_population), 0) as avg_65plus,
+                   SUM(d.total_population) as total_population
             FROM core_census_lsoa d
             JOIN core_lsoa_boundaries l ON l.lsoa_code = d.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -86,11 +89,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # --- Census Extra (LSOA-level): degree, health, economic activity, car ownership, born abroad ---
     extra_result = await db.execute(
         text("""
-            SELECT AVG(pct_good_health) as pct_good_health,
-                   AVG(pct_economically_active) as pct_economically_active,
-                   AVG(pct_degree) as pct_degree,
-                   AVG(pct_no_car) as pct_no_car,
-                   AVG(pct_born_abroad) as pct_born_abroad
+            SELECT SUM(total_population * pct_good_health) / NULLIF(SUM(total_population), 0) as pct_good_health,
+                   SUM(total_population * pct_economically_active) / NULLIF(SUM(total_population), 0) as pct_economically_active,
+                   SUM(total_population * pct_degree) / NULLIF(SUM(total_population), 0) as pct_degree,
+                   SUM(total_households * pct_no_car) / NULLIF(SUM(total_households), 0) as pct_no_car,
+                   SUM(total_population * pct_born_abroad) / NULLIF(SUM(total_population), 0) as pct_born_abroad
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -99,11 +102,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     extra_parent = await db.execute(
         text("""
-            SELECT AVG(e.pct_good_health) as pct_good_health,
-                   AVG(e.pct_economically_active) as pct_economically_active,
-                   AVG(e.pct_degree) as pct_degree,
-                   AVG(e.pct_no_car) as pct_no_car,
-                   AVG(e.pct_born_abroad) as pct_born_abroad
+            SELECT SUM(e.total_population * e.pct_good_health) / NULLIF(SUM(e.total_population), 0) as pct_good_health,
+                   SUM(e.total_population * e.pct_economically_active) / NULLIF(SUM(e.total_population), 0) as pct_economically_active,
+                   SUM(e.total_population * e.pct_degree) / NULLIF(SUM(e.total_population), 0) as pct_degree,
+                   SUM(e.total_households * e.pct_no_car) / NULLIF(SUM(e.total_households), 0) as pct_no_car,
+                   SUM(e.total_population * e.pct_born_abroad) / NULLIF(SUM(e.total_population), 0) as pct_born_abroad
             FROM core_census_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -151,7 +154,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # --- WFH (from census commute data, consolidated into core_census_lsoa) ---
     wfh_result = await db.execute(
         text("""
-            SELECT AVG(pct_wfh) as pct_wfh
+            SELECT SUM(total_workers * pct_wfh) / NULLIF(SUM(total_workers), 0) as pct_wfh
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -160,7 +163,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     wfh_parent = await db.execute(
         text("""
-            SELECT AVG(c.pct_wfh) as avg_wfh
+            SELECT SUM(c.total_workers * c.pct_wfh) / NULLIF(SUM(c.total_workers), 0) as avg_wfh
             FROM core_census_lsoa c
             JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -230,13 +233,13 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     housing_local = await db.execute(
         text("""
             SELECT SUM(total_households) as total_households,
-                   AVG(pct_owned) as pct_owned,
-                   AVG(pct_social_rent) as pct_social_rent,
-                   AVG(pct_private_rent) as pct_private_rent,
-                   AVG(pct_detached) as pct_detached,
-                   AVG(pct_semi) as pct_semi,
-                   AVG(pct_terraced) as pct_terraced,
-                   AVG(pct_flat) as pct_flat
+                   SUM(total_households * pct_owned) / NULLIF(SUM(total_households), 0) as pct_owned,
+                   SUM(total_households * pct_social_rent) / NULLIF(SUM(total_households), 0) as pct_social_rent,
+                   SUM(total_households * pct_private_rent) / NULLIF(SUM(total_households), 0) as pct_private_rent,
+                   SUM(total_households * pct_detached) / NULLIF(SUM(total_households), 0) as pct_detached,
+                   SUM(total_households * pct_semi) / NULLIF(SUM(total_households), 0) as pct_semi,
+                   SUM(total_households * pct_terraced) / NULLIF(SUM(total_households), 0) as pct_terraced,
+                   SUM(total_households * pct_flat) / NULLIF(SUM(total_households), 0) as pct_flat
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -245,9 +248,12 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     housing_parent = await db.execute(
         text("""
-            SELECT AVG(pct_owned) as avg_owned, AVG(pct_private_rent) as avg_priv_rent,
-                   AVG(pct_detached) as avg_det, AVG(pct_semi) as avg_semi,
-                   AVG(pct_terraced) as avg_terr, AVG(pct_flat) as avg_flat
+            SELECT SUM(h.total_households * h.pct_owned) / NULLIF(SUM(h.total_households), 0) as avg_owned,
+                   SUM(h.total_households * h.pct_private_rent) / NULLIF(SUM(h.total_households), 0) as avg_priv_rent,
+                   SUM(h.total_households * h.pct_detached) / NULLIF(SUM(h.total_households), 0) as avg_det,
+                   SUM(h.total_households * h.pct_semi) / NULLIF(SUM(h.total_households), 0) as avg_semi,
+                   SUM(h.total_households * h.pct_terraced) / NULLIF(SUM(h.total_households), 0) as avg_terr,
+                   SUM(h.total_households * h.pct_flat) / NULLIF(SUM(h.total_households), 0) as avg_flat
             FROM core_census_lsoa h
             JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -285,8 +291,10 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # --- Household Size (TS017) ---
     hh_size_local = await db.execute(
         text("""
-            SELECT AVG(pct_1person) as pct_1person, AVG(pct_2person) as pct_2person,
-                   AVG(pct_3_4person) as pct_3_4person, AVG(pct_5plus) as pct_5plus
+            SELECT SUM(total_households * pct_1person) / NULLIF(SUM(total_households), 0) as pct_1person,
+                   SUM(total_households * pct_2person) / NULLIF(SUM(total_households), 0) as pct_2person,
+                   SUM(total_households * pct_3_4person) / NULLIF(SUM(total_households), 0) as pct_3_4person,
+                   SUM(total_households * pct_5plus) / NULLIF(SUM(total_households), 0) as pct_5plus
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -295,8 +303,10 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     hh_size_parent = await db.execute(
         text("""
-            SELECT AVG(h.pct_1person) as pct_1person, AVG(h.pct_2person) as pct_2person,
-                   AVG(h.pct_3_4person) as pct_3_4person, AVG(h.pct_5plus) as pct_5plus
+            SELECT SUM(h.total_households * h.pct_1person) / NULLIF(SUM(h.total_households), 0) as pct_1person,
+                   SUM(h.total_households * h.pct_2person) / NULLIF(SUM(h.total_households), 0) as pct_2person,
+                   SUM(h.total_households * h.pct_3_4person) / NULLIF(SUM(h.total_households), 0) as pct_3_4person,
+                   SUM(h.total_households * h.pct_5plus) / NULLIF(SUM(h.total_households), 0) as pct_5plus
             FROM core_census_lsoa h
             JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -338,9 +348,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         # then average ethnicity across those wards only.
         ethnicity_local = await db.execute(
             text("""
-                SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
-                       AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
-                       AVG(e.pct_other) as pct_other
+                SELECT SUM(e.total_pop * e.pct_white) / NULLIF(SUM(e.total_pop), 0) as pct_white,
+                       SUM(e.total_pop * e.pct_asian) / NULLIF(SUM(e.total_pop), 0) as pct_asian,
+                       SUM(e.total_pop * e.pct_black) / NULLIF(SUM(e.total_pop), 0) as pct_black,
+                       SUM(e.total_pop * e.pct_mixed) / NULLIF(SUM(e.total_pop), 0) as pct_mixed,
+                       SUM(e.total_pop * e.pct_other) / NULLIF(SUM(e.total_pop), 0) as pct_other
                 FROM core_census_ethnicity_ward e
                 WHERE e.ward_code IN (
                     SELECT DISTINCT p.ward_code FROM core_postcodes p
@@ -354,9 +366,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         # Fallback: average across all wards in the LAD
         ethnicity_local = await db.execute(
             text("""
-                SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
-                       AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
-                       AVG(e.pct_other) as pct_other
+                SELECT SUM(e.total_pop * e.pct_white) / NULLIF(SUM(e.total_pop), 0) as pct_white,
+                       SUM(e.total_pop * e.pct_asian) / NULLIF(SUM(e.total_pop), 0) as pct_asian,
+                       SUM(e.total_pop * e.pct_black) / NULLIF(SUM(e.total_pop), 0) as pct_black,
+                       SUM(e.total_pop * e.pct_mixed) / NULLIF(SUM(e.total_pop), 0) as pct_mixed,
+                       SUM(e.total_pop * e.pct_other) / NULLIF(SUM(e.total_pop), 0) as pct_other
                 FROM core_census_ethnicity_ward e
                 JOIN core_ward_boundaries wb ON wb.ward_code = e.ward_code
                 WHERE wb.lad_code = ANY(:local_lads)
@@ -367,9 +381,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     ethnicity_parent = await db.execute(
         text("""
-            SELECT AVG(e.pct_white) as pct_white, AVG(e.pct_asian) as pct_asian,
-                   AVG(e.pct_black) as pct_black, AVG(e.pct_mixed) as pct_mixed,
-                   AVG(e.pct_other) as pct_other
+            SELECT SUM(e.total_pop * e.pct_white) / NULLIF(SUM(e.total_pop), 0) as pct_white,
+                   SUM(e.total_pop * e.pct_asian) / NULLIF(SUM(e.total_pop), 0) as pct_asian,
+                   SUM(e.total_pop * e.pct_black) / NULLIF(SUM(e.total_pop), 0) as pct_black,
+                   SUM(e.total_pop * e.pct_mixed) / NULLIF(SUM(e.total_pop), 0) as pct_mixed,
+                   SUM(e.total_pop * e.pct_other) / NULLIF(SUM(e.total_pop), 0) as pct_other
             FROM core_census_ethnicity_ward e
             JOIN core_ward_boundaries wb ON wb.ward_code = e.ward_code
             WHERE wb.lad_code = ANY(:parent_lads)
@@ -409,10 +425,14 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     elif lsoa_codes and len(lsoa_codes) > 0:
         religion_local = await db.execute(
             text("""
-                SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
-                       AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
-                       AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
-                       AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+                SELECT SUM(r.total_pop * r.pct_christian) / NULLIF(SUM(r.total_pop), 0) as pct_christian,
+                       SUM(r.total_pop * r.pct_muslim) / NULLIF(SUM(r.total_pop), 0) as pct_muslim,
+                       SUM(r.total_pop * r.pct_hindu) / NULLIF(SUM(r.total_pop), 0) as pct_hindu,
+                       SUM(r.total_pop * r.pct_sikh) / NULLIF(SUM(r.total_pop), 0) as pct_sikh,
+                       SUM(r.total_pop * r.pct_jewish) / NULLIF(SUM(r.total_pop), 0) as pct_jewish,
+                       SUM(r.total_pop * r.pct_buddhist) / NULLIF(SUM(r.total_pop), 0) as pct_buddhist,
+                       SUM(r.total_pop * r.pct_no_religion) / NULLIF(SUM(r.total_pop), 0) as pct_no_religion,
+                       SUM(r.total_pop * r.pct_other) / NULLIF(SUM(r.total_pop), 0) as pct_other
                 FROM core_census_religion_ward r
                 WHERE r.ward_code IN (
                     SELECT DISTINCT p.ward_code FROM core_postcodes p
@@ -425,10 +445,14 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     else:
         religion_local = await db.execute(
             text("""
-                SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
-                       AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
-                       AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
-                       AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+                SELECT SUM(r.total_pop * r.pct_christian) / NULLIF(SUM(r.total_pop), 0) as pct_christian,
+                       SUM(r.total_pop * r.pct_muslim) / NULLIF(SUM(r.total_pop), 0) as pct_muslim,
+                       SUM(r.total_pop * r.pct_hindu) / NULLIF(SUM(r.total_pop), 0) as pct_hindu,
+                       SUM(r.total_pop * r.pct_sikh) / NULLIF(SUM(r.total_pop), 0) as pct_sikh,
+                       SUM(r.total_pop * r.pct_jewish) / NULLIF(SUM(r.total_pop), 0) as pct_jewish,
+                       SUM(r.total_pop * r.pct_buddhist) / NULLIF(SUM(r.total_pop), 0) as pct_buddhist,
+                       SUM(r.total_pop * r.pct_no_religion) / NULLIF(SUM(r.total_pop), 0) as pct_no_religion,
+                       SUM(r.total_pop * r.pct_other) / NULLIF(SUM(r.total_pop), 0) as pct_other
                 FROM core_census_religion_ward r
                 JOIN core_ward_boundaries wb ON wb.ward_code = r.ward_code
                 WHERE wb.lad_code = ANY(:local_lads)
@@ -439,10 +463,14 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     religion_parent = await db.execute(
         text("""
-            SELECT AVG(r.pct_christian) as pct_christian, AVG(r.pct_muslim) as pct_muslim,
-                   AVG(r.pct_hindu) as pct_hindu, AVG(r.pct_sikh) as pct_sikh,
-                   AVG(r.pct_jewish) as pct_jewish, AVG(r.pct_buddhist) as pct_buddhist,
-                   AVG(r.pct_no_religion) as pct_no_religion, AVG(r.pct_other) as pct_other
+            SELECT SUM(r.total_pop * r.pct_christian) / NULLIF(SUM(r.total_pop), 0) as pct_christian,
+                   SUM(r.total_pop * r.pct_muslim) / NULLIF(SUM(r.total_pop), 0) as pct_muslim,
+                   SUM(r.total_pop * r.pct_hindu) / NULLIF(SUM(r.total_pop), 0) as pct_hindu,
+                   SUM(r.total_pop * r.pct_sikh) / NULLIF(SUM(r.total_pop), 0) as pct_sikh,
+                   SUM(r.total_pop * r.pct_jewish) / NULLIF(SUM(r.total_pop), 0) as pct_jewish,
+                   SUM(r.total_pop * r.pct_buddhist) / NULLIF(SUM(r.total_pop), 0) as pct_buddhist,
+                   SUM(r.total_pop * r.pct_no_religion) / NULLIF(SUM(r.total_pop), 0) as pct_no_religion,
+                   SUM(r.total_pop * r.pct_other) / NULLIF(SUM(r.total_pop), 0) as pct_other
             FROM core_census_religion_ward r
             JOIN core_ward_boundaries wb ON wb.ward_code = r.ward_code
             WHERE wb.lad_code = ANY(:parent_lads)
@@ -477,9 +505,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
                        COUNT(*) as total
                 FROM core_schools s
-                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
                 WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                  AND lb.lsoa_code = ANY(:codes)
+                  AND p.lsoa_code = ANY(:codes)
             """),
             {"codes": lsoa_codes},
         )
@@ -489,9 +517,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             text("""
                 SELECT s.school_name, s.ofsted_rating, s.ks2_reading_pct, s.ks2_maths_pct
                 FROM core_schools s
-                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
                 WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                  AND lb.lsoa_code = ANY(:codes)
+                  AND p.lsoa_code = ANY(:codes)
                 ORDER BY s.school_name LIMIT 15
             """),
             {"codes": lsoa_codes},
@@ -549,9 +577,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
                        COUNT(*) as total
                 FROM core_schools s
-                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
                 WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                  AND lb.lsoa_code = ANY(:codes)
+                  AND p.lsoa_code = ANY(:codes)
             """),
             {"codes": lsoa_codes},
         )
@@ -561,9 +589,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             text("""
                 SELECT s.school_name, s.ofsted_rating, s.gcse_progress_8, s.gcse_attainment_8
                 FROM core_schools s
-                JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
                 WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                  AND lb.lsoa_code = ANY(:codes)
+                  AND p.lsoa_code = ANY(:codes)
                 ORDER BY s.school_name LIMIT 15
             """),
             {"codes": lsoa_codes},
@@ -854,8 +882,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             text("""
                 SELECT nf.facility_type, COUNT(*) as cnt
                 FROM core_nhs_facilities nf
-                JOIN core_lsoa_boundaries lb ON ST_Within(nf.geom, lb.geom)
-                WHERE lb.lsoa_code = ANY(:codes)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(nf.postcode, ' ', '')
+                WHERE p.lsoa_code = ANY(:codes)
                 GROUP BY nf.facility_type
             """),
             {"codes": lsoa_codes},
@@ -867,8 +895,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             text("""
                 SELECT nf.name, nf.facility_type
                 FROM core_nhs_facilities nf
-                JOIN core_lsoa_boundaries lb ON ST_Within(nf.geom, lb.geom)
-                WHERE lb.lsoa_code = ANY(:codes)
+                JOIN core_postcodes p ON p.postcode_compact = REPLACE(nf.postcode, ' ', '')
+                WHERE p.lsoa_code = ANY(:codes)
                 ORDER BY nf.name LIMIT 15
             """),
             {"codes": lsoa_codes},

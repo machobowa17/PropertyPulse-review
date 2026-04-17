@@ -276,7 +276,7 @@ def run(db_url: str) -> int:
                             VALUES %s
                             ON CONFLICT (inspire_id) DO NOTHING""",
                         batch,
-                        template="(%s, %s, ST_MakeValid(ST_GeomFromText(%s, 4326)), %s::timestamptz, %s::timestamptz)",
+                        template="(%s, %s, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(%s, 4326)), 3), %s::timestamptz, %s::timestamptz)",
                         page_size=_BATCH_SIZE,
                     )
                     batch = []

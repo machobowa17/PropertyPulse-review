@@ -181,13 +181,13 @@ async def fetch_property_market(
             """
             SELECT
                 SUM(total_households) AS total_households,
-                AVG(pct_owned) AS pct_owned,
-                AVG(pct_private_rent) AS pct_private_rent,
-                AVG(pct_social_rent) AS pct_social_rent,
-                AVG(pct_detached) AS pct_detached,
-                AVG(pct_semi) AS pct_semi,
-                AVG(pct_terraced) AS pct_terraced,
-                AVG(pct_flat) AS pct_flat
+                SUM(total_households * pct_owned) / NULLIF(SUM(total_households), 0) AS pct_owned,
+                SUM(total_households * pct_private_rent) / NULLIF(SUM(total_households), 0) AS pct_private_rent,
+                SUM(total_households * pct_social_rent) / NULLIF(SUM(total_households), 0) AS pct_social_rent,
+                SUM(total_households * pct_detached) / NULLIF(SUM(total_households), 0) AS pct_detached,
+                SUM(total_households * pct_semi) / NULLIF(SUM(total_households), 0) AS pct_semi,
+                SUM(total_households * pct_terraced) / NULLIF(SUM(total_households), 0) AS pct_terraced,
+                SUM(total_households * pct_flat) / NULLIF(SUM(total_households), 0) AS pct_flat
             FROM core_census_lsoa
             WHERE lsoa_code = ANY(:codes)
             """
@@ -200,13 +200,13 @@ async def fetch_property_market(
         text(
             """
             SELECT
-                AVG(c.pct_owned) AS pct_owned,
-                AVG(c.pct_private_rent) AS pct_private_rent,
-                AVG(c.pct_social_rent) AS pct_social_rent,
-                AVG(c.pct_detached) AS pct_detached,
-                AVG(c.pct_semi) AS pct_semi,
-                AVG(c.pct_terraced) AS pct_terraced,
-                AVG(c.pct_flat) AS pct_flat
+                SUM(c.total_households * c.pct_owned) / NULLIF(SUM(c.total_households), 0) AS pct_owned,
+                SUM(c.total_households * c.pct_private_rent) / NULLIF(SUM(c.total_households), 0) AS pct_private_rent,
+                SUM(c.total_households * c.pct_social_rent) / NULLIF(SUM(c.total_households), 0) AS pct_social_rent,
+                SUM(c.total_households * c.pct_detached) / NULLIF(SUM(c.total_households), 0) AS pct_detached,
+                SUM(c.total_households * c.pct_semi) / NULLIF(SUM(c.total_households), 0) AS pct_semi,
+                SUM(c.total_households * c.pct_terraced) / NULLIF(SUM(c.total_households), 0) AS pct_terraced,
+                SUM(c.total_households * c.pct_flat) / NULLIF(SUM(c.total_households), 0) AS pct_flat
             FROM core_census_lsoa c
             JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -872,20 +872,20 @@ async def fetch_property_market(
     epc_local = await db.execute(
         text(
             """
-            SELECT AVG(avg_energy_score) AS avg_energy_score,
-                   AVG(pct_a) AS pct_a,
-                   AVG(pct_b) AS pct_b,
-                   AVG(pct_c) AS pct_c,
-                   AVG(pct_d) AS pct_d,
-                   AVG(pct_e) AS pct_e,
-                   AVG(pct_f) AS pct_f,
-                   AVG(pct_g) AS pct_g,
-                   AVG(heat_gas_pct) AS heat_gas_pct,
-                   AVG(heat_electric_pct) AS heat_electric_pct,
-                   AVG(heat_oil_pct) AS heat_oil_pct,
-                   AVG(heat_district_pct) AS heat_district_pct,
-                   AVG(heat_other_pct) AS heat_other_pct,
-                   AVG(heat_none_pct) AS heat_none_pct
+            SELECT SUM(total_certs * avg_energy_score) / NULLIF(SUM(total_certs), 0) AS avg_energy_score,
+                   SUM(total_certs * pct_a) / NULLIF(SUM(total_certs), 0) AS pct_a,
+                   SUM(total_certs * pct_b) / NULLIF(SUM(total_certs), 0) AS pct_b,
+                   SUM(total_certs * pct_c) / NULLIF(SUM(total_certs), 0) AS pct_c,
+                   SUM(total_certs * pct_d) / NULLIF(SUM(total_certs), 0) AS pct_d,
+                   SUM(total_certs * pct_e) / NULLIF(SUM(total_certs), 0) AS pct_e,
+                   SUM(total_certs * pct_f) / NULLIF(SUM(total_certs), 0) AS pct_f,
+                   SUM(total_certs * pct_g) / NULLIF(SUM(total_certs), 0) AS pct_g,
+                   SUM(total_certs * heat_gas_pct) / NULLIF(SUM(total_certs), 0) AS heat_gas_pct,
+                   SUM(total_certs * heat_electric_pct) / NULLIF(SUM(total_certs), 0) AS heat_electric_pct,
+                   SUM(total_certs * heat_oil_pct) / NULLIF(SUM(total_certs), 0) AS heat_oil_pct,
+                   SUM(total_certs * heat_district_pct) / NULLIF(SUM(total_certs), 0) AS heat_district_pct,
+                   SUM(total_certs * heat_other_pct) / NULLIF(SUM(total_certs), 0) AS heat_other_pct,
+                   SUM(total_certs * heat_none_pct) / NULLIF(SUM(total_certs), 0) AS heat_none_pct
             FROM core_epc_lsoa
             WHERE lsoa_code = ANY(:codes)
             """
@@ -897,14 +897,14 @@ async def fetch_property_market(
     epc_parent = await db.execute(
         text(
             """
-            SELECT AVG(e.avg_energy_score) AS avg_score,
-                   AVG(e.pct_a) AS pct_a,
-                   AVG(e.pct_b) AS pct_b,
-                   AVG(e.pct_c) AS pct_c,
-                   AVG(e.pct_d) AS pct_d,
-                   AVG(e.pct_e) AS pct_e,
-                   AVG(e.pct_f) AS pct_f,
-                   AVG(e.pct_g) AS pct_g
+            SELECT SUM(e.total_certs * e.avg_energy_score) / NULLIF(SUM(e.total_certs), 0) AS avg_score,
+                   SUM(e.total_certs * e.pct_a) / NULLIF(SUM(e.total_certs), 0) AS pct_a,
+                   SUM(e.total_certs * e.pct_b) / NULLIF(SUM(e.total_certs), 0) AS pct_b,
+                   SUM(e.total_certs * e.pct_c) / NULLIF(SUM(e.total_certs), 0) AS pct_c,
+                   SUM(e.total_certs * e.pct_d) / NULLIF(SUM(e.total_certs), 0) AS pct_d,
+                   SUM(e.total_certs * e.pct_e) / NULLIF(SUM(e.total_certs), 0) AS pct_e,
+                   SUM(e.total_certs * e.pct_f) / NULLIF(SUM(e.total_certs), 0) AS pct_f,
+                   SUM(e.total_certs * e.pct_g) / NULLIF(SUM(e.total_certs), 0) AS pct_g
             FROM core_epc_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)

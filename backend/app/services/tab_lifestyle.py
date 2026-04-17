@@ -464,14 +464,14 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
 
     # --- Cycling ---
     cycling_result = await db.execute(
-        text("SELECT AVG(pct_cycling) as pct_cycling FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)"),
+        text("SELECT SUM(total_workers * pct_cycling) / NULLIF(SUM(total_workers), 0) as pct_cycling FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)"),
         {"codes": lsoa_codes},
     )
     cycling_row = cycling_result.mappings().first()
     if cycling_row and cycling_row["pct_cycling"] is not None:
         cycling_parent = await db.execute(
             text("""
-                SELECT AVG(c.pct_cycling) as avg_pct
+                SELECT SUM(c.total_workers * c.pct_cycling) / NULLIF(SUM(c.total_workers), 0) as avg_pct
                 FROM core_cycling_lsoa c
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
@@ -489,9 +489,11 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     # --- Commute Distance (TS058) ---
     commute_result = await db.execute(
         text("""
-            SELECT AVG(pct_lt2km) as pct_lt2km, AVG(pct_2_10km) as pct_2_10km,
-                   AVG(pct_10_30km) as pct_10_30km, AVG(pct_30plus) as pct_30plus,
-                   AVG(pct_wfh) as pct_wfh
+            SELECT SUM(total_workers * pct_lt2km) / NULLIF(SUM(total_workers), 0) as pct_lt2km,
+                   SUM(total_workers * pct_2_10km) / NULLIF(SUM(total_workers), 0) as pct_2_10km,
+                   SUM(total_workers * pct_10_30km) / NULLIF(SUM(total_workers), 0) as pct_10_30km,
+                   SUM(total_workers * pct_30plus) / NULLIF(SUM(total_workers), 0) as pct_30plus,
+                   SUM(total_workers * pct_wfh) / NULLIF(SUM(total_workers), 0) as pct_wfh
             FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -501,8 +503,9 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     if commute_row and commute_row["pct_wfh"] is not None:
         commute_parent = await db.execute(
             text("""
-                SELECT AVG(c.pct_wfh) as pct_wfh, AVG(c.pct_lt2km) as pct_lt2km,
-                       AVG(c.pct_10_30km) as pct_10_30km
+                SELECT SUM(c.total_workers * c.pct_wfh) / NULLIF(SUM(c.total_workers), 0) as pct_wfh,
+                       SUM(c.total_workers * c.pct_lt2km) / NULLIF(SUM(c.total_workers), 0) as pct_lt2km,
+                       SUM(c.total_workers * c.pct_10_30km) / NULLIF(SUM(c.total_workers), 0) as pct_10_30km
                 FROM core_census_lsoa c
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)

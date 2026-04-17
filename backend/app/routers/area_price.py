@@ -109,7 +109,7 @@ async def get_price_history(
             text("""
                 SELECT year::text AS year,
                        bedrooms,
-                       ROUND(AVG(avg_price))::int AS avg_price,
+                       ROUND(SUM(avg_price * transaction_count) / NULLIF(SUM(transaction_count), 0))::int AS avg_price,
                        SUM(transaction_count) AS transaction_count
                 FROM core_price_by_bedrooms_lad
                 WHERE lad_code = ANY(:lads)

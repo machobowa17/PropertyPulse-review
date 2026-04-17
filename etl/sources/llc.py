@@ -301,7 +301,7 @@ def run(db_url: str) -> int:
                                     (inspire_id, authority, charge_type, geom, valid_from, begin_lifespan)
                                 VALUES %s""",
                             batch,
-                            template="(%s, %s, %s, ST_MakeValid(ST_GeomFromText(%s, 4326)), %s::timestamptz, %s::timestamptz)",
+                            template="(%s, %s, %s, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(%s, 4326)), 3), %s::timestamptz, %s::timestamptz)",
                             page_size=_BATCH_SIZE,
                         )
                         batch = []
@@ -317,7 +317,7 @@ def run(db_url: str) -> int:
                                 (inspire_id, authority, charge_type, geom, valid_from, begin_lifespan)
                             VALUES %s""",
                         batch,
-                        template="(%s, %s, %s, ST_MakeValid(ST_GeomFromText(%s, 4326)), %s::timestamptz, %s::timestamptz)",
+                        template="(%s, %s, %s, ST_CollectionExtract(ST_MakeValid(ST_GeomFromText(%s, 4326)), 3), %s::timestamptz, %s::timestamptz)",
                         page_size=_BATCH_SIZE,
                     )
                 conn.commit()

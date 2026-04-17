@@ -614,17 +614,17 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     # Bible: Average EPC rating, % below Band C
     epc_result = await db.execute(
         text("""
-            SELECT AVG(avg_energy_score) as avg_energy_score,
-                   AVG(pct_rating_a_b) as pct_rating_a_b,
-                   AVG(pct_rating_c) as pct_rating_c,
-                   AVG(pct_rating_d) as pct_rating_d,
-                   AVG(pct_rating_e_g) as pct_rating_e_g,
-                   AVG(avg_co2_emissions) as avg_co2_emissions,
+            SELECT SUM(total_certs * avg_energy_score) / NULLIF(SUM(total_certs), 0) as avg_energy_score,
+                   SUM(total_certs * pct_rating_a_b) / NULLIF(SUM(total_certs), 0) as pct_rating_a_b,
+                   SUM(total_certs * pct_rating_c) / NULLIF(SUM(total_certs), 0) as pct_rating_c,
+                   SUM(total_certs * pct_rating_d) / NULLIF(SUM(total_certs), 0) as pct_rating_d,
+                   SUM(total_certs * pct_rating_e_g) / NULLIF(SUM(total_certs), 0) as pct_rating_e_g,
+                   SUM(total_certs * avg_co2_emissions) / NULLIF(SUM(total_certs), 0) as avg_co2_emissions,
                    SUM(total_certs) as total_certs,
-                   AVG(heat_gas_pct) as heat_gas_pct,
-                   AVG(heat_electric_pct) as heat_electric_pct,
-                   AVG(heat_oil_pct) as heat_oil_pct,
-                   AVG(heat_district_pct) as heat_district_pct
+                   SUM(total_certs * heat_gas_pct) / NULLIF(SUM(total_certs), 0) as heat_gas_pct,
+                   SUM(total_certs * heat_electric_pct) / NULLIF(SUM(total_certs), 0) as heat_electric_pct,
+                   SUM(total_certs * heat_oil_pct) / NULLIF(SUM(total_certs), 0) as heat_oil_pct,
+                   SUM(total_certs * heat_district_pct) / NULLIF(SUM(total_certs), 0) as heat_district_pct
             FROM core_epc_lsoa WHERE lsoa_code = ANY(:codes)
         """),
         {"codes": lsoa_codes},
@@ -634,9 +634,9 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     # Parent EPC average (parent comparison group)
     epc_parent = await db.execute(
         text("""
-            SELECT AVG(avg_energy_score) as avg_score,
-                   AVG(pct_rating_a_b) as avg_ab,
-                   AVG(pct_rating_c) as avg_c
+            SELECT SUM(e.total_certs * e.avg_energy_score) / NULLIF(SUM(e.total_certs), 0) as avg_score,
+                   SUM(e.total_certs * e.pct_rating_a_b) / NULLIF(SUM(e.total_certs), 0) as avg_ab,
+                   SUM(e.total_certs * e.pct_rating_c) / NULLIF(SUM(e.total_certs), 0) as avg_c
             FROM core_epc_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)

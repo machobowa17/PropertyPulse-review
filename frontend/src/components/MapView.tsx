@@ -242,7 +242,9 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
   // Store choropleth event handlers for cleanup
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cleanupHandlersRef = useRef<{ clickHandler: any; enterHandler: any; leaveHandler: any } | null>(null);
+  const cleanupHandlersRef = useRef<{ clickHandler: any; enterHandler: any; leaveHandler: any; moveHandler?: any } | null>(null);
+  const hoveredFeatureIdRef = useRef<string | null>(null);
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
 
   // Keep refs so the map on('load') callback and moveend handler can read current values
   const activeTabRef = useRef(activeTab);
@@ -718,14 +720,26 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       const legendUnit = CHOROPLETH_UNITS[meta.layer] || meta.unit || '';
 
       // Build match expression: quantile → colour
+      // Determine actual bucket count from data (may be <5 if few unique values)
+      const usedBuckets = new Set<number>();
+      for (const f of choroplethData.features) {
+        const q = f.properties?.quantile;
+        if (typeof q === 'number' && q >= 0) usedBuckets.add(q);
+      }
+      const maxBucket = usedBuckets.size > 0 ? Math.max(...usedBuckets) + 1 : 5;
+      const bucketCount = Math.min(Math.max(maxBucket, 1), 5);
       const matchExpr: unknown[] = ['match', ['get', 'quantile']];
-      for (let i = 0; i < 5; i++) matchExpr.push(i, ramp[i]);
+      for (let i = 0; i < bucketCount; i++) {
+        // Map bucket i to evenly-spaced colour from the 5-colour ramp
+        const colourIdx = bucketCount < 5 ? Math.round(i * 4 / (bucketCount - 1 || 1)) : i;
+        matchExpr.push(i, ramp[colourIdx]);
+      }
       matchExpr.push(noDataColour); // fallback for -1 / null
 
       try {
         // R2: use URL when available so MapLibre fetches + parses GeoJSON off the main thread
         const sourceData = choroplethUrl ?? (choroplethData as GeoJSON.FeatureCollection);
-        m.addSource(CHORO_SOURCE, { type: 'geojson', data: sourceData });
+        m.addSource(CHORO_SOURCE, { type: 'geojson', data: sourceData, promoteId: 'lsoa_code' });
 
         // Insert below boundary layers so they remain visible on top
         const beforeLayer = m.getLayer('lsoa-boundary-fill')
@@ -738,7 +752,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           id: CHORO_FILL,
           type: 'fill',
           source: CHORO_SOURCE,
-          paint: { 'fill-color': matchExpr as unknown as string, 'fill-opacity': 0.55 },
+          paint: {
+            'fill-color': matchExpr as unknown as string,
+            'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.55] as unknown as number,
+          },
         }, beforeLayer);
 
         m.addLayer({
@@ -776,10 +793,67 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       };
       m.on('click', CHORO_FILL, clickHandler);
 
-      // Cursor change on hover
+      // Hover highlight via feature-state + tooltip
       const enterHandler = () => { try { m.getCanvas().style.cursor = 'pointer'; } catch { /* */ } };
-      const leaveHandler = () => { try { m.getCanvas().style.cursor = ''; } catch { /* */ } };
+      const moveHandler = (e: maplibregl.MapMouseEvent) => {
+        try {
+          if (!m.getLayer(CHORO_FILL)) return;
+          const features = m.queryRenderedFeatures(e.point, { layers: [CHORO_FILL] });
+
+          // Clear previous hover
+          if (hoveredFeatureIdRef.current !== null) {
+            m.setFeatureState({ source: CHORO_SOURCE, id: hoveredFeatureIdRef.current }, { hover: false });
+            hoveredFeatureIdRef.current = null;
+          }
+          if (hoverPopupRef.current) {
+            hoverPopupRef.current.remove();
+            hoverPopupRef.current = null;
+          }
+
+          if (!features.length) {
+            m.getCanvas().style.cursor = '';
+            return;
+          }
+
+          const feat = features[0];
+          const fid = feat.properties?.lsoa_code ?? (feat.id != null ? String(feat.id) : null);
+          if (fid) {
+            hoveredFeatureIdRef.current = fid;
+            m.setFeatureState({ source: CHORO_SOURCE, id: fid }, { hover: true });
+          }
+
+          // Show tooltip
+          const p = feat.properties;
+          if (p) {
+            const valStr = p.value != null
+              ? (meta.layer === 'epc_score'
+                  ? `${Number(p.value).toFixed(0)} ${legendUnit}`
+                  : meta.layer === 'median_rent'
+                    ? `${legendUnit}${Number(p.value).toLocaleString('en-GB')}/mo`
+                    : `${legendUnit}${Number(p.value).toLocaleString('en-GB')}`)
+              : 'No data';
+            hoverPopupRef.current = new maplibregl.Popup({ maxWidth: '200px', closeButton: false, closeOnClick: false })
+              .setLngLat(e.lngLat)
+              .setHTML(`<div style="font-size:12px"><strong>${esc(String(p.lsoa_name || p.lsoa_code || ''))}</strong><br>${valStr}</div>`)
+              .addTo(m);
+          }
+        } catch { /* map may be disposed */ }
+      };
+      const leaveHandler = () => {
+        try {
+          m.getCanvas().style.cursor = '';
+          if (hoveredFeatureIdRef.current !== null) {
+            m.setFeatureState({ source: CHORO_SOURCE, id: hoveredFeatureIdRef.current }, { hover: false });
+            hoveredFeatureIdRef.current = null;
+          }
+          if (hoverPopupRef.current) {
+            hoverPopupRef.current.remove();
+            hoverPopupRef.current = null;
+          }
+        } catch { /* */ }
+      };
       m.on('mouseenter', CHORO_FILL, enterHandler);
+      m.on('mousemove', CHORO_FILL, moveHandler);
       m.on('mouseleave', CHORO_FILL, leaveHandler);
 
       // Floating legend
@@ -857,7 +931,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       choroplethLegendRef.current = legend;
 
       // Store handlers for cleanup
-      cleanupHandlersRef.current = { clickHandler, enterHandler, leaveHandler };
+      cleanupHandlersRef.current = { clickHandler, enterHandler, leaveHandler, moveHandler };
     }
 
     return () => {
@@ -866,10 +940,16 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         try {
           map.off('click', CHORO_FILL, h.clickHandler);
           map.off('mouseenter', CHORO_FILL, h.enterHandler);
+          if (h.moveHandler) map.off('mousemove', CHORO_FILL, h.moveHandler);
           map.off('mouseleave', CHORO_FILL, h.leaveHandler);
         } catch { /* map may be removed */ }
         cleanupHandlersRef.current = null;
       }
+      if (hoverPopupRef.current) {
+        hoverPopupRef.current.remove();
+        hoverPopupRef.current = null;
+      }
+      hoveredFeatureIdRef.current = null;
       cleanup();
     };
   }, [choroplethData, choroplethUrl]);
@@ -918,6 +998,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       center: mapCenter,
       zoom: mapZoom,
       attributionControl: { compact: true },
+      cooperativeGestures: window.matchMedia('(pointer: coarse)').matches,
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');

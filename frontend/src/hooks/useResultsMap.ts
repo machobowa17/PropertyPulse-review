@@ -136,37 +136,41 @@ export function useResultsMap({
     metricElementRefs.current[metricId] = node;
   }, []);
 
-  // Scroll-based metric follow (desktop only)
+  // Scroll-based metric follow via IntersectionObserver (desktop only)
   useEffect(() => {
     if (!isDesktop || !showMap || mapFocusMode === 'manual' || allMetrics.length === 0) return;
-    let frame = 0;
-    const updateActiveMetricFromScroll = () => {
-      frame = 0;
-      const anchor = Math.max(160, window.innerHeight * 0.35);
-      const candidates = allMetrics
-        .map((m) => {
-          const el = metricElementRefs.current[m.id];
-          if (!el) return null;
-          const rect = el.getBoundingClientRect();
-          if (rect.bottom < 120 || rect.top > window.innerHeight * 0.82) return null;
-          return { metricId: m.id, distance: Math.abs(rect.top - anchor), top: rect.top };
-        })
-        .filter((item): item is { metricId: string; distance: number; top: number } => item !== null)
-        .sort((a, b) => a.distance - b.distance || a.top - b.top);
-      const nextMetricId = candidates[0]?.metricId ?? null;
-      if (!nextMetricId || nextMetricId === activeScrollMetricIdRef.current) return;
-      activeScrollMetricIdRef.current = nextMetricId;
-      focusMetricById(nextMetricId, 'scroll');
-    };
-    const requestUpdate = () => { if (frame) return; frame = window.requestAnimationFrame(updateActiveMetricFromScroll); };
-    requestUpdate();
-    window.addEventListener('scroll', requestUpdate, { passive: true });
-    window.addEventListener('resize', requestUpdate);
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', requestUpdate);
-      window.removeEventListener('resize', requestUpdate);
-    };
+
+    const visibleIds = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const mid = (entry.target as HTMLElement).dataset.metricId;
+          if (!mid) continue;
+          if (entry.isIntersecting) visibleIds.add(mid);
+          else visibleIds.delete(mid);
+        }
+        // Pick the first visible metric in document order (matches allMetrics order)
+        let nextMetricId: string | null = null;
+        for (const m of allMetrics) {
+          if (visibleIds.has(m.id)) { nextMetricId = m.id; break; }
+        }
+        if (!nextMetricId || nextMetricId === activeScrollMetricIdRef.current) return;
+        activeScrollMetricIdRef.current = nextMetricId;
+        focusMetricById(nextMetricId, 'scroll');
+      },
+      { rootMargin: '-35% 0px -35% 0px', threshold: 0 },
+    );
+
+    // Observe all registered metric elements
+    for (const m of allMetrics) {
+      const el = metricElementRefs.current[m.id];
+      if (el) {
+        el.dataset.metricId = m.id;
+        observer.observe(el);
+      }
+    }
+
+    return () => { observer.disconnect(); };
   }, [allMetrics, focusMetricById, isDesktop, mapFocusMode, showMap]);
 
   // Compute focus label/reason for MapLayerControl
