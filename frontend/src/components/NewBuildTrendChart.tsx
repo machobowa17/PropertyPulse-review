@@ -18,7 +18,7 @@ export default function NewBuildTrendChart({ trend }: Props) {
     <div className="bg-surface rounded-xl p-3 space-y-1 mt-2">
       <h4 className="text-xs font-semibold text-ink-muted">New Build % of Sales by Year</h4>
       <div className="h-[180px]">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barSize={14}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis

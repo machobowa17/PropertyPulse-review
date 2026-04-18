@@ -234,7 +234,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full text-left group hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:items-center lg:gap-4 lg:px-5 lg:py-3.5 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full text-left group hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:items-center lg:gap-4 lg:px-5 lg:py-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {/* Metric */}
         <div className="flex items-center gap-3 min-w-0">
@@ -244,7 +244,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           <div className="min-w-0">
             <span className="text-sm font-semibold text-ink truncate block">{metric.name}</span>
             {metric.decision_question && (
-              <span className="text-[10px] text-ink-faint/60 truncate block">{metric.decision_question}</span>
+              <span className="text-[10px] text-ink-muted truncate block">{metric.decision_question}</span>
             )}
           </div>
         </div>
@@ -312,7 +312,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full flex items-center gap-3 p-4 text-left group lg:hidden ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-3 p-4 text-left group lg:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
         <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${colours.bg}`}>
           <Icon className={`w-5 h-5 ${colours.text}`} />
@@ -320,7 +320,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
           {metric.decision_question && (
-            <div className="text-[10px] text-ink-faint/60 truncate">{metric.decision_question}</div>
+            <div className="text-[10px] text-ink-muted truncate">{metric.decision_question}</div>
           )}
           <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
             <span className="text-xl font-bold font-mono text-ink tracking-tight">
@@ -416,9 +416,15 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
   );
 }
 
-/** Render _note entries from details */
+/** Render _note entries from details (deduplicated by text) */
 function DataNotes({ details }: { details: Record<string, unknown> }) {
-  const notes = Object.entries(details).filter(([k, v]) => k.endsWith('_note') && typeof v === 'string');
+  const seen = new Set<string>();
+  const notes = Object.entries(details).filter(([k, v]) => {
+    if (!k.endsWith('_note') || typeof v !== 'string') return false;
+    if (seen.has(v)) return false;
+    seen.add(v);
+    return true;
+  });
   if (notes.length === 0) return null;
   return (
     <div className="mt-3">

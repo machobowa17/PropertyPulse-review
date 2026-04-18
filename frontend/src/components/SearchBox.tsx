@@ -73,6 +73,7 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
 
   useEffect(() => {
     setRecentSearches(readRecentSearches());
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, []);
 
   useEffect(() => {
@@ -216,7 +217,8 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          onFocus={() => {
+          onFocus={(e) => {
+            e.target.select();
             setRecentSearches(readRecentSearches());
             setShowDropdown(true);
           }}
@@ -234,7 +236,7 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
         {isLg && (
           <button
             type="submit"
-            className={`absolute right-2.5 top-1/2 -translate-y-1/2 font-semibold text-sm active:scale-95 transition-all flex items-center gap-2 ${
+            className={`absolute right-2.5 top-1/2 -translate-y-1/2 font-semibold text-sm active:scale-95 transition-all flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               isDark
                 ? 'h-11 px-6 rounded-xl bg-white text-[#0c0c0e] hover:bg-white/90'
                 : 'h-10 px-6 rounded-xl bg-brand-600 text-white hover:bg-brand-700'

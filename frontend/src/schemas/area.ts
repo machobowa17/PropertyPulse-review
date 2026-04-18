@@ -13,35 +13,34 @@ import { z } from 'zod';
 // ── Sub-object schemas ─────────────────────────────────────────────────────
 
 const MetricMapBindingSchema = z.object({
-  layer: z.string(),
-  label: z.string().optional(),
-});
+  type: z.string(),
+}).passthrough();
 
 const MetricRegistryMetaSchema = z.object({
   short_label: z.string(),
   section_id: z.string().optional().nullable(),
   value_type: z.string().optional().nullable(),
-});
+}).passthrough();
 
 const MetricHeadlineSchema = z.object({
-  formatted: z.string().nullable(),
-  parent_formatted: z.string().nullable().optional(),
-});
+  value: z.union([z.number(), z.string()]).nullable(),
+  unit: z.string(),
+}).passthrough();
 
 const MetricComparisonSchema = z.object({
-  flag: z.string().nullable(),
   status: z.string(),
-});
+  comparison_flag: z.string().nullable().optional(),
+}).passthrough();
 
 const MetricTrendSchema = z.object({
   status: z.string(),
   direction: z.string().nullable().optional(),
   value: z.number().nullable().optional(),
-});
+}).passthrough();
 
 const MetricCapsuleSchema = z.object({
-  label: z.string(),
-  colour: z.string(),
+  text: z.string().optional(),
+  tone: z.string().optional(),
 }).nullable();
 
 // ── Metric schema — details is loosely typed (Record<string, unknown>) ─────
@@ -55,7 +54,7 @@ export const MetricSchema = z.object({
   comparison_flag: z.string().nullable(),
   comparison_status: z.string(),
   trend_status: z.string(),
-  map_binding: z.union([z.string(), MetricMapBindingSchema]).nullable().optional(),
+  map_binding: z.union([z.string(), MetricMapBindingSchema, z.null()]).optional(),
   decision_question: z.string().nullable().optional(),
   interpretation_direction: z.string().nullable().optional(),
   quality_notes: z.string().nullable().optional(),

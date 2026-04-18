@@ -54,7 +54,7 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
 
       {/* Radar chart */}
       <div className="h-[260px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <RadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
             <PolarGrid stroke="#e5e7eb" />
             <PolarAngleAxis

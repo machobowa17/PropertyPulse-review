@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI, Request
-from fastapi.exceptions import HTTPException
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -68,7 +68,8 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # X-XSS-Protection intentionally omitted — deprecated; modern browsers ignore it
+    # and in some edge cases it can introduce XSS via selective-blocking attacks.
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     # CSP is intentionally omitted here — this is a JSON API, not a page-serving endpoint.
@@ -91,6 +92,16 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     else:
         content = {"error": "HTTP_ERROR", "detail": str(detail) if detail else "An error occurred"}
     return JSONResponse(status_code=exc.status_code, content=content)
+
+# ---------------------------------------------------------------------------
+# Validation error handler — return 422 with field-level detail, not 500
+# ---------------------------------------------------------------------------
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "VALIDATION_ERROR", "detail": exc.errors()},
+    )
 
 # ---------------------------------------------------------------------------
 # Global exception handler — never leak tracebacks to clients

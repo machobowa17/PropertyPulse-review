@@ -42,7 +42,7 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
     <div className="bg-surface rounded-xl p-4 space-y-2 mt-2">
       <h4 className="text-sm font-semibold text-ink">Price by Property Type</h4>
       <div className="h-[180px]">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barSize={32}>
             <XAxis
               dataKey="name"

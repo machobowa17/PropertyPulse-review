@@ -133,7 +133,7 @@ def run_tests():
             warn("No comparison tooltips found", "May be expected if not all metrics have parent comparison")
 
         # Check decision question displayed
-        decision_qs = page.locator('[class*="border-l-"][class*="rounded-2xl"] span[class*="text-ink-faint/60"]')
+        decision_qs = page.locator('[class*="border-l-"][class*="rounded-2xl"] [class*="text-ink-muted"][class*="truncate"]')
         check("Decision questions rendered", decision_qs.count() >= 3, f"found {decision_qs.count()}")
 
         # Check persona pills (So What / Watch Out)

@@ -267,7 +267,7 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
 
       {/* ref on the wrapper lets ResizeObserver give us real pixel dimensions */}
       <div ref={containerRef} className="h-[260px]">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart
             data={chartData}
             margin={LC_MARGIN}

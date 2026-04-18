@@ -1,8 +1,8 @@
 # PropertyPulse — Complete Handover Document
 
-**Date:** 2026-04-16 (session 35)
+**Date:** 2026-04-17 (session 40)
 **Branch:** `main`
-**Status:** Production-ready for England + Wales. Phase 2 (22 items) + Phase 2.5 (11 items) + Phase 2.6 (4 critical fixes) + Phase 2.7 (13 hardening fixes) + Phase 2.8 (H14-H16 + brutal test suite) ALL COMPLETE. Public review repo: https://github.com/machobowa17/PropertyPulse-review. Next: AWS deployment (Phase 3).
+**Status:** Production-ready for England + Wales. ALL review phases complete (Phases 1–5). AWS deployed (EC2 t4g.small, eu-west-2). 75 Google AI Studio review items across 5 rounds — all addressed. Live at https://paintedstock.com. Public review repo: https://github.com/machobowa17/PropertyPulse-review.
 
 ---
 
@@ -19,9 +19,10 @@
 9. [ETL Pipeline](#9-etl-pipeline)
 10. [Testing](#10-testing)
 11. [Known Issues & Data Gaps](#11-known-issues--data-gaps)
-12. [Work Queue](#12-work-queue)
-13. [Inviolable Rules](#13-inviolable-rules)
-14. [Session History](#14-session-history)
+12. [Google AI Studio Review Summary](#12-google-ai-studio-review-summary)
+13. [Work Queue](#13-work-queue)
+14. [Inviolable Rules](#14-inviolable-rules)
+15. [Session History](#15-session-history)
 
 ---
 
@@ -50,7 +51,7 @@ A PDF report generator (`/api/v1/report`) produces a downloadable report for any
 | Layer | Tech | Version |
 |-------|------|---------|
 | Backend | FastAPI + Uvicorn | Python 3.11+ |
-| Database | PostgreSQL 16 + PostGIS | ~20 GB |
+| Database | PostgreSQL 16 + PostGIS | ~30+ GB |
 | Cache | Redis | Default config |
 | Frontend | React 19 + TypeScript 5.9 | Vite 8 dev server |
 | Charts | Recharts 3.8 | |
@@ -146,13 +147,23 @@ frontend/
       tabExplainers.ts   — TAB_EXPLAINERS per tab
       sectionSummary.ts  — buildSectionSummary() for metrics panel chip
 
+docker/
+  api/Dockerfile         — Backend API Docker image
+  frontend/Dockerfile    — Frontend nginx Docker image
+
+deploy/                  — Deployment scripts for EC2
+
 sql/
   001_schema.sql         — Original schema (historical; some tables since dropped)
   002_remaining_tables.sql
   003_transactions.sql
 
-sessions/                — Session notes from all 10 development sessions
-QUEUE.md                 — Pending work queue
+sessions/                — Session notes (sessions 1-10)
+QUEUE.md                 — Master work queue (single source of truth)
+HANDOVER.md              — This file — cold reader entry point
+test_brutal.py           — 447-test brutal stress suite
+test_playwright_comprehensive.py — 123 Playwright browser tests
+test_metric_refactor.py  — 21 metric refactor tests
 ```
 
 ---
@@ -196,10 +207,15 @@ python3 pipeline.py --status            # Check run history
 python3 migrate.py                      # Run pending SQL migrations
 ```
 
+### Docker Compose (production)
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
 ### URLs
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000/api/v1/
-- Health check: http://localhost:8000/api/v1/health
+- **Local dev:** http://localhost:5173 (frontend), http://localhost:8000/api/v1/ (API)
+- **Production:** https://paintedstock.com (EC2 t4g.small, eu-west-2)
+- Health check: `/api/v1/health`
 
 ---
 
@@ -438,6 +454,16 @@ server: { port: 5173, proxy: { '/api': 'http://localhost:8000' } }
 - Security headers: X-Frame-Options DENY, CSP, no server_tokens
 - Asset caching: 1 year for static files
 
+### AWS Deployment
+- **Instance:** EC2 t4g.small (ARM64 Graviton, 2 vCPU, 2 GB RAM), eu-west-2
+- **Storage:** 80 GB gp3 EBS
+- **IP:** Elastic IP 16.60.67.248
+- **Domain:** paintedstock.com (Cloudflare DNS)
+- **TLS:** Let's Encrypt (auto-renew via certbot)
+- **Stack:** Docker Compose — 4 containers: API (FastAPI/Uvicorn), frontend (nginx), Redis, PostgreSQL (PostGIS)
+- **Deployment:** Manual rsync + `docker compose up --build -d` (CI/CD pending)
+- Full spec: `memory/deployment.md`
+
 ---
 
 ## 9. ETL Pipeline
@@ -495,9 +521,10 @@ See `etl/DATA_SOURCES.md` for the complete list of 31 data sources with URLs, li
 ## 10. Testing
 
 ### Playwright Browser Tests
-- **Main suite:** `test_playwright_comprehensive.py` — **117/123 passing** (1 Scotland, 1 chart toggle, 2 Governance timing, 2 warnings — 0 regressions)
+- **Main suite:** `test_playwright_comprehensive.py` — **117/123 passing** (4 pre-existing: 1 Scotland, 1 chart toggle, 2 Governance timing; 2 warnings — 0 regressions)
   - 10 sections: all 5 tabs × 3 search types, charts, map, null handling, tab switching, responsive, errors, navigation
 - **Metric refactor suite:** `test_metric_refactor.py` — **21/21 passing**
+- **Brutal test suite:** `test_brutal.py` — **447/447 passing** (13 sections: adversarial inputs, math correctness, boundary integrity, ethnicity accuracy, choropleth layers, report PDF, cross-search consistency, 5×5 tab×search matrix, Playwright UI)
 - **Map tests:** `test_map_e2e.py` (needs 8s wait for sold markers), `test_map_edge_cases.py`
 - **Isochrone:** `test_map_isochrone.py`
 
@@ -554,24 +581,49 @@ The pipeline module (`etl/sources/epc_domestic.py`) handles all 4 phases automat
 - `core_flood_zones` — 3,536,992 rows ✓ (EA GeoPackage, FZ2/FZ3 bug fixed, session 27)
 
 ### Data Gaps (Not Code Bugs)
-- **Whitby/North Yorkshire:** E06000065 missing VOA rent data (new unitary authority since April 2023; VOA still uses old Scarborough LAD code)
-- **Scotland/Wales:** No postcode-level data (England-only postcode table in core_postcodes)
+- **Whitby/North Yorkshire:** E06000065 missing VOA rent data (new unitary authority since April 2023; VOA still uses old Scarborough LAD code). Also not in `core_place_boundaries_union` — Playwright tests skip Whitby null section.
+- **Scotland/Wales:** No postcode-level data (England-only postcode table in core_postcodes). Wales transactions + crime are ingested but no census/EPC/schools data.
 - **LS1 Terraced:** No "Last 12m" data (no recent terraced sales in Leeds city centre)
 - **Land Registry new-build flag:** Unreliable for house-to-flat conversions. Solicitors often mark conversions as "not new build" (old_new = 'N'). A caveat note is displayed on the new_build_proportion metric.
-- ~~**Guildford:** "Guilford" typo~~ — verified correct in DB ("Guildford" spelled correctly)
+- **financial_health / S114 metric:** Registry entry exists but no tab service wired. Needs provenance-backed data source.
+- **Commute estimator:** Returns 501 Not Implemented. No local data source — would need TfL/Google Maps APIs.
+- Full data gap inventory (28 items, 8 categories): `memory/data_gaps.md`
 
 ### Spatial Parent Comparisons — COMPLETE
 Previously `nearest_station`, `nearest_park`, `parks_1km`, `green_cover`, `sports_recreation` returned `parent_value: null`. Now pre-computed via `etl/derived/spatial_lsoa_stats.py` → `core_lsoa_green_space` + `core_lsoa_transport` tables. All 5 spatial metrics have parent comparisons.
 
 ---
 
-## 12. Work Queue
+## 12. Google AI Studio Review Summary
 
-**See `QUEUE.md` — the single source of truth for all task tracking.**
+The codebase underwent 5 rounds of professional code review via Google AI Studio. All 75 actionable items addressed.
+
+| Round | Session | Items | Fixed | Already done | Deferred | Not fixing |
+|-------|---------|-------|-------|-------------|----------|-----------|
+| Round 1 (G1-G11) | 33 | 11 | 11 | 0 | 0 | 0 |
+| Round 2 (C1-C4) | 34 | 4 | 4 | 0 | 0 | 0 |
+| Round 3 (H1-H16, B1-B2) | 35 | 18 | 18 | 0 | 0 | 0 |
+| Round 4 (L1-L5) | 38 | 34 | 5 | 29 | 0 | 0 |
+| Round 5 (G5-1 to G5-8) | 39-40 | 31 | 8 | 22 | 0 | 5 |
+
+**5 "not fixing" items (justified):**
+1. PostGIS `geom::geography` index — ST_DWithin uses GiST for bounding box pre-filter
+2. Pagination OFFSET — max ~1000 rows per query
+3. Overpass API rate limits — ETL-only, already ingested
+4. EPC backfill index bloat — one-time script, already run
+5. Query consolidation (5 queries) — different column sets, not a bug
 
 ---
 
-## 13. Inviolable Rules
+## 13. Work Queue
+
+**See `QUEUE.md` — the single source of truth for all task tracking.**
+
+Current state: Phases 1–5 ALL COMPLETE. AWS deployed. 75 Google review items across 5 rounds addressed. Remaining: CI/CD automation (#19), isochrone school catchments (R15).
+
+---
+
+## 14. Inviolable Rules
 
 These rules were established across 10 sessions and must NEVER be violated:
 
@@ -591,7 +643,7 @@ These rules were established across 10 sessions and must NEVER be violated:
 
 ---
 
-## 14. Session History
+## 15. Session History
 
 ### Session 1 — Baseline Build
 Built the entire portal from scratch: FastAPI + React + PostgreSQL + Redis. 5 tabs, 42+ metrics, persona engine, ward boundary map. Session key architecture established.
@@ -649,7 +701,7 @@ Flood zone bug found+fixed (was labelling all FZ3 due to wrong column read). Re-
 ### Session 30 — Personas.ts + Personalization.ts Overhaul (S4) Complete
 Fixed active bug: `ptal` → `ptal_score` (PTAL takeaways were silently falling through to default fallback for every search). `getTakeaway()` expanded from 42 → 60 metric ID branches — full registry coverage including: connectivity_index, stations_in_area, wfh, noise, green_cover, green_spaces, parks_1km, sports_recreation, median_earnings, good_health, economically_active, degree_educated, no_car, born_abroad, household_size, ethnicity, demographics_overview. `PERSONA_METRIC_WEIGHTS` expanded from 23 → 45 entries. `METRIC_TAB` cleaned: removed phantom `ptal`, added stations_in_area, connectivity_index, household_size, ethnicity, wfh. tsc -b 0 errors.
 
-### Session 33 (latest) — Phase 2.5 AI Studio Review Fixes (G1-G11) Complete
+### Session 33 — Phase 2.5 AI Studio Review Fixes (G1-G11) Complete
 11 fixes from Google AI Studio code review, all verified. Key changes:
 - **G1:** Crime trend 0-is-falsy — `is not None` checks in `tab_environment.py`
 - **G2:** LsoaContextBlurb missing `lad` type — added `|| type === 'lad'` in `ResultsHero.tsx`
@@ -667,7 +719,7 @@ Fixed active bug: `ptal` → `ptal_score` (PTAL takeaways were silently falling 
 - Codebase uploaded to GDrive: `gdrive:PropertyPulse/codebase_review_20260416/` (344 files)
 - **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric + 117/121 comprehensive (1 pre-existing Scotland, 3 timing/rate-limit)
 
-### Session 35 (latest) — H14-H16 + Brutal Test Suite + 13 AI Studio Hardening Fixes (H1-H13) Complete
+### Session 35 — H14-H16 + Brutal Test Suite + 13 AI Studio Hardening Fixes (H1-H13) Complete
 
 **Phase 2.8:** 3 deferred AI Studio items resolved + 2 bugs found by brutal test suite:
 - **H14:** Stagger tab prefetch — 4 tabs fired simultaneously on page load, potential request burst on t4g.small. Staggered: tab 0 at 0ms, tab 1 at 2s, tab 2 at 4s, tab 3 at 6s. Cleanup function clears timers.
@@ -703,11 +755,39 @@ Fixed active bug: `ptal` → `ptal_score` (PTAL takeaways were silently falling 
 - **C4:** ETL `INCLUDING ALL` bottleneck — created `create_staging_table()` (UNLOGGED, no indexes) + `recreate_indexes()` (from pg_indexes) in `etl/utils.py`. Converted 5 large-table modules: land_registry_full (30M), inspire_parcels (24M), llc (7.7M), crime (6M), flood (3.5M).
 - **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric refactor, 114/123 comprehensive (0 regressions; 4 pre-existing: 1 Scotland, 1 chart toggle, 2 Governance timing).
 
+### Session 28 — Results.tsx Decomposition (S6) Complete
+Full decomposition of 721-line Results.tsx into React Context architecture. 8 new files. Zero regressions: 122/123 comprehensive + 21/21 metric refactor. tsc -b clean, vite build clean. Visual diff identical (file sizes within 0.2% of baseline).
+
 ### Session 29 — epc_domestic.py Rewrite (S3) Complete
 Full rewrite of `etl/sources/epc_domestic.py`. Old approach: 93-col load + Python Jaccard loop + separate `absorb_epc.py` + manual aggregate rebuild. New approach: 4-phase `run()` — (1) 9-col COPY load, (2) SQL TRANSLATE match → direct UPDATE master, (3) lsoa_month ppsf aggregate recompute, (4) verify + DROP. `pipeline.py` entry updated. Single command: `python3 pipeline.py --source epc_domestic`.
 
-### Session 28 — Results.tsx Decomposition (S6) Complete
-Full decomposition of 721-line Results.tsx into React Context architecture. 8 new files. Zero regressions: 122/123 comprehensive + 21/21 metric refactor. tsc -b clean, vite build clean. Visual diff identical (file sizes within 0.2% of baseline).
+### Sessions 36-37 — Data Gap Audit + Fixes (D1-D7) Complete
+28 data gaps catalogued across 8 categories. 7 fixed, 2 deferred:
+- **D1:** Metro county lookup — CSV-based `metro_county_lookup.csv` for all 36 E08 metro districts across 6 metro counties. Uses truncate-and-reload (not blue-green swap) to preserve matview dependencies.
+- **D2:** `core_place_boundaries_union` — ran `place_lsoa_mapping` derivation (9,565 pre-computed unions)
+- **D3:** Dead persona weights — removed 3 non-existent metrics from frontend
+- **D4:** `core_price_by_bedrooms_lad` — ran derivation (144,906 rows)
+- **D5:** Census religion — wired `core_census_religion_ward` into `tab_community.py` as new metric
+- **D6:** GMP crime data verified present across all metro districts
+- **D7:** EPC backfill confirmed complete (was incorrectly listed as blocked)
+
+### Sessions 37-38 — AWS Deployment (Phase 3) Complete
+EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.60.67.248. Full `pg_dump`/`pg_restore` (18 GB). Docker Compose with API + frontend/nginx + Redis + PostgreSQL. Let's Encrypt TLS via Cloudflare DNS (`paintedstock.com`). All data verified — exact row counts match local.
+
+### Session 38 — Google AI Studio Live Review (Phase 4) Complete
+Google's 4th-round review of the live site. ~34 items triaged: 29 already fixed, 5 new. Fixes: TabBar resize, mobile hover states, choropleth legend overflow, PDF blob download, sold price marker cap.
+
+### Sessions 39-40 (latest) — Google AI Studio Review Round 5 (Phase 5) Complete
+Two batches (17 + 14 items). Google acknowledged batch 1 was reviewing stale code. ~22 already fixed, 8 genuinely new — all fixed. 5 items justified as not fixing. Key changes:
+- **G5-1:** MapLibre feature-state hover highlighting (`promoteId`, `setFeatureState`, tooltip) in `MapView.tsx`
+- **G5-2:** IntersectionObserver scroll-follow (replaced layout-thrashing rAF) in `useResultsMap.ts`
+- **G5-3:** Simpson's Paradox — population-weighted averages across 7 backend files (~45 queries). Weights: `total_population`, `total_households`, `total_workers`, `total_certs`, `total_pop`, `transaction_count`.
+- **G5-4:** Schools + NHS `ST_Within` → postcode join for area-mode queries (6 queries in `tab_community.py`)
+- **G5-6:** `ST_CollectionExtract` defensive wrapper around `ST_MakeValid()` in `llc.py` + `inspire_parcels.py`
+- **G5-7:** Choropleth dynamic bucket detection for <5 unique quantile values
+- **G5-8:** Mobile cooperative gestures (two-finger pan) via MapLibre built-in
+- **Testing:** tsc -b 0 errors, vite build clean, 21/21 metric. Deployed to EC2.
+- **Full triage:** `memory/google_review_5.md`
 
 ---
 
@@ -732,9 +812,18 @@ Full decomposition of 721-line Results.tsx into React Context architecture. 8 ne
 | Metric card component | `frontend/src/components/MetricCard.tsx` |
 | Persona engine | `frontend/src/utils/personas.ts` |
 | Tab config + formatValue | `frontend/src/utils/tabs.ts` |
-| Playwright tests | `test_playwright_comprehensive.py` (123/123) |
+| Playwright tests | `test_playwright_comprehensive.py` (117/123 — 4 pre-existing, 0 regressions) |
+| Metric refactor tests | `test_metric_refactor.py` (21/21) |
+| Brutal test suite | `test_brutal.py` (447/447) |
 | API E2E tests | `/tmp/deep_e2e_test.py` (890/891) |
 | Nginx production config | `frontend/nginx.conf` |
+| Nginx SSL config | `frontend/nginx-ssl.conf` |
+| Docker Compose (dev) | `docker-compose.yml` |
+| Docker Compose (prod) | `docker-compose.prod.yml` |
+| Deploy scripts | `deploy/` |
+| AWS deployment spec | `memory/deployment.md` |
+| Google Review Round 5 triage | `memory/google_review_5.md` |
+| Data gap inventory | `memory/data_gaps.md` |
 | SQL migrations | `etl/migrations/` |
 | Legacy ETL scripts | `etl/legacy/` |
 | Data files | `etl/data/` |
@@ -752,4 +841,4 @@ Full decomposition of 721-line Results.tsx into React Context architecture. 8 ne
 | INSPIRE raw | `gdrive:PropertyPulse/raw_downloads/INSPIRE/` |
 | LLC raw | `gdrive:PropertyPulse/raw_downloads/LLC/` |
 | Flood GeoPackage | `gdrive:PropertyPulse/raw_downloads/` |
-| Codebase snapshot (latest) | `gdrive:PropertyPulse/codebase_review_20260416/` (344 files, 39.5 MiB) |
+| Codebase snapshot (latest) | `gdrive:PropertyPulse/codebase_review_20260417/` (360 files) |

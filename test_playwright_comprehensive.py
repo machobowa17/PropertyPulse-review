@@ -397,50 +397,57 @@ def run_all_tests():
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         page = context.new_page()
         page.goto(results_url("Whitby"))
-        wait_for_results(page)
-        wait_for_tab_data(page)  # Wait for real cards
-
-        # Whitby should resolve and show Property tab
-        h1_text = page.locator("h1").first.inner_text()
-        R.add(section, "Whitby resolves", "Whitby" in h1_text, f"h1='{h1_text[:40]}'")
-
-        # Check that metric cards render (even with null values)
-        card_count = count_metric_cards(page)
-        R.add(section, "Property tab has cards", card_count >= 1, f"{card_count} cards")
-
-        # Get all card texts — look for graceful null handling
-        # Null values should show "—" (em-dash) not crash or show "null"/"undefined"
-        cards_text = get_metric_card_texts(page)
-        has_null_literal = any("null" in t.lower() or "undefined" in t for t in cards_text)
-        has_dash = any("—" in t for t in cards_text)
-        R.add(section, "No 'null'/'undefined' in cards",
-              not has_null_literal, f"null literal found: {has_null_literal}")
-        R.add(section, "Graceful dash display",
-              has_dash, "em-dash (—) present for null values")
-
-        # Check specifically for rent metric — Whitby has no VOA rent data
-        # The rent card should show "—" or handle null gracefully
-        rent_text = ""
-        for t in cards_text:
-            if "Rent" in t or "rent" in t:
-                rent_text = t
-                break
-        if rent_text:
-            R.add(section, "Rent card doesn't crash",
-                  "null" not in rent_text.lower() and "undefined" not in rent_text,
-                  f"rent card text snippet: '{rent_text[:60]}'")
+        try:
+            wait_for_results(page)
+        except PwTimeout:
+            R.add(section, "Page loads", False, "Timed out waiting for h1 — known Whitby issue")
+            page.close()
+            context.close()
+            time.sleep(PACE_SECONDS)
         else:
-            R.add_warn(section, "Rent card not found", "May not have rent metric visible by default")
+            wait_for_tab_data(page)  # Wait for real cards
 
-        # Check all 5 tabs don't crash for Whitby
-        for tab_short in TAB_NAMES[1:]:  # Skip Property — already checked
-            switch_tab(page, tab_short)
-            still_alive = page.locator("h1").count() > 0
-            R.add(section, f"{tab_short} tab — no crash", still_alive)
+            # Whitby should resolve and show Property tab
+            h1_text = page.locator("h1").first.inner_text()
+            R.add(section, "Whitby resolves", "Whitby" in h1_text, f"h1='{h1_text[:40]}'")
 
-        page.close()
-        context.close()
-        time.sleep(PACE_SECONDS)
+            # Check that metric cards render (even with null values)
+            card_count = count_metric_cards(page)
+            R.add(section, "Property tab has cards", card_count >= 1, f"{card_count} cards")
+
+            # Get all card texts — look for graceful null handling
+            # Null values should show "—" (em-dash) not crash or show "null"/"undefined"
+            cards_text = get_metric_card_texts(page)
+            has_null_literal = any("null" in t.lower() or "undefined" in t for t in cards_text)
+            has_dash = any("—" in t for t in cards_text)
+            R.add(section, "No 'null'/'undefined' in cards",
+                  not has_null_literal, f"null literal found: {has_null_literal}")
+            R.add(section, "Graceful dash display",
+                  has_dash, "em-dash (—) present for null values")
+
+            # Check specifically for rent metric — Whitby has no VOA rent data
+            # The rent card should show "—" or handle null gracefully
+            rent_text = ""
+            for t in cards_text:
+                if "Rent" in t or "rent" in t:
+                    rent_text = t
+                    break
+            if rent_text:
+                R.add(section, "Rent card doesn't crash",
+                      "null" not in rent_text.lower() and "undefined" not in rent_text,
+                      f"rent card text snippet: '{rent_text[:60]}'")
+            else:
+                R.add_warn(section, "Rent card not found", "May not have rent metric visible by default")
+
+            # Check all 5 tabs don't crash for Whitby
+            for tab_short in TAB_NAMES[1:]:  # Skip Property — already checked
+                switch_tab(page, tab_short)
+                still_alive = page.locator("h1").count() > 0
+                R.add(section, f"{tab_short} tab — no crash", still_alive)
+
+            page.close()
+            context.close()
+            time.sleep(PACE_SECONDS)
 
         # ════════════════════════════════════════════════════════════════
         # SECTION 5: Tab switching — no stale data, no crashes

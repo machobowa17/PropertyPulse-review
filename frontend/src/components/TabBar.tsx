@@ -47,6 +47,7 @@ export default function TabBar({ active, onChange }: Props) {
               className={`
                 relative z-10 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap
                 transition-colors duration-200 cursor-pointer shrink-0
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
                 ${isActive
                   ? 'text-brand-700'
                   : 'text-ink-muted hover:text-ink'
