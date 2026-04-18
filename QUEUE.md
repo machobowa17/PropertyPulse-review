@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-17 (session 40)
+Last updated: 2026-04-18 (session 41)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -179,6 +179,29 @@ Batch 2: ASGI thread (H1), TRUNCATE (C4), mega-context (session 32), GeoJSON off
 - Overpass API — ETL-only, data already ingested.
 - EPC backfill index bloat — one-time script, already run.
 - Query consolidation (5× queries) — different column sets, optimisation not a bug.
+
+---
+
+### Phase 6: Gemini Round 6 Review Fixes (COMPLETE ✓)
+
+Source: Session 41. Gemini AI Studio full audit (15-section report in `Gemini_Review/`). ~35 claims triaged: ~13 wrong conclusions, ~11 already fixed, 11 genuine items fixed. tsc -b 0 errors, vite build clean, 21/21 metric + 112/115 comprehensive (3 pre-existing).
+
+| # | Task | Fix |
+|---|------|-----|
+| G6-2A | RequestValidationError masked as 500 | Added `RequestValidationError` handler → returns 422 with field-level detail in `main.py` |
+| G6-2C | Deprecated X-XSS-Protection header | Removed from `main.py`, `nginx.conf`, `nginx-ssl.conf` |
+| G6-1B | Ward name fuzzy search slow (no trigram index) | `CREATE INDEX idx_ward_boundaries_name_trgm ON core_ward_boundaries USING gin (ward_name gin_trgm_ops)` |
+| G6-5C | SearchBox debounce timer leaks on unmount | Cleanup return in mount useEffect |
+| G6-15D | SearchBox re-focus doesn't select text | `e.target.select()` in onFocus handler |
+| G6-7D | Recharts ResponsiveContainer width(-1) warning | `minWidth={1} minHeight={1}` on all 7 chart ResponsiveContainers |
+| G6-7C | Duplicate data notes in MetricCard details | `Set`-based dedup in `DataNotes` component |
+| G6-7A | Zod schema mismatches (console warnings on every /area call) | Fixed `headline`, `comparison`, `capsule`, `map_binding` shapes to match actual backend contract; added `.passthrough()` |
+| G6-11.1 | No focus-visible rings on interactive elements | `focus-visible:ring-2 focus-visible:ring-brand-500` on TabBar, MetricCard (desktop+mobile), SearchBox submit |
+| G6-11.4 | Decision question text unreadable contrast | `text-ink-faint/60` → `text-ink-muted` (2 sites in MetricCard) |
+| G6-13A | Ghost currency £ on non-financial metrics | Verified non-issue — `formatValue` only applies £ for GBP units |
+
+#### Gemini claims triaged as wrong / already fixed
+~24 items dismissed: pool_size claim (would reintroduce H2 crash), clustering (Supercluster already exists), ghost metrics (removed in D3), context thrashing (already memoized in R1), ETL SQL injection (parameterized queries), map lag (lazy loading already done), and others.
 
 ---
 
