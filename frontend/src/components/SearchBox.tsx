@@ -249,25 +249,13 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
       </form>
 
       {isLg && (
-        <div className="mt-3 space-y-2">
-          <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${isDark ? 'text-white/45' : 'text-ink-faint'}`}>
-            <span>Search by postcode for block-level evidence, or by town, borough, ward, district, or county for broader context. {coverageMessage}</span>
-          </div>
-          <div className="flex flex-wrap gap-2 text-[11px]">
-            <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${isDark ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
-              Live: {liveCountries.join(', ')}
-            </span>
-            {plannedCountries.length > 0 && (
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${isDark ? 'bg-amber-500/10 text-amber-100 border border-amber-300/20' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
-                Planned next: {plannedCountries.join(', ')}
-              </span>
-            )}
-            {parkedCountries.length > 0 && (
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${isDark ? 'bg-slate-500/10 text-slate-200 border border-slate-300/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
-                Parked: {parkedCountries.join(', ')}
-              </span>
-            )}
-          </div>
+        <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${isDark ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+            Live: England, Wales
+          </span>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${isDark ? 'bg-amber-500/10 text-amber-100 border border-amber-300/20' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+            Planned: Scotland, Northern Ireland
+          </span>
         </div>
       )}
 

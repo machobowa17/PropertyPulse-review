@@ -123,7 +123,7 @@ Source: Session 36-37 data gap audit. 28 gaps catalogued, 7 fixed, 1 deferred, 1
 
 ### Phase 3: AWS Deployment (COMPLETE ✓)
 
-Source: Sessions 37-38. EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.60.67.248. Domain: paintedstock.com (Cloudflare). All data restored and verified (exact row counts match local).
+Source: Sessions 37-38. EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.60.67.248. Domain: simusimi.com (Cloudflare). All data restored and verified (exact row counts match local).
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
@@ -132,7 +132,7 @@ Source: Sessions 37-38. EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.
 | 15 | AWS: Provision Docker + docker-compose (AL2023, ARM) | DONE | Docker 27.x, Compose v2.29.2, 2 GB swap |
 | 16 | AWS: `pg_dump` → upload → `pg_restore` on EC2 | DONE | 18 GB dump, all 30.4M transactions + indexes + MVs restored. `imresamu/postgis:16-3.4` (ARM64) |
 | 17 | AWS: Docker Compose (API + frontend/nginx + Redis + PG) | DONE | `docker-compose.ssl.yml` override. No S3/CloudFront — nginx serves frontend directly |
-| 18 | AWS: DNS + TLS (Let's Encrypt) | DONE | `paintedstock.com` via Cloudflare DNS. Let's Encrypt cert (expires 2026-07-16) |
+| 18 | AWS: DNS + TLS (Let's Encrypt) | DONE | `simusimi.com` via Cloudflare DNS. Let's Encrypt cert (expires 2026-07-16) |
 | 19 | AWS: GitHub Actions CI/CD | Pending | Not yet needed — deploying via rsync + rebuild |
 
 ---

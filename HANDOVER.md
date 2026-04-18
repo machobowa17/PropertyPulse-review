@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-17 (session 40)
 **Branch:** `main`
-**Status:** Production-ready for England + Wales. ALL review phases complete (Phases 1–5). AWS deployed (EC2 t4g.small, eu-west-2). 75 Google AI Studio review items across 5 rounds — all addressed. Live at https://paintedstock.com. Public review repo: https://github.com/machobowa17/PropertyPulse-review.
+**Status:** Production-ready for England + Wales. ALL review phases complete (Phases 1–5). AWS deployed (EC2 t4g.small, eu-west-2). 75 Google AI Studio review items across 5 rounds — all addressed. Live at https://simusimi.com. Public review repo: https://github.com/machobowa17/PropertyPulse-review.
 
 ---
 
@@ -214,7 +214,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ### URLs
 - **Local dev:** http://localhost:5173 (frontend), http://localhost:8000/api/v1/ (API)
-- **Production:** https://paintedstock.com (EC2 t4g.small, eu-west-2)
+- **Production:** https://simusimi.com (EC2 t4g.small, eu-west-2)
 - Health check: `/api/v1/health`
 
 ---
@@ -458,7 +458,7 @@ server: { port: 5173, proxy: { '/api': 'http://localhost:8000' } }
 - **Instance:** EC2 t4g.small (ARM64 Graviton, 2 vCPU, 2 GB RAM), eu-west-2
 - **Storage:** 80 GB gp3 EBS
 - **IP:** Elastic IP 16.60.67.248
-- **Domain:** paintedstock.com (Cloudflare DNS)
+- **Domain:** simusimi.com (Cloudflare DNS)
 - **TLS:** Let's Encrypt (auto-renew via certbot)
 - **Stack:** Docker Compose — 4 containers: API (FastAPI/Uvicorn), frontend (nginx), Redis, PostgreSQL (PostGIS)
 - **Deployment:** Manual rsync + `docker compose up --build -d` (CI/CD pending)
@@ -772,7 +772,7 @@ Full rewrite of `etl/sources/epc_domestic.py`. Old approach: 93-col load + Pytho
 - **D7:** EPC backfill confirmed complete (was incorrectly listed as blocked)
 
 ### Sessions 37-38 — AWS Deployment (Phase 3) Complete
-EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.60.67.248. Full `pg_dump`/`pg_restore` (18 GB). Docker Compose with API + frontend/nginx + Redis + PostgreSQL. Let's Encrypt TLS via Cloudflare DNS (`paintedstock.com`). All data verified — exact row counts match local.
+EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.60.67.248. Full `pg_dump`/`pg_restore` (18 GB). Docker Compose with API + frontend/nginx + Redis + PostgreSQL. Let's Encrypt TLS via Cloudflare DNS (`simusimi.com`). All data verified — exact row counts match local.
 
 ### Session 38 — Google AI Studio Live Review (Phase 4) Complete
 Google's 4th-round review of the live site. ~34 items triaged: 29 already fixed, 5 new. Fixes: TabBar resize, mobile hover states, choropleth legend overflow, PDF blob download, sold price marker cap.
