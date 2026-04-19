@@ -4,24 +4,25 @@
 
 /* ── Map layer priority per tab ── */
 export const MAP_LAYER_PRIORITY: Record<string, string[]> = {
-  'Property & Market': ['sold_price', 'choropleth_avg_price', 'choropleth_price_per_sqft', 'choropleth_median_rent', 'choropleth_epc_score'],
+  'Property & Market': [
+    'sold_price', 'choropleth_avg_price', 'choropleth_median_price', 'choropleth_price_per_sqft', 'choropleth_median_rent', 'choropleth_epc_score',
+    'choropleth_housing_tenure', 'choropleth_housing_type',
+  ],
   'Lifestyle & Connectivity': [
     'station', 'amenity', 'park', 'sports_recreation', 'ev_charger',
-    'choropleth_broadband', 'choropleth_full_fibre', 'choropleth_superfast_broadband',
-    'choropleth_mobile_coverage', 'choropleth_mobile_4g_indoor', 'choropleth_mobile_5g_outdoor',
+    'choropleth_broadband', 'choropleth_mobile_coverage',
   ],
   'Environment & Safety': ['flood_zone', 'choropleth_air_quality_no2', 'choropleth_air_quality_pm25'],
   'Community & Education': [
     'school', 'nhs_facility',
-    'choropleth_population_density', 'choropleth_median_age', 'choropleth_household_composition',
+    'choropleth_median_earnings', 'choropleth_population_density', 'choropleth_median_age', 'choropleth_household_composition',
     'choropleth_good_health', 'choropleth_economically_active', 'choropleth_degree_educated',
-    'choropleth_no_car', 'choropleth_born_abroad', 'choropleth_wfh',
-    'choropleth_housing_tenure', 'choropleth_housing_type', 'choropleth_household_size',
+    'choropleth_no_car', 'choropleth_born_abroad', 'choropleth_household_size',
     'choropleth_deprivation', 'choropleth_deprivation_income', 'choropleth_deprivation_employment',
     'choropleth_deprivation_education', 'choropleth_deprivation_health', 'choropleth_deprivation_crime',
     'choropleth_deprivation_barriers', 'choropleth_deprivation_living_environment',
   ],
-  'Local Governance': ['choropleth_council_tax', 'choropleth_median_earnings'],
+  'Local Governance': ['choropleth_council_tax'],
 };
 
 /* ── Metric → map layer bindings (metric-follow system) ── */
@@ -34,14 +35,13 @@ export type MetricMapBinding = {
 
 export const METRIC_MAP_BINDINGS: Record<string, MetricMapBinding> = {
   avg_price: { mode: 'layer', layerKey: 'choropleth_avg_price', label: 'Average price heatmap', reason: 'This metric has nearby spatial evidence, so the map follows it with the average-price heatmap.' },
-  median_price: { mode: 'layer', layerKey: 'choropleth_avg_price', label: 'Average price heatmap', reason: 'Median price is interpreted against the surrounding local price pattern.' },
+  median_price: { mode: 'layer', layerKey: 'choropleth_median_price', label: 'Median price heatmap', reason: 'This metric has a dedicated spatial layer showing median transaction prices per LSOA.' },
   transaction_volume: { mode: 'layer', layerKey: 'sold_price', label: 'Recent sold-price points', reason: 'Transaction volume is best read against nearby sold-price evidence.' },
   price_per_sqft: { mode: 'layer', layerKey: 'choropleth_price_per_sqft', label: 'Price per sqft heatmap', reason: 'This metric has a dedicated spatial layer.' },
   affordability: { mode: 'layer', layerKey: 'choropleth_avg_price', label: 'Average price heatmap', reason: 'Price geography is the most honest spatial context for affordability.' },
   price_trend_yoy: { mode: 'layer', layerKey: 'sold_price', label: 'Recent sold-price points', reason: 'Price trend is grounded in transaction evidence.' },
   new_build_proportion: { mode: 'layer', layerKey: 'sold_price', label: 'Recent sold-price points', reason: 'New-build share is best interpreted against recent transaction evidence.' },
   epc_energy_score: { mode: 'layer', layerKey: 'choropleth_epc_score', label: 'EPC score heatmap', reason: 'This metric has a dedicated spatial layer.' },
-  epc_rating_c_plus: { mode: 'layer', layerKey: 'choropleth_epc_score', label: 'EPC score heatmap', reason: 'Best read with nearby EPC performance.' },
   epc_rating: { mode: 'layer', layerKey: 'choropleth_epc_score', label: 'EPC score heatmap', reason: 'Best read with nearby EPC performance.' },
   nearest_station: { mode: 'layer', layerKey: 'station', label: 'Nearby stations', reason: 'This metric has direct spatial evidence.' },
   ptal: { mode: 'layer', layerKey: 'station', label: 'Nearby stations', reason: 'Nearby stations are the clearest honest spatial evidence.' },
@@ -52,20 +52,14 @@ export const METRIC_MAP_BINDINGS: Record<string, MetricMapBinding> = {
   no_car: { mode: 'layer', layerKey: 'choropleth_no_car', label: 'No-car households heatmap', reason: 'LSOA-level census evidence available.' },
   flood_risk: { mode: 'layer', layerKey: 'flood_zone', label: 'Flood-risk zones', reason: 'This metric has direct spatial evidence.' },
   primary_schools: { mode: 'layer', layerKey: 'school', label: 'Nearby schools', reason: 'This metric has direct spatial evidence.' },
-  primary_school_quality: { mode: 'layer', layerKey: 'school', label: 'Nearby schools', reason: 'School quality is best interpreted alongside the nearby school footprint.' },
   secondary_schools: { mode: 'layer', layerKey: 'school', label: 'Nearby schools', reason: 'This metric has direct spatial evidence.' },
-  secondary_school_quality: { mode: 'layer', layerKey: 'school', label: 'Nearby schools', reason: 'School quality is best interpreted alongside the nearby school footprint.' },
   freehold_leasehold: { mode: 'context', label: 'Local analysis boundary', reason: 'Tenure mix does not yet have a direct spatial layer.' },
   median_rent: { mode: 'layer', layerKey: 'choropleth_median_rent', label: 'Median rent heatmap', reason: 'Honest local-authority proxy layer available.' },
   gross_yield: { mode: 'context', label: 'Local analysis boundary', reason: 'Computed from numeric evidence rather than a rent surface.' },
   investment_grade: { mode: 'context', label: 'Local analysis boundary', reason: 'Composite decision metric without a standalone spatial layer.' },
   amenities_15min: { mode: 'layer', layerKey: 'amenity', label: 'Nearby amenities', reason: 'Mapped place evidence available.' },
   mobile_coverage: { mode: 'layer', layerKey: 'choropleth_mobile_coverage', label: '4G outdoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },
-  mobile_4g_indoor: { mode: 'layer', layerKey: 'choropleth_mobile_4g_indoor', label: '4G indoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },
-  mobile_5g_outdoor: { mode: 'layer', layerKey: 'choropleth_mobile_5g_outdoor', label: '5G outdoor coverage heatmap', reason: 'Postcode-level spatial evidence available.' },
   broadband: { mode: 'layer', layerKey: 'choropleth_broadband', label: 'Gigabit broadband heatmap', reason: 'Postcode-level spatial evidence available.' },
-  full_fibre: { mode: 'layer', layerKey: 'choropleth_full_fibre', label: 'Full fibre heatmap', reason: 'Postcode-level spatial evidence available.' },
-  superfast_broadband: { mode: 'layer', layerKey: 'choropleth_superfast_broadband', label: 'Superfast broadband heatmap', reason: 'Postcode-level spatial evidence available.' },
   air_quality_no2: { mode: 'layer', layerKey: 'choropleth_air_quality_no2', label: 'NO2 heatmap', reason: 'DEFRA air-quality grid cells aggregated to LSOAs.' },
   air_quality_pm25: { mode: 'layer', layerKey: 'choropleth_air_quality_pm25', label: 'PM2.5 heatmap', reason: 'DEFRA air-quality grid cells aggregated to LSOAs.' },
   noise: { mode: 'context', label: 'Local analysis boundary', reason: 'Currently numeric-only.' },
@@ -93,7 +87,6 @@ export const METRIC_MAP_BINDINGS: Record<string, MetricMapBinding> = {
   economically_active: { mode: 'layer', layerKey: 'choropleth_economically_active', label: 'Economic activity heatmap', reason: 'Direct LSOA-level census evidence.' },
   degree_educated: { mode: 'layer', layerKey: 'choropleth_degree_educated', label: 'Degree education heatmap', reason: 'Direct LSOA-level census evidence.' },
   born_abroad: { mode: 'layer', layerKey: 'choropleth_born_abroad', label: 'Born abroad heatmap', reason: 'Direct LSOA-level census evidence.' },
-  wfh: { mode: 'layer', layerKey: 'choropleth_wfh', label: 'Works from home heatmap', reason: 'Direct LSOA-level census evidence.' },
   household_size: { mode: 'layer', layerKey: 'choropleth_household_size', label: 'Household size heatmap', reason: 'LSOA-level census evidence.' },
   council_tax: { mode: 'layer', layerKey: 'choropleth_council_tax', label: 'Council tax heatmap', reason: 'Honest local-authority proxy layer available.' },
   local_authority: { mode: 'context', label: 'Local analysis boundary', reason: 'Already reflected by the search boundary.' },

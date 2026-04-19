@@ -295,19 +295,6 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     }
   }
 
-  // --- Work From Home Rate (wfh, Community tab duplicate) ---
-  if (id === 'wfh') {
-    if (isHigher) {
-      if (persona === 'young_professional') return { soWhat: 'WFH-friendly area', watchOut: 'None', colour: 'green' };
-      if (persona === 'family') return { soWhat: 'Flexible working common', watchOut: 'None', colour: 'green' };
-      return { soWhat: 'High WFH rate', watchOut: 'None', colour: 'green' };
-    }
-    if (isLower) {
-      if (persona === 'young_professional') return { soWhat: 'Commuter area', watchOut: 'None', colour: 'neutral' };
-      return { soWhat: 'Lower WFH rate', watchOut: 'None', colour: 'neutral' };
-    }
-  }
-
   // ═══════════════════════════════════════════
   // TAB 3: ENVIRONMENT & SAFETY
   // ═══════════════════════════════════════════
@@ -408,20 +395,6 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'investor') return { soWhat: 'Upgrade costs likely', watchOut: 'MEES compliance', colour: 'red' };
       if (persona === 'family') return { soWhat: 'Higher energy bills', watchOut: 'Insulation costs', colour: 'amber' };
       return { soWhat: 'Below-avg efficiency', watchOut: 'Energy costs', colour: 'amber' };
-    }
-  }
-
-  // --- EPC Rated C or Above ---
-  if (id === 'epc_rating_c_plus') {
-    if (isHigher) {
-      if (persona === 'investor') return { soWhat: 'MEES-ready stock', watchOut: 'None', colour: 'green' };
-      if (persona === 'family') return { soWhat: 'Well-insulated homes', watchOut: 'None', colour: 'green' };
-      return { soWhat: 'Good EPC ratings', watchOut: 'None', colour: 'green' };
-    }
-    if (isLower) {
-      if (persona === 'investor') return { soWhat: 'EPC upgrade needed', watchOut: '2028 MEES deadline', colour: 'red' };
-      if (persona === 'family') return { soWhat: 'Older housing stock', watchOut: 'Higher bills', colour: 'amber' };
-      return { soWhat: 'Fewer efficient homes', watchOut: 'Energy costs', colour: 'amber' };
     }
   }
 

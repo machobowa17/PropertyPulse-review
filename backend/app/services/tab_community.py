@@ -67,9 +67,10 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             _r(demo_parent_row["avg_age"]) if demo_parent_row else None,
             "years",
             details={
-                "pct_0_15": _r(demo_row["pct_age_0_15"]),
-                "pct_16_64": _r(demo_row["pct_age_16_64"]),
-                "pct_65_plus": _r(demo_row["pct_age_65_plus"]),
+                "0–15 years": _r(demo_row["pct_age_0_15"]),
+                "16–64 years": _r(demo_row["pct_age_16_64"]),
+                "65+ years": _r(demo_row["pct_age_65_plus"]),
+                "detail_unit": "%",
             },
         ))
 
@@ -151,35 +152,6 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             "%",
         ))
 
-    # --- WFH (from census commute data, consolidated into core_census_lsoa) ---
-    wfh_result = await db.execute(
-        text("""
-            SELECT SUM(total_workers * pct_wfh) / NULLIF(SUM(total_workers), 0) as pct_wfh
-            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
-        """),
-        {"codes": lsoa_codes},
-    )
-    wfh_row = wfh_result.mappings().first()
-
-    wfh_parent = await db.execute(
-        text("""
-            SELECT SUM(c.total_workers * c.pct_wfh) / NULLIF(SUM(c.total_workers), 0) as avg_wfh
-            FROM core_census_lsoa c
-            JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
-            WHERE l.lad_code = ANY(:parent_lads)
-        """),
-        {"parent_lads": parent_lads},
-    )
-    wfh_parent_row = wfh_parent.mappings().first()
-
-    if wfh_row and wfh_row["pct_wfh"] is not None:
-        metrics.append(metric(
-            "wfh", "Works From Home",
-            _r(wfh_row["pct_wfh"]),
-            _r(wfh_parent_row["avg_wfh"]) if wfh_parent_row else None,
-            "%",
-        ))
-
     # --- Demographics Overview (grouped 8-card panel) ---
     demo_cards: dict = {}
     if demo_row:
@@ -210,11 +182,6 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             "label": "Degree Educated", "value": _r(extra_row["pct_degree"]),
             "unit": "%", "parent": _r(extra_parent_row["pct_degree"]) if extra_parent_row else None,
         }
-    if wfh_row and wfh_row["pct_wfh"] is not None:
-        demo_cards["wfh"] = {
-            "label": "Works From Home", "value": _r(wfh_row["pct_wfh"]),
-            "unit": "%", "parent": _r(wfh_parent_row["avg_wfh"]) if wfh_parent_row else None,
-        }
     if extra_row and extra_row["pct_no_car"] is not None:
         demo_cards["no_car"] = {
             "label": "No Car", "value": _r(extra_row["pct_no_car"]),
@@ -227,65 +194,6 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             _r(demo_row["total_population"]) if demo_row and demo_row["total_population"] else None,
             parent_pop, "people",
             details={"cards": demo_cards},
-        ))
-
-    # --- Housing Tenure & Type ---
-    housing_local = await db.execute(
-        text("""
-            SELECT SUM(total_households) as total_households,
-                   SUM(total_households * pct_owned) / NULLIF(SUM(total_households), 0) as pct_owned,
-                   SUM(total_households * pct_social_rent) / NULLIF(SUM(total_households), 0) as pct_social_rent,
-                   SUM(total_households * pct_private_rent) / NULLIF(SUM(total_households), 0) as pct_private_rent,
-                   SUM(total_households * pct_detached) / NULLIF(SUM(total_households), 0) as pct_detached,
-                   SUM(total_households * pct_semi) / NULLIF(SUM(total_households), 0) as pct_semi,
-                   SUM(total_households * pct_terraced) / NULLIF(SUM(total_households), 0) as pct_terraced,
-                   SUM(total_households * pct_flat) / NULLIF(SUM(total_households), 0) as pct_flat
-            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
-        """),
-        {"codes": lsoa_codes},
-    )
-    housing_row = housing_local.mappings().first()
-
-    housing_parent = await db.execute(
-        text("""
-            SELECT SUM(h.total_households * h.pct_owned) / NULLIF(SUM(h.total_households), 0) as avg_owned,
-                   SUM(h.total_households * h.pct_private_rent) / NULLIF(SUM(h.total_households), 0) as avg_priv_rent,
-                   SUM(h.total_households * h.pct_detached) / NULLIF(SUM(h.total_households), 0) as avg_det,
-                   SUM(h.total_households * h.pct_semi) / NULLIF(SUM(h.total_households), 0) as avg_semi,
-                   SUM(h.total_households * h.pct_terraced) / NULLIF(SUM(h.total_households), 0) as avg_terr,
-                   SUM(h.total_households * h.pct_flat) / NULLIF(SUM(h.total_households), 0) as avg_flat
-            FROM core_census_lsoa h
-            JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
-            WHERE l.lad_code = ANY(:parent_lads)
-        """),
-        {"parent_lads": parent_lads},
-    )
-    housing_parent_row = housing_parent.mappings().first()
-
-    if housing_row:
-        metrics.append(metric(
-            "housing_tenure", "Housing Tenure",
-            _r(housing_row["pct_owned"]),
-            _r(housing_parent_row["avg_owned"]) if housing_parent_row else None,
-            "% owner-occupied",
-            details={
-                "pct_owned": _r(housing_row["pct_owned"]),
-                "pct_social_rent": _r(housing_row["pct_social_rent"]),
-                "pct_private_rent": _r(housing_row["pct_private_rent"]),
-            },
-        ))
-
-        metrics.append(metric(
-            "housing_type", "Housing Stock",
-            _r(housing_row["pct_detached"]),
-            _r(housing_parent_row["avg_det"]) if housing_parent_row else None,
-            "% detached",
-            details={
-                "pct_detached": _r(housing_row["pct_detached"]),
-                "pct_semi": _r(housing_row["pct_semi"]),
-                "pct_terraced": _r(housing_row["pct_terraced"]),
-                "pct_flat": _r(housing_row["pct_flat"]),
-            },
         ))
 
     # --- Household Size (TS017) ---
@@ -322,10 +230,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             _r(hh_size_parent_row["pct_1person"]) if hh_size_parent_row else None,
             "% single-person",
             details={
-                "pct_1person": _r(hh_size_row["pct_1person"]),
-                "pct_2person": _r(hh_size_row["pct_2person"]),
-                "pct_3_4person": _r(hh_size_row["pct_3_4person"]),
-                "pct_5plus": _r(hh_size_row["pct_5plus"]),
+                "1 person": _r(hh_size_row["pct_1person"]),
+                "2 people": _r(hh_size_row["pct_2person"]),
+                "3–4 people": _r(hh_size_row["pct_3_4person"]),
+                "5+ people": _r(hh_size_row["pct_5plus"]),
+                "detail_unit": "%",
             },
         ))
 
@@ -480,20 +389,45 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     rel_parent_row = religion_parent.mappings().first()
 
     if rel_row and rel_row["pct_christian"] is not None:
+        # Find dominant religion for headline
+        _religion_map = {
+            "Christian": _r(rel_row["pct_christian"]),
+            "Muslim": _r(rel_row["pct_muslim"]),
+            "Hindu": _r(rel_row["pct_hindu"]),
+            "Sikh": _r(rel_row["pct_sikh"]),
+            "Jewish": _r(rel_row["pct_jewish"]),
+            "Buddhist": _r(rel_row["pct_buddhist"]),
+            "No religion": _r(rel_row["pct_no_religion"]),
+        }
+        _dominant = max(
+            ((name, val) for name, val in _religion_map.items() if val is not None),
+            key=lambda x: x[1],
+            default=("Christian", _r(rel_row["pct_christian"])),
+        )
+        _dominant_name, _dominant_val = _dominant
+        _parent_key_map = {
+            "Christian": "pct_christian", "Muslim": "pct_muslim",
+            "Hindu": "pct_hindu", "Sikh": "pct_sikh",
+            "Jewish": "pct_jewish", "Buddhist": "pct_buddhist",
+            "No religion": "pct_no_religion",
+        }
+        _parent_val = _r(rel_parent_row[_parent_key_map[_dominant_name]]) if rel_parent_row else None
+
         metrics.append(metric(
             "religion", "Religion",
-            _r(rel_row["pct_christian"]),
-            _r(rel_parent_row["pct_christian"]) if rel_parent_row else None,
-            "% Christian",
+            _dominant_val,
+            _parent_val,
+            f"% {_dominant_name}",
             details={
-                "pct_christian": _r(rel_row["pct_christian"]),
-                "pct_muslim": _r(rel_row["pct_muslim"]),
-                "pct_hindu": _r(rel_row["pct_hindu"]),
-                "pct_sikh": _r(rel_row["pct_sikh"]),
-                "pct_jewish": _r(rel_row["pct_jewish"]),
-                "pct_buddhist": _r(rel_row["pct_buddhist"]),
-                "pct_no_religion": _r(rel_row["pct_no_religion"]),
-                "pct_other": _r(rel_row["pct_other"]),
+                "Christian": _r(rel_row["pct_christian"]),
+                "Muslim": _r(rel_row["pct_muslim"]),
+                "Hindu": _r(rel_row["pct_hindu"]),
+                "Sikh": _r(rel_row["pct_sikh"]),
+                "Jewish": _r(rel_row["pct_jewish"]),
+                "Buddhist": _r(rel_row["pct_buddhist"]),
+                "No religion": _r(rel_row["pct_no_religion"]),
+                "Other": _r(rel_row["pct_other"]),
+                "detail_unit": "%",
             },
         ))
 
@@ -537,14 +471,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
         primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
 
-        metrics.append(metric(
-            "primary_schools", "Primary Schools in Area",
-            primary_good_count,
-            None, "Outstanding/Good count",
-            details={"total_in_area": primary_total, "schools": prim_list},
-        ))
-
         primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
+        primary_parent_quality = None
         if primary_quality is not None:
             primary_parent_quality_result = await db.execute(
                 text("""
@@ -558,18 +486,20 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 {"parent_lads": parent_lads},
             )
             primary_parent_quality_row = primary_parent_quality_result.mappings().first()
-            metrics.append(metric(
-                "primary_school_quality",
-                "Primary School Quality",
-                primary_quality,
-                _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None,
-                "% Outstanding/Good",
-                details={
-                    "good_count": primary_good_count,
-                    "total_count": primary_total,
-                    "basis": "share of in-area primary schools rated Outstanding or Good",
-                },
-            ))
+            primary_parent_quality = _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None
+
+        metrics.append(metric(
+            "primary_schools", "Primary Schools",
+            primary_total,
+            None, "schools",
+            details={
+                "total_in_area": primary_total,
+                "good_count": primary_good_count,
+                "quality_pct": primary_quality,
+                "parent_quality_pct": primary_parent_quality,
+                "schools": prim_list,
+            },
+        ))
 
         # Secondary: within LSOA boundaries
         secondary = await db.execute(
@@ -609,14 +539,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
         secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
 
-        metrics.append(metric(
-            "secondary_schools", "Secondary Schools in Area",
-            secondary_good_count,
-            None, "Outstanding/Good count",
-            details={"total_in_area": secondary_total, "schools": sec_list},
-        ))
-
         secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
+        secondary_parent_quality = None
         if secondary_quality is not None:
             secondary_parent_quality_result = await db.execute(
                 text("""
@@ -630,18 +554,20 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 {"parent_lads": parent_lads},
             )
             secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
-            metrics.append(metric(
-                "secondary_school_quality",
-                "Secondary School Quality",
-                secondary_quality,
-                _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None,
-                "% Outstanding/Good",
-                details={
-                    "good_count": secondary_good_count,
-                    "total_count": secondary_total,
-                    "basis": "share of in-area secondary schools rated Outstanding or Good",
-                },
-            ))
+            secondary_parent_quality = _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None
+
+        metrics.append(metric(
+            "secondary_schools", "Secondary Schools",
+            secondary_total,
+            None, "schools",
+            details={
+                "total_in_area": secondary_total,
+                "good_count": secondary_good_count,
+                "quality_pct": secondary_quality,
+                "parent_quality_pct": secondary_parent_quality,
+                "schools": sec_list,
+            },
+        ))
 
     elif lat is not None:
         # Postcode mode: distance-based
@@ -683,14 +609,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
         primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
 
-        metrics.append(metric(
-            "primary_schools", "Primary Schools (1 mile)",
-            primary_good_count,
-            None, "Outstanding/Good count",
-            details={"total_within_1mi": primary_total, "schools": prim_list},
-        ))
-
         primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
+        primary_parent_quality = None
         if primary_quality is not None:
             primary_parent_quality_result = await db.execute(
                 text("""
@@ -704,18 +624,20 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 {"parent_lads": parent_lads},
             )
             primary_parent_quality_row = primary_parent_quality_result.mappings().first()
-            metrics.append(metric(
-                "primary_school_quality",
-                "Primary School Quality",
-                primary_quality,
-                _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None,
-                "% Outstanding/Good",
-                details={
-                    "good_count": primary_good_count,
-                    "total_count": primary_total,
-                    "basis": "share of primary schools within 1 mile rated Outstanding or Good",
-                },
-            ))
+            primary_parent_quality = _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None
+
+        metrics.append(metric(
+            "primary_schools", "Primary Schools (1 mile)",
+            primary_total,
+            None, "schools",
+            details={
+                "total_in_area": primary_total,
+                "good_count": primary_good_count,
+                "quality_pct": primary_quality,
+                "parent_quality_pct": primary_parent_quality,
+                "schools": prim_list,
+            },
+        ))
 
         # Secondary: within 3 miles (4828m)
         secondary = await db.execute(
@@ -755,14 +677,8 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
         secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
 
-        metrics.append(metric(
-            "secondary_schools", "Secondary Schools (3 miles)",
-            secondary_good_count,
-            None, "Outstanding/Good count",
-            details={"total_within_3mi": secondary_total, "schools": sec_list},
-        ))
-
         secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
+        secondary_parent_quality = None
         if secondary_quality is not None:
             secondary_parent_quality_result = await db.execute(
                 text("""
@@ -776,18 +692,20 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 {"parent_lads": parent_lads},
             )
             secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
-            metrics.append(metric(
-                "secondary_school_quality",
-                "Secondary School Quality",
-                secondary_quality,
-                _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None,
-                "% Outstanding/Good",
-                details={
-                    "good_count": secondary_good_count,
-                    "total_count": secondary_total,
-                    "basis": "share of secondary schools within 3 miles rated Outstanding or Good",
-                },
-            ))
+            secondary_parent_quality = _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None
+
+        metrics.append(metric(
+            "secondary_schools", "Secondary Schools (3 miles)",
+            secondary_total,
+            None, "schools",
+            details={
+                "total_in_area": secondary_total,
+                "good_count": secondary_good_count,
+                "quality_pct": secondary_quality,
+                "parent_quality_pct": secondary_parent_quality,
+                "schools": sec_list,
+            },
+        ))
 
     # --- IMD Deprivation ---
     imd_local = await db.execute(
@@ -996,6 +914,34 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 "facilities": nhs_list,
             } if (nhs_counts or nhs_list) else None,
         ))
+
+    # ------------------------------------------------------------------
+    # Median Annual Earnings (ONS ASHE — LAD level)
+    # ------------------------------------------------------------------
+    earn_result = await db.execute(
+        text("SELECT AVG(median_annual_earnings) AS median_annual_earnings FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+        {"lads": local_lads},
+    )
+    earn_row = earn_result.mappings().first()
+    earn_parent_result = await db.execute(
+        text("SELECT AVG(median_annual_earnings) AS avg_earn FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+        {"lads": parent_lads},
+    )
+    earn_parent_row = earn_parent_result.mappings().first()
+    if earn_row and earn_row["median_annual_earnings"]:
+        parent_earn_val = round(float(earn_parent_row["avg_earn"])) if earn_parent_row and earn_parent_row["avg_earn"] else None
+        metrics.append(
+            metric(
+                "median_earnings",
+                "Median Annual Earnings",
+                round(float(earn_row["median_annual_earnings"])),
+                parent_earn_val,
+                "GBP/year",
+                details={
+                    "data_note": "Source: ONS ASHE. Residence-based annual earnings are only published at local-authority level, so sub-LAD searches inherit the relevant LAD value.",
+                },
+            )
+        )
 
     return metrics
 

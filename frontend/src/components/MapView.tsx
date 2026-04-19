@@ -54,7 +54,6 @@ const CHOROPLETH_RAMPS: Record<string, string[]> = {
   degree_educated: ['#fefce8', '#fde68a', '#facc15', '#ca8a04', '#713f12'],
   no_car: ['#fff7ed', '#fdba74', '#fb923c', '#ea580c', '#9a3412'],
   born_abroad: ['#fff7ed', '#fdba74', '#f97316', '#c2410c', '#7c2d12'],
-  wfh: ['#faf5ff', '#e9d5ff', '#c084fc', '#9333ea', '#581c87'],
   housing_tenure: ['#faf5ff', '#e9d5ff', '#d8b4fe', '#a855f7', '#6b21a8'],
   housing_type: ['#fdf4ff', '#f5d0fe', '#e879f9', '#c026d3', '#86198f'],
   household_size: ['#fdf2f8', '#fbcfe8', '#f472b6', '#db2777', '#831843'],
@@ -67,11 +66,7 @@ const CHOROPLETH_RAMPS: Record<string, string[]> = {
   deprivation_barriers: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
   deprivation_living_environment: ['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027'],
   broadband: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
-  full_fibre: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
-  superfast_broadband: ['#eff6ff', '#bfdbfe', '#60a5fa', '#2563eb', '#1d4ed8'],
   mobile_coverage: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
-  mobile_4g_indoor: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
-  mobile_5g_outdoor: ['#f3e8ff', '#d8b4fe', '#c084fc', '#a855f7', '#7e22ce'],
   air_quality_no2: ['#ecfeff', '#bae6fd', '#38bdf8', '#0284c7', '#0c4a6e'],
   air_quality_pm25: ['#f0f9ff', '#bae6fd', '#7dd3fc', '#0369a1', '#082f49'],
   council_tax: ['#eff6ff', '#93c5fd', '#3b82f6', '#1d4ed8', '#1e3a8a'],
@@ -91,7 +86,6 @@ const CHOROPLETH_UNITS: Record<string, string> = {
   degree_educated: '%',
   no_car: '%',
   born_abroad: '%',
-  wfh: '%',
   housing_tenure: '%',
   housing_type: '%',
   household_size: '%',
@@ -104,11 +98,7 @@ const CHOROPLETH_UNITS: Record<string, string> = {
   deprivation_barriers: 'score',
   deprivation_living_environment: 'score',
   broadband: '%',
-  full_fibre: '%',
-  superfast_broadband: '%',
   mobile_coverage: '%',
-  mobile_4g_indoor: '%',
-  mobile_5g_outdoor: '%',
   air_quality_no2: 'µg/m³',
   air_quality_pm25: 'µg/m³',
   council_tax: '£',
@@ -244,7 +234,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cleanupHandlersRef = useRef<{ clickHandler: any; enterHandler: any; leaveHandler: any; moveHandler?: any } | null>(null);
   const hoveredFeatureIdRef = useRef<string | null>(null);
-  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
+  // hoverPopupRef removed — hover info now shown in the legend
 
   // Keep refs so the map on('load') callback and moveend handler can read current values
   const activeTabRef = useRef(activeTab);
@@ -731,7 +721,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       const matchExpr: unknown[] = ['match', ['get', 'quantile']];
       for (let i = 0; i < bucketCount; i++) {
         // Map bucket i to evenly-spaced colour from the 5-colour ramp
-        const colourIdx = bucketCount < 5 ? Math.round(i * 4 / (bucketCount - 1 || 1)) : i;
+        // When only 1 bucket (all values identical), use the middle colour so it's visible
+        const colourIdx = bucketCount === 1 ? 2 : (bucketCount < 5 ? Math.round(i * 4 / (bucketCount - 1)) : i);
         matchExpr.push(i, ramp[colourIdx]);
       }
       matchExpr.push(noDataColour); // fallback for -1 / null
@@ -769,6 +760,23 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         return;
       }
 
+      // Format a choropleth value for display (used by legend, hover info, and click popup)
+      const fmtVal = (v: number | null): string => {
+        if (v == null) return 'n/a';
+        if (meta.layer === 'epc_score') return `${Math.round(v)}`;
+        if (legendUnit === '%') return `${Number(v).toFixed(1)}%`;
+        if (legendUnit === 'score') return Number(v).toFixed(1);
+        if (legendUnit === 'years') return `${Number(v).toFixed(1)} years`;
+        if (legendUnit === 'people/hectare') return `${Number(v).toFixed(1)} ppl/ha`;
+        if (legendUnit === 'µg/m³') return `${Number(v).toFixed(1)} µg/m³`;
+        if (meta.layer === 'price_per_sqft') return `£${Math.round(v).toLocaleString('en-GB')}`;
+        if (meta.layer === 'median_rent') return `£${Math.round(v).toLocaleString('en-GB')}/mo`;
+        if (meta.layer === 'council_tax' || meta.layer === 'median_earnings') return `£${Math.round(v).toLocaleString('en-GB')}`;
+        if (v >= 1_000_000) return `£${(v / 1_000_000).toFixed(1)}m`;
+        if (v >= 1_000) return `£${Math.round(v / 1_000)}k`;
+        return `£${Math.round(v).toLocaleString('en-GB')}`;
+      };
+
       // Click popup for LSOA details
       const clickHandler = (e: maplibregl.MapMouseEvent) => {
         try {
@@ -777,14 +785,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           if (!features.length) return;
           const p = features[0].properties;
           if (!p) return;
-          const unit = legendUnit;
-          const valStr = p.value != null
-            ? (meta.layer === 'epc_score'
-                ? `${Number(p.value).toFixed(0)} ${unit}`
-                : meta.layer === 'median_rent'
-                  ? `${unit}${Number(p.value).toLocaleString('en-GB')}/mo`
-                  : `${unit}${Number(p.value).toLocaleString('en-GB')}`)
-            : 'No data';
+          const valStr = p.value != null ? fmtVal(Number(p.value)) : 'No data';
           new maplibregl.Popup({ maxWidth: '200px' })
             .setLngLat(e.lngLat)
             .setHTML(`<div style="font-size:12px"><strong>${esc(String(p.lsoa_name || p.lsoa_code || ''))}</strong><br>${valStr}</div>`)
@@ -805,13 +806,13 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
             m.setFeatureState({ source: CHORO_SOURCE, id: hoveredFeatureIdRef.current }, { hover: false });
             hoveredFeatureIdRef.current = null;
           }
-          if (hoverPopupRef.current) {
-            hoverPopupRef.current.remove();
-            hoverPopupRef.current = null;
-          }
+
+          // Update legend hover info
+          const hoverEl = choroplethLegendRef.current?.querySelector('[data-hover-info]') as HTMLDivElement | null;
 
           if (!features.length) {
             m.getCanvas().style.cursor = '';
+            if (hoverEl) hoverEl.style.display = 'none';
             return;
           }
 
@@ -822,20 +823,13 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
             m.setFeatureState({ source: CHORO_SOURCE, id: fid }, { hover: true });
           }
 
-          // Show tooltip
+          // Show hovered value in the legend (not a floating tooltip)
           const p = feat.properties;
-          if (p) {
-            const valStr = p.value != null
-              ? (meta.layer === 'epc_score'
-                  ? `${Number(p.value).toFixed(0)} ${legendUnit}`
-                  : meta.layer === 'median_rent'
-                    ? `${legendUnit}${Number(p.value).toLocaleString('en-GB')}/mo`
-                    : `${legendUnit}${Number(p.value).toLocaleString('en-GB')}`)
-              : 'No data';
-            hoverPopupRef.current = new maplibregl.Popup({ maxWidth: '200px', closeButton: false, closeOnClick: false })
-              .setLngLat(e.lngLat)
-              .setHTML(`<div style="font-size:12px"><strong>${esc(String(p.lsoa_name || p.lsoa_code || ''))}</strong><br>${valStr}</div>`)
-              .addTo(m);
+          if (p && hoverEl) {
+            const valStr = p.value != null ? fmtVal(Number(p.value)) : 'No data';
+            const name = String(p.lsoa_name || p.lsoa_code || '');
+            hoverEl.innerHTML = `<strong>${esc(name)}</strong>&ensp;${valStr}`;
+            hoverEl.style.display = 'block';
           }
         } catch { /* map may be disposed */ }
       };
@@ -846,10 +840,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
             m.setFeatureState({ source: CHORO_SOURCE, id: hoveredFeatureIdRef.current }, { hover: false });
             hoveredFeatureIdRef.current = null;
           }
-          if (hoverPopupRef.current) {
-            hoverPopupRef.current.remove();
-            hoverPopupRef.current = null;
-          }
+          const hoverEl = choroplethLegendRef.current?.querySelector('[data-hover-info]') as HTMLDivElement | null;
+          if (hoverEl) hoverEl.style.display = 'none';
         } catch { /* */ }
       };
       m.on('mouseenter', CHORO_FILL, enterHandler);
@@ -859,10 +851,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       // Floating legend
       const legend = document.createElement('div');
       legend.style.cssText = `
-        position: absolute; bottom: 8px; right: 8px; background: white;
+        position: absolute; bottom: 8px; left: 8px; background: white;
         border-radius: 8px; padding: 8px 10px; font-size: 10px;
         box-shadow: 0 1px 4px rgba(0,0,0,0.15); z-index: 5; pointer-events: none;
-        max-width: min(200px, calc(100% - 16px)); word-wrap: break-word;
+        width: 180px; word-wrap: break-word;
       `;
       const layerLabels: Record<string, string> = {
         avg_price: 'Average price',
@@ -876,7 +868,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         degree_educated: 'Degree educated',
         no_car: 'No-car households',
         born_abroad: 'Born abroad',
-        wfh: 'Works from home',
         housing_tenure: 'Owner-occupation',
         housing_type: 'Detached homes',
         household_size: 'One-person households',
@@ -889,11 +880,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         deprivation_barriers: 'Barriers to housing and services',
         deprivation_living_environment: 'Living environment deprivation',
         broadband: 'Gigabit broadband',
-        full_fibre: 'Full fibre availability',
-        superfast_broadband: 'Superfast broadband',
         mobile_coverage: '4G outdoor coverage',
-        mobile_4g_indoor: '4G indoor coverage',
-        mobile_5g_outdoor: '5G outdoor coverage',
         air_quality_no2: 'NO2 pollution',
         air_quality_pm25: 'PM2.5 pollution',
         council_tax: 'Council tax',
@@ -901,21 +888,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         median_rent: 'Median rent',
       };
       const layerLabel = layerLabels[meta.layer] || formatLabel(meta.layer);
-      const fmtVal = (v: number | null) => {
-        if (v == null) return 'n/a';
-        if (meta.layer === 'epc_score') return `${Math.round(v)}`;
-        if (legendUnit === '%') return `${Number(v).toFixed(1)}%`;
-        if (legendUnit === 'score') return Number(v).toFixed(1);
-        if (legendUnit === 'years') return `${Number(v).toFixed(1)} years`;
-        if (legendUnit === 'people/hectare') return `${Number(v).toFixed(1)} ppl/ha`;
-        if (legendUnit === 'µg/m³') return `${Number(v).toFixed(1)} µg/m³`;
-        if (meta.layer === 'price_per_sqft') return `£${Math.round(v).toLocaleString('en-GB')}`;
-        if (meta.layer === 'median_rent') return `£${Math.round(v).toLocaleString('en-GB')}/mo`;
-        if (meta.layer === 'council_tax' || meta.layer === 'median_earnings') return `£${Math.round(v).toLocaleString('en-GB')}`;
-        if (v >= 1_000_000) return `£${(v / 1_000_000).toFixed(1)}m`;
-        if (v >= 1_000) return `£${Math.round(v / 1_000)}k`;
-        return `£${Math.round(v).toLocaleString('en-GB')}`;
-      };
 
       legend.innerHTML = `
         <div style="font-weight:600;margin-bottom:4px">${layerLabel}</div>
@@ -925,7 +897,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         <div style="display:flex;justify-content:space-between;color:#666">
           <span>${fmtVal(meta.min_value)}</span><span>${fmtVal(meta.max_value)}</span>
         </div>
-        ${meta.note ? `<div style="margin-top:8px;max-width:220px;color:#64748b;line-height:1.35">${esc(String(meta.note))}</div>` : ''}
+        <div data-hover-info style="display:none;margin-top:5px;padding-top:5px;border-top:1px solid #e2e8f0;font-size:11px;color:#334155"></div>
       `;
       containerRef.current?.appendChild(legend);
       choroplethLegendRef.current = legend;
@@ -944,10 +916,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           map.off('mouseleave', CHORO_FILL, h.leaveHandler);
         } catch { /* map may be removed */ }
         cleanupHandlersRef.current = null;
-      }
-      if (hoverPopupRef.current) {
-        hoverPopupRef.current.remove();
-        hoverPopupRef.current = null;
       }
       hoveredFeatureIdRef.current = null;
       cleanup();
@@ -1002,10 +970,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    new maplibregl.Marker({ color: '#2563eb' })
-      .setLngLat([lon, lat])
-      .addTo(map);
 
     // Re-render sold price clusters on zoom/pan change
     map.on('moveend', () => {

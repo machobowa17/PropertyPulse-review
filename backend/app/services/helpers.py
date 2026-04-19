@@ -272,12 +272,16 @@ def build_metric_contract(flat_metric: dict, parent_name: str | None = None) -> 
     interp_dir = flat_metric.get("interpretation_direction", reg.get("interpretation_direction", "neutral"))
 
     # Build quality_flags list
+    # If details already has a data_note, skip registry quality_notes to avoid
+    # near-duplicate footnotes (data_note is more detailed and rendered separately).
     quality_flags = []
+    has_data_note = isinstance(details.get("data_note"), str) and details["data_note"]
     qn = reg.get("quality_notes")
-    if isinstance(qn, str) and qn:
-        quality_flags.append(qn)
-    elif isinstance(qn, list):
-        quality_flags.extend(qn)
+    if not has_data_note:
+        if isinstance(qn, str) and qn:
+            quality_flags.append(qn)
+        elif isinstance(qn, list):
+            quality_flags.extend(qn)
     for note_key in ("data_note", "data_unavailable_note"):
         note_val = details.get(note_key)
         if isinstance(note_val, str) and note_val and note_val not in quality_flags:

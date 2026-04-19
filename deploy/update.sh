@@ -14,9 +14,10 @@ cd "$APP_DIR"
 echo "=== PropertyPulse — Deploying update ==="
 echo ""
 
-# Rebuild only images that changed
+# Rebuild images (--no-cache for frontend to avoid stale JS bundles)
 echo "[1/3] Building updated images..."
-$COMPOSE build
+$COMPOSE build --no-cache frontend
+$COMPOSE build api
 
 # Rolling restart (db + redis stay up, api + frontend restart)
 echo "[2/3] Restarting services..."

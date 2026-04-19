@@ -26,10 +26,10 @@ TAB_FULL = [
     "Local Governance",
 ]
 EXPECTED_METRIC_COUNTS = {
-    "Property": 14,
-    "Lifestyle": 12,
-    "Environment": 12,
-    "Community": 27,
+    "Property": 12,
+    "Lifestyle": 8,
+    "Environment": 10,
+    "Community": 25,
     "Governance": 4,
 }
 

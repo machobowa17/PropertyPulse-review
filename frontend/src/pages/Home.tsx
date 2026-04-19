@@ -116,13 +116,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Data source strip */}
-          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 pt-8 lg:pt-12 pb-2 border-t border-gray-100 mt-10 lg:mt-14">
-            <span className="text-[11px] text-gray-300 uppercase tracking-wider font-medium">Powered by</span>
-            {['ONS', 'HM Land Registry', 'Ofsted', 'Ofcom', 'Environment Agency', 'NHS Digital'].map((source) => (
-              <span key={source} className="text-[13px] text-gray-400 font-medium tracking-wide">{source}</span>
-            ))}
-          </div>
         </div>
       </main>
 

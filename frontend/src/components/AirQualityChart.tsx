@@ -16,11 +16,20 @@ interface Props {
   local: AqHistoryPoint[];
   national: AqHistoryPoint[];
   ladName: string;
+  pollutant?: 'pm25' | 'no2';
 }
 
-export default function AirQualityChart({ local, national, ladName }: Props) {
+const WHO_LIMITS: Record<string, number> = { pm25: 5, no2: 10 };
+const LABELS: Record<string, string> = { pm25: 'PM2.5', no2: 'NO₂' };
+
+export default function AirQualityChart({ local, national, ladName, pollutant = 'pm25' }: Props) {
+  const localKey = `local_${pollutant}` as const;
+  const nationalKey = `national_${pollutant}` as const;
+  const label = LABELS[pollutant];
+  const whoLimit = WHO_LIMITS[pollutant];
+
   const merged = useMemo(() => {
-    const byYear: Record<number, { year: string; local_pm25?: number; national_pm25?: number; local_no2?: number; national_no2?: number }> = {};
+    const byYear: Record<number, Record<string, unknown>> = {};
     for (const row of local) {
       byYear[row.year] = {
         year: String(row.year),
@@ -33,15 +42,19 @@ export default function AirQualityChart({ local, national, ladName }: Props) {
       byYear[row.year].national_pm25 = row.pm25_ugm3 ?? undefined;
       byYear[row.year].national_no2 = row.no2_ugm3 ?? undefined;
     }
-    return Object.values(byYear).sort((a, b) => a.year.localeCompare(b.year));
+    return Object.values(byYear).sort((a, b) =>
+      String(a.year).localeCompare(String(b.year)),
+    );
   }, [local, national]);
 
-  if (merged.length < 2) return null;
+  // Only render if we have at least 2 data points for the selected pollutant
+  const hasData = merged.filter((d) => d[localKey] != null).length >= 2;
+  if (!hasData) return null;
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3">
-      <h4 className="text-sm font-semibold text-ink">Air Quality Trend (PM2.5)</h4>
-      <p className="text-xs text-ink-muted">WHO guideline: 5 µg/m³ annual mean</p>
+      <h4 className="text-sm font-semibold text-ink">Air Quality Trend ({label})</h4>
+      <p className="text-xs text-ink-muted">WHO guideline: {whoLimit} µg/m³ annual mean</p>
       <div className="h-[260px]">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart data={merged} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -64,8 +77,8 @@ export default function AirQualityChart({ local, national, ladName }: Props) {
             <Tooltip
               formatter={(value, name) => {
                 const labels: Record<string, string> = {
-                  local_pm25: `${ladName} PM2.5`,
-                  national_pm25: 'National PM2.5',
+                  [localKey]: `${ladName} ${label}`,
+                  [nationalKey]: `National ${label}`,
                 };
                 return [Number(value).toFixed(1) + ' µg/m³', labels[String(name)] || String(name)];
               }}
@@ -75,8 +88,8 @@ export default function AirQualityChart({ local, national, ladName }: Props) {
             <Legend
               formatter={(value: string) => {
                 const labels: Record<string, string> = {
-                  local_pm25: `${ladName}`,
-                  national_pm25: 'National avg',
+                  [localKey]: `${ladName}`,
+                  [nationalKey]: 'National avg',
                 };
                 return labels[value] || value;
               }}
@@ -84,14 +97,14 @@ export default function AirQualityChart({ local, national, ladName }: Props) {
               wrapperStyle={{ fontSize: 12 }}
             />
             <ReferenceLine
-              y={5}
+              y={whoLimit}
               stroke="#ef4444"
               strokeDasharray="6 3"
               label={{ value: 'WHO limit', position: 'right', style: { fontSize: 10, fill: '#ef4444' } }}
             />
             <Line
               type="monotone"
-              dataKey="local_pm25"
+              dataKey={localKey}
               stroke="#059669"
               strokeWidth={2.5}
               dot={{ r: 3, fill: '#059669' }}
@@ -99,7 +112,7 @@ export default function AirQualityChart({ local, national, ladName }: Props) {
             />
             <Line
               type="monotone"
-              dataKey="national_pm25"
+              dataKey={nationalKey}
               stroke="#9ca3af"
               strokeWidth={1.5}
               strokeDasharray="4 4"

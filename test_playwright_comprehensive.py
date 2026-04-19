@@ -718,11 +718,6 @@ def run_all_tests():
         R.add(section, "Comparable Areas section",
               comparable_section.count() > 0)
 
-        # Check for Property Calculators section
-        calc_section = page.locator('text="Property Calculators"')
-        R.add(section, "Property Calculators section",
-              calc_section.count() > 0)
-
         # Switch to Lifestyle tab to check Commute Estimator
         switch_tab(page, "Lifestyle")
         time.sleep(3)

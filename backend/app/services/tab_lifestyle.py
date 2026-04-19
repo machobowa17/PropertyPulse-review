@@ -438,30 +438,6 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             },
         ))
 
-        if local_full_fibre is not None:
-            metrics.append(metric(
-                "full_fibre", "Full-Fibre Coverage",
-                local_full_fibre, parent_full_fibre, "%",
-                details={
-                    "gigabit_pct": local_gigabit,
-                    "parent_gigabit_pct": parent_gigabit,
-                    "source_note": "Surfaced from the same Ofcom Connected Nations coverage dataset used for the headline broadband row.",
-                },
-            ))
-
-        if local_superfast is not None:
-            metrics.append(metric(
-                "superfast_broadband", "Superfast Broadband Coverage",
-                local_superfast, parent_superfast, "%",
-                details={
-                    "gigabit_pct": local_gigabit,
-                    "full_fibre_pct": local_full_fibre,
-                    "parent_gigabit_pct": parent_gigabit,
-                    "parent_full_fibre_pct": parent_full_fibre,
-                    "source_note": "Uses the same Ofcom Connected Nations postcode-to-area coverage dataset as the headline broadband row, but focuses on baseline superfast availability.",
-                },
-            ))
-
     # --- Cycling ---
     cycling_result = await db.execute(
         text("SELECT SUM(total_workers * pct_cycling) / NULLIF(SUM(total_workers), 0) as pct_cycling FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)"),
@@ -519,11 +495,12 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             _r(commute_parent_row["pct_wfh"]) if commute_parent_row else None,
             "% of workers",
             details={
-                "pct_lt2km": _r(commute_row["pct_lt2km"]),
-                "pct_2_10km": _r(commute_row["pct_2_10km"]),
-                "pct_10_30km": _r(commute_row["pct_10_30km"]),
-                "pct_30plus": _r(commute_row["pct_30plus"]),
-                "pct_wfh": _r(commute_row["pct_wfh"]),
+                "Under 2 km": _r(commute_row["pct_lt2km"]),
+                "2–10 km": _r(commute_row["pct_2_10km"]),
+                "10–30 km": _r(commute_row["pct_10_30km"]),
+                "30+ km": _r(commute_row["pct_30plus"]),
+                "Work from home": _r(commute_row["pct_wfh"]),
+                "detail_unit": "%",
             },
         ))
 
@@ -555,31 +532,6 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
                     "pct_5g_outdoor": local_5g,
                     "parent_4g_indoor": parent_4g_indoor,
                     "parent_5g_outdoor": parent_5g,
-                },
-            ))
-
-        if local_4g_indoor is not None:
-            metrics.append(metric(
-                "mobile_4g_indoor", "4G Indoor Coverage",
-                local_4g_indoor, parent_4g_indoor, "%",
-                details={
-                    "pct_4g_outdoor": round(float(mobile_row["pct_4g_outdoor"]), 1) if mobile_row["pct_4g_outdoor"] else None,
-                    "pct_5g_outdoor": local_5g,
-                    "parent_4g_outdoor": parent_4g,
-                    "parent_5g_outdoor": parent_5g,
-                    "source_note": "Uses the same Ofcom Connected Nations LAD-level coverage model as the headline mobile row, but focuses on indoor 4G reliability.",
-                },
-            ))
-
-        if local_5g is not None:
-
-            metrics.append(metric(
-                "mobile_5g_outdoor", "5G Outdoor Coverage",
-                local_5g, parent_5g, "%",
-                details={
-                    "pct_4g_outdoor": round(float(mobile_row["pct_4g_outdoor"]), 1) if mobile_row["pct_4g_outdoor"] else None,
-                    "parent_4g_outdoor": parent_4g,
-                    "source_note": "Uses the same Ofcom Connected Nations LAD-level coverage model as the headline mobile row.",
                 },
             ))
 

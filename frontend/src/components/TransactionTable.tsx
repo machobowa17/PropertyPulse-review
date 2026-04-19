@@ -12,15 +12,15 @@ const TYPE_LABELS: Record<string, string> = {
   D: 'Detached', S: 'Semi', T: 'Terraced', F: 'Flat',
 };
 
-const SORT_COLUMNS: ReadonlyArray<{ key: string; label: string; align: 'left' | 'right' | 'center'; sortable?: boolean }> = [
-  { key: 'date', label: 'Date', align: 'left' },
-  { key: 'address', label: 'Address', align: 'left', sortable: false },
-  { key: 'price', label: 'Price', align: 'right' },
-  { key: 'type', label: 'Type', align: 'center' },
-  { key: 'beds', label: 'Beds (est.)\u00B9', align: 'center' },
-  { key: 'size', label: 'Size', align: 'right' },
-  { key: 'tenure', label: 'Tenure', align: 'center' },
-  { key: 'epc', label: 'EPC', align: 'center' },
+const SORT_COLUMNS: ReadonlyArray<{ key: string; label: string; align: 'left' | 'right' | 'center'; sortable?: boolean; width: string }> = [
+  { key: 'date', label: 'Date', align: 'left', width: '11%' },
+  { key: 'address', label: 'Address', align: 'left', sortable: false, width: '28%' },
+  { key: 'price', label: 'Price', align: 'right', width: '14%' },
+  { key: 'type', label: 'Type', align: 'center', width: '10%' },
+  { key: 'beds', label: 'Beds (est.)\u00B9', align: 'center', width: '10%' },
+  { key: 'size', label: 'Size', align: 'right', width: '10%' },
+  { key: 'tenure', label: 'Tenure', align: 'center', width: '9%' },
+  { key: 'epc', label: 'EPC', align: 'center', width: '8%' },
 ];
 
 interface Props {
@@ -103,7 +103,7 @@ export default function TransactionTable({ sessionKey }: Props) {
 
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-divider">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed min-w-[640px]">
           <thead>
             <tr className="bg-surface">
               {SORT_COLUMNS.map(col => {
@@ -112,6 +112,7 @@ export default function TransactionTable({ sessionKey }: Props) {
                 return (
                   <th
                     key={col.key}
+                    style={{ width: col.width }}
                     className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-faint whitespace-nowrap ${
                       col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
                     } ${sortable ? 'cursor-pointer select-none hover:text-ink-muted' : ''}`}

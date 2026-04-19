@@ -209,7 +209,8 @@ async def get_map_pois(
         sold_rows = all_rows if res is None else res.mappings().all()
 
         for r in sold_rows:
-            parts = [p for p in [r["saon"], r["paon"], r["street"]] if p]
+            saon = r["saon"] if r["saon"] and r["saon"] != "N" else None
+            parts = [p for p in [saon, r["paon"], r["street"]] if p]
             address = ", ".join(parts) if parts else r["town"] or "Unknown"
             pt = (r["property_type"] or "").strip()
             dur = (r["duration"] or "").strip()
@@ -591,6 +592,7 @@ async def get_map_pois(
 
 VALID_CHOROPLETH_LAYERS = {
     "avg_price",
+    "median_price",
     "price_per_sqft",
     "epc_score",
     "population_density",
@@ -601,7 +603,6 @@ VALID_CHOROPLETH_LAYERS = {
     "degree_educated",
     "no_car",
     "born_abroad",
-    "wfh",
     "housing_tenure",
     "housing_type",
     "household_size",
@@ -614,11 +615,7 @@ VALID_CHOROPLETH_LAYERS = {
     "deprivation_barriers",
     "deprivation_living_environment",
     "broadband",
-    "full_fibre",
-    "superfast_broadband",
     "mobile_coverage",
-    "mobile_4g_indoor",
-    "mobile_5g_outdoor",
     "air_quality_no2",
     "air_quality_pm25",
     "council_tax",
@@ -702,6 +699,24 @@ async def get_map_choropleth(
             WHERE lb.lsoa_code = ANY(:codes)
         """
         unit = "GBP"
+    elif layer == "median_price":
+        sql = f"""
+            SELECT lb.lsoa_code, lb.lsoa_name,
+                   ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
+                   sub.median_price AS value
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN (
+                SELECT lsoa_code,
+                       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price)::numeric) AS median_price
+                FROM core_property_transactions
+                WHERE date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                  AND property_type = ANY(:price_types)
+                  AND lsoa_code = ANY(:codes)
+                GROUP BY lsoa_code
+            ) sub ON sub.lsoa_code = lb.lsoa_code
+            WHERE lb.lsoa_code = ANY(:codes)
+        """
+        unit = "GBP"
     elif layer == "price_per_sqft":
         sql = f"""
             SELECT lb.lsoa_code, lb.lsoa_name,
@@ -738,7 +753,6 @@ async def get_map_choropleth(
         "degree_educated",
         "no_car",
         "born_abroad",
-        "wfh",
         "housing_tenure",
         "housing_type",
         "household_size",
@@ -752,7 +766,6 @@ async def get_map_choropleth(
             "degree_educated": "pct_degree",
             "no_car": "pct_no_car",
             "born_abroad": "pct_born_abroad",
-            "wfh": "pct_wfh",
             "housing_tenure": "pct_owned",
             "housing_type": "pct_detached",
             "household_size": "pct_1person",
@@ -766,7 +779,6 @@ async def get_map_choropleth(
             "degree_educated": "%",
             "no_car": "%",
             "born_abroad": "%",
-            "wfh": "%",
             "housing_tenure": "% owner-occupied",
             "housing_type": "% detached",
             "household_size": "% one-person",
@@ -818,13 +830,8 @@ async def get_map_choropleth(
             WHERE lb.lsoa_code = ANY(:codes)
         """
         unit = "score"
-    elif layer in {"broadband", "full_fibre", "superfast_broadband"}:
-        broadband_columns = {
-            "broadband": "gigabit_pct",
-            "full_fibre": "fttp_pct",
-            "superfast_broadband": "superfast_pct",
-        }
-        value_column = broadband_columns[layer]
+    elif layer == "broadband":
+        value_column = "gigabit_pct"
         sql = f"""
             SELECT lb.lsoa_code, lb.lsoa_name,
                    ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,
@@ -841,13 +848,8 @@ async def get_map_choropleth(
             WHERE lb.lsoa_code = ANY(:codes)
         """
         unit = "%"
-    elif layer in {"mobile_coverage", "mobile_4g_indoor", "mobile_5g_outdoor"}:
-        mobile_columns = {
-            "mobile_coverage": "pct_4g_outdoor",
-            "mobile_4g_indoor": "pct_4g_indoor",
-            "mobile_5g_outdoor": "pct_5g_outdoor",
-        }
-        value_column = mobile_columns[layer]
+    elif layer == "mobile_coverage":
+        value_column = "pct_4g_outdoor"
         sql = f"""
             SELECT lb.lsoa_code, lb.lsoa_name,
                    ST_AsGeoJSON({geom_expr}, {prec}) AS geojson,

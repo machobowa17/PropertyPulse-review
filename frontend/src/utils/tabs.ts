@@ -44,6 +44,7 @@ export function formatValue(value: number | string | null, unit: string): string
   if (unit === 'dB') return value.toFixed(0) + ' dB';
   if (unit === 'people/hectare') return value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) + '/ha';
   if (unit === 'years') return value.toFixed(1) + ' yrs';
+  if (unit === 'sales/LSOA') return value.toLocaleString('en-GB', { maximumFractionDigits: 1 }) + ' sales/LSOA';
   if (unit === 'count/LSOA') return value.toLocaleString('en-GB', { maximumFractionDigits: 1 }) + '/LSOA';
   if (unit === 'count') return value.toLocaleString('en-GB');
   if (unit === 'score' || unit.startsWith('score')) return value.toFixed(1);
@@ -73,11 +74,7 @@ export const METRIC_ICONS: Record<string, string> = {
   ptal_score: 'TrainFront',
   cycling: 'Bike',
   mobile_coverage: 'Smartphone',
-  mobile_4g_indoor: 'Smartphone',
-  mobile_5g_outdoor: 'Smartphone',
   broadband: 'Wifi',
-  full_fibre: 'Wifi',
-  superfast_broadband: 'Wifi',
   flood_risk: 'Droplets',
   air_quality_no2: 'Wind',
   air_quality_pm25: 'Cloud',
@@ -95,9 +92,7 @@ export const METRIC_ICONS: Record<string, string> = {
   housing_tenure: 'Key',
   housing_type: 'LayoutGrid',
   primary_schools: 'GraduationCap',
-  primary_school_quality: 'GraduationCap',
   secondary_schools: 'School',
-  secondary_school_quality: 'School',
   deprivation: 'BarChart2',
   deprivation_income: 'BarChart2',
   deprivation_employment: 'BarChart2',
@@ -114,7 +109,6 @@ export const METRIC_ICONS: Record<string, string> = {
   water_company: 'Droplet',
   financial_health: 'ShieldCheck',
   median_earnings: 'Banknote',
-  wfh: 'Home',
   commute_distance: 'Home',
   good_health: 'Heart',
   economically_active: 'Briefcase',
@@ -122,5 +116,4 @@ export const METRIC_ICONS: Record<string, string> = {
   no_car: 'Car',
   born_abroad: 'Globe',
   epc_energy_score: 'Flame',
-  epc_rating_c_plus: 'Flame',
 };

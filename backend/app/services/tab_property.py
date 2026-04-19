@@ -270,20 +270,6 @@ async def fetch_property_market(
     }
     if price_trend:
         avg_price_details["trend"] = price_trend
-    if stock_row and stock_row["total_households"] is not None:
-        avg_price_details.update(
-            {
-                "total_households": int(stock_row["total_households"]),
-                "stock_owned_pct": _round(stock_row["pct_owned"]),
-                "stock_private_rent_pct": _round(stock_row["pct_private_rent"]),
-                "stock_social_rent_pct": _round(stock_row["pct_social_rent"]),
-                "stock_detached_pct": _round(stock_row["pct_detached"]),
-                "stock_semi_pct": _round(stock_row["pct_semi"]),
-                "stock_terraced_pct": _round(stock_row["pct_terraced"]),
-                "stock_flat_pct": _round(stock_row["pct_flat"]),
-                "stock_note": "Housing-stock context uses Census 2021 LSOA aggregates for the resolved area rather than the currently empty LAD bedroom-price table.",
-            }
-        )
     metrics.append(
         metric(
             "avg_price",
@@ -368,7 +354,6 @@ async def fetch_property_market(
                     "semi": round(float(ppsm_row["avg_ppsm_semi"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_semi"] else None,
                     "terraced": round(float(ppsm_row["avg_ppsm_terraced"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_terraced"] else None,
                     "flat": round(float(ppsm_row["avg_ppsm_flat"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_flat"] else None,
-                    "data_note": "Calculated from recent Land Registry transactions with matched floor-area records. Coverage depends on the share of recent sales carrying usable floor-area data.",
                 },
             )
         )
@@ -394,18 +379,25 @@ async def fetch_property_market(
         )
         prior_txn_row = prior_txn_result.mappings().first()
         prior_txn_raw = int(prior_txn_row["txn"]) if prior_txn_row and prior_txn_row["txn"] else None
-        prior_txn = round(prior_txn_raw / local_lsoa_count, 1) if prior_txn_raw else None
         if prior_txn_raw and prior_txn_raw > 0:
             txn_yoy = round((local_txn_raw - prior_txn_raw) / prior_txn_raw * 100, 1)
+
+    txn_details = None
+    if txn_yoy is not None and prior_txn_raw:
+        direction = "up" if txn_yoy > 0 else "down"
+        prior_per_lsoa = round(prior_txn_raw / local_lsoa_count, 1)
+        prior_str = f"{prior_per_lsoa:g}"
+        yoy_str = f"{abs(txn_yoy):g}"
+        txn_details = {"yoy_summary": f"{yoy_str}% {direction} from {prior_str} sales/LSOA in the prior 12 months"}
 
     metrics.append(
         metric(
             "transaction_volume",
-            "Transaction Volume (12m)",
+            "Transaction Volume (last 12m)",
             local_txn or None,
             parent_txn or None,
-            "count/LSOA",
-            details={"yoy_change_pct": txn_yoy, "prior_12m_count": prior_txn} if txn_yoy is not None else None,
+            "sales/LSOA",
+            details=txn_details,
         )
     )
 
@@ -527,7 +519,7 @@ async def fetch_property_market(
     metrics.append(
         metric(
             "new_build_proportion",
-            "New Build Proportion",
+            "New Build Proportion (last 12m)",
             newbuild_pct,
             parent_newbuild_pct,
             "%",
@@ -775,33 +767,8 @@ async def fetch_property_market(
                     )
                 )
 
-    # ------------------------------------------------------------------
-    # Earnings context
-    # ------------------------------------------------------------------
-    earn_result = await db.execute(
-        text("SELECT AVG(median_annual_earnings) AS median_annual_earnings FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
-        {"lads": local_lads},
-    )
-    earn_row = earn_result.mappings().first()
-    earn_parent_result = await db.execute(
-        text("SELECT AVG(median_annual_earnings) AS avg_earn FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
-        {"lads": parent_lads},
-    )
-    earn_parent_row = earn_parent_result.mappings().first()
-    if earn_row and earn_row["median_annual_earnings"]:
-        parent_earn_val = round(float(earn_parent_row["avg_earn"])) if earn_parent_row and earn_parent_row["avg_earn"] else None
-        metrics.append(
-            metric(
-                "median_earnings",
-                "Median Annual Earnings",
-                round(float(earn_row["median_annual_earnings"])),
-                parent_earn_val,
-                "GBP/year",
-                details={
-                    "data_note": "Source: ONS ASHE. Residence-based annual earnings are only published at local-authority level, so sub-LAD searches inherit the relevant LAD value.",
-                },
-            )
-        )
+    # (Earnings query retained here for affordability calculation above;
+    #  standalone median_earnings metric now emitted from tab_community.py)
 
     # ------------------------------------------------------------------
     # Investment grade heuristic
@@ -967,13 +934,76 @@ async def fetch_property_market(
             )
         )
 
+    # ------------------------------------------------------------------
+    # Housing Tenure & Housing Stock (Census 2021, moved from Community tab)
+    # ------------------------------------------------------------------
+    housing_local = await db.execute(
+        text(
+            """
+            SELECT SUM(total_households) as total_households,
+                   SUM(total_households * pct_owned) / NULLIF(SUM(total_households), 0) as pct_owned,
+                   SUM(total_households * pct_social_rent) / NULLIF(SUM(total_households), 0) as pct_social_rent,
+                   SUM(total_households * pct_private_rent) / NULLIF(SUM(total_households), 0) as pct_private_rent,
+                   SUM(total_households * pct_detached) / NULLIF(SUM(total_households), 0) as pct_detached,
+                   SUM(total_households * pct_semi) / NULLIF(SUM(total_households), 0) as pct_semi,
+                   SUM(total_households * pct_terraced) / NULLIF(SUM(total_households), 0) as pct_terraced,
+                   SUM(total_households * pct_flat) / NULLIF(SUM(total_households), 0) as pct_flat
+            FROM core_census_lsoa WHERE lsoa_code = ANY(:codes)
+            """
+        ),
+        {"codes": lsoa_codes},
+    )
+    housing_row = housing_local.mappings().first()
+
+    housing_parent = await db.execute(
+        text(
+            """
+            SELECT SUM(h.total_households * h.pct_owned) / NULLIF(SUM(h.total_households), 0) as avg_owned,
+                   SUM(h.total_households * h.pct_private_rent) / NULLIF(SUM(h.total_households), 0) as avg_priv_rent,
+                   SUM(h.total_households * h.pct_detached) / NULLIF(SUM(h.total_households), 0) as avg_det,
+                   SUM(h.total_households * h.pct_semi) / NULLIF(SUM(h.total_households), 0) as avg_semi,
+                   SUM(h.total_households * h.pct_terraced) / NULLIF(SUM(h.total_households), 0) as avg_terr,
+                   SUM(h.total_households * h.pct_flat) / NULLIF(SUM(h.total_households), 0) as avg_flat
+            FROM core_census_lsoa h
+            JOIN core_lsoa_boundaries l ON l.lsoa_code = h.lsoa_code
+            WHERE l.lad_code = ANY(:parent_lads)
+            """
+        ),
+        {"parent_lads": parent_lads},
+    )
+    housing_parent_row = housing_parent.mappings().first()
+
+    if housing_row:
         metrics.append(
             metric(
-                "epc_rating_c_plus",
-                "EPC Rated C or Above",
-                round(local_c_plus, 2),
-                parent_c_plus,
-                "%",
+                "housing_tenure",
+                "Housing Tenure",
+                _round(housing_row["pct_owned"]),
+                _round(housing_parent_row["avg_owned"]) if housing_parent_row else None,
+                "% owner-occupied",
+                details={
+                    "Owner-occupied": _round(housing_row["pct_owned"]),
+                    "Social rent": _round(housing_row["pct_social_rent"]),
+                    "Private rent": _round(housing_row["pct_private_rent"]),
+                    "detail_unit": "%",
+                },
+            )
+        )
+
+        metrics.append(
+            metric(
+                "housing_type",
+                "Housing Stock",
+                _round(housing_row["pct_detached"]),
+                _round(housing_parent_row["avg_det"]) if housing_parent_row else None,
+                "% detached",
+                details={
+                    "Detached": _round(housing_row["pct_detached"]),
+                    "Semi-detached": _round(housing_row["pct_semi"]),
+                    "Terraced": _round(housing_row["pct_terraced"]),
+                    "Flat": _round(housing_row["pct_flat"]),
+                    "detail_unit": "%",
+                },
             )
         )
 

@@ -86,6 +86,12 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
   const [showParentAvg,    setShowParentAvg]    = useState(true);
   const [showBedrooms,     setShowBedrooms]     = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const toggleSeries = (key: string) => setHiddenSeries(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   // Measure the actual rendered container so we never guess at pixel dimensions
   const containerRef = useRef<HTMLDivElement>(null);
@@ -245,8 +251,10 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3">
       <h4 className="text-sm font-semibold text-ink">
-        {priceField === 'avg_ppsf' ? 'Price per Sqft by Property Type' : `${metricLabel} Sale Price History by Property Type`}
-        {' '}<span className="text-[11px] font-normal text-ink-faint">(annual; last point = rolling 12m)</span>
+        {priceField === 'avg_ppsf' ? 'Price per Sqft History' : `${metricLabel} Sale Price History`}
+        {chartData.length > 0 && (
+          <span className="text-[11px] font-normal text-ink-faint"> (since {chartData[0].year})</span>
+        )}
       </h4>
 
       <div className="flex flex-wrap gap-1.5">
@@ -293,9 +301,12 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
             <Tooltip
               content={<CustomTooltip activeKey={activeKey} fmtGBP={fmtGBP} />}
               cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }}
+              allowEscapeViewBox={{ x: false, y: false }}
+              isAnimationActive={false}
+              offset={16}
             />
 
-            {showLocalByType && localTypes.map((typeName) => (
+            {showLocalByType && localTypes.filter(t => !hiddenSeries.has(t)).map((typeName) => (
               <Line
                 key={`l_${typeName}`}
                 type="monotone"
@@ -309,7 +320,7 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
               />
             ))}
 
-            {showLocalAvg && hasLocalAvg && (
+            {showLocalAvg && hasLocalAvg && !hiddenSeries.has('__local_avg') && (
               <Line
                 type="monotone"
                 dataKey="__local_avg"
@@ -323,7 +334,7 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
               />
             )}
 
-            {showParentByType && parentTypes.map((typeName) => (
+            {showParentByType && parentTypes.filter(t => !hiddenSeries.has(`__p_${t}`)).map((typeName) => (
               <Line
                 key={`p_${typeName}`}
                 type="monotone"
@@ -339,7 +350,7 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
               />
             ))}
 
-            {showParentAvg && hasParentAvg && (
+            {showParentAvg && hasParentAvg && !hiddenSeries.has('__parent_avg') && (
               <Line
                 type="monotone"
                 dataKey="__parent_avg"
@@ -354,7 +365,7 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
               />
             )}
 
-            {showBedrooms && bedroomNums.map((n) => (
+            {showBedrooms && bedroomNums.filter(n => !hiddenSeries.has(`__bed_${n}`)).map((n) => (
               <Line
                 key={`__bed_${n}`}
                 type="monotone"
@@ -377,16 +388,16 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
         <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
           <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">{localLabel}</span>
           {TYPE_ORDER.filter(t => localTypes.includes(t)).map(t => (
-            <div key={t} className="flex items-center gap-1 whitespace-nowrap">
+            <button key={t} type="button" onClick={() => toggleSeries(t)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(t) ? 'opacity-30' : ''}`}>
               <LineSwatch color={TYPE_COLOURS[t]} />
               <span className="text-ink-muted">{t}</span>
-            </div>
+            </button>
           ))}
           {hasLocalAvg && (
-            <div className="flex items-center gap-1 whitespace-nowrap">
+            <button type="button" onClick={() => toggleSeries('__local_avg')} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has('__local_avg') ? 'opacity-30' : ''}`}>
               <LineSwatch color="#1e293b" dash="6 3" />
               <span className="text-ink-muted">All types</span>
-            </div>
+            </button>
           )}
         </div>
 
@@ -394,10 +405,10 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
           <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
             <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">Bedrooms (est.)</span>
             {bedroomNums.map(n => (
-              <div key={n} className="flex items-center gap-1 whitespace-nowrap">
+              <button key={n} type="button" onClick={() => toggleSeries(`__bed_${n}`)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(`__bed_${n}`) ? 'opacity-30' : ''}`}>
                 <LineSwatch color={BEDROOM_COLOURS[n] ?? '#6b7280'} dash="4 2" />
                 <span className="text-ink-muted">{n} bed</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -406,16 +417,16 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
           <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
             <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">{parentLabel}</span>
             {TYPE_ORDER.filter(t => parentTypes.includes(t)).map(t => (
-              <div key={t} className="flex items-center gap-1 whitespace-nowrap">
+              <button key={t} type="button" onClick={() => toggleSeries(`__p_${t}`)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(`__p_${t}`) ? 'opacity-30' : ''}`}>
                 <LineSwatch color={TYPE_COLOURS[t]} dash="8 4" opacity={0.5} width={1.5} />
                 <span className="text-ink-faint">{t}</span>
-              </div>
+              </button>
             ))}
             {hasParentAvg && (
-              <div className="flex items-center gap-1 whitespace-nowrap">
+              <button type="button" onClick={() => toggleSeries('__parent_avg')} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has('__parent_avg') ? 'opacity-30' : ''}`}>
                 <LineSwatch color="#9ca3af" dash="4 4" opacity={0.7} width={1.5} />
                 <span className="text-ink-faint">All types</span>
-              </div>
+              </button>
             )}
           </div>
         )}

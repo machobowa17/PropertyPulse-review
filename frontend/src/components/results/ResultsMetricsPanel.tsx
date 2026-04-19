@@ -1,6 +1,5 @@
+import { useMemo } from 'react';
 import MetricCard from '../MetricCard';
-import MortgageCalculator from '../MortgageCalculator';
-import RentalYieldCalculator from '../RentalYieldCalculator';
 import AirQualityChart from '../AirQualityChart';
 import ComparableAreas from '../ComparableAreas';
 import CommuteEstimator from '../CommuteEstimator';
@@ -12,6 +11,7 @@ import { TAB_EXPLAINERS } from '../../utils/tabExplainers';
 import { buildSectionSummary } from '../../utils/sectionSummary';
 import { useResults } from '../../context/ResultsContext';
 import { ResultsMobileMap } from './ResultsMapPanel';
+import type { Metric } from '../../types';
 
 export function ResultsMetricsPanel() {
   const {
@@ -32,6 +32,18 @@ export function ResultsMetricsPanel() {
     decisionMode,
     setMetricElementRef,
   } = useResults();
+
+  const hiddenMetrics = useMemo(() => {
+    if (!tabData?.metrics) return [];
+    return tabData.metrics
+      .filter((m: Metric) => m.local_value == null)
+      .map((m: Metric) => {
+        const note = (m.details?.data_note as string)
+          || (m.details?.data_unavailable_note as string)
+          || 'Data not available for this search area.';
+        return { name: m.name, reason: note };
+      });
+  }, [tabData]);
 
   return (
     <main id="main-content" className="flex-1 min-w-0 px-4 lg:px-6 py-6">
@@ -80,41 +92,31 @@ export function ResultsMetricsPanel() {
               <span />
             </div>
           ) : null}
-          {tabData?.metrics.map((m) => (
-            <div key={m.id} id={`metric-${m.id}`} ref={(node) => setMetricElementRef(m.id, node)}>
-              <MetricCard
-                metric={m}
-                persona={persona}
-                parentName={parentName}
-                priceByTypeData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceByType ?? undefined) : undefined}
-                priceHistoryData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceHistory ?? undefined) : undefined}
-                areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
-                sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
-              />
+          {tabData?.metrics.filter((m) => m.local_value != null).map((m) => (
+            <div key={m.id}>
+              <div id={`metric-${m.id}`} ref={(node) => setMetricElementRef(m.id, node)}>
+                <MetricCard
+                  metric={m}
+                  persona={persona}
+                  parentName={parentName}
+                  priceByTypeData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceByType ?? undefined) : undefined}
+                  priceHistoryData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceHistory ?? undefined) : undefined}
+                  areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
+                  sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
+                />
+              </div>
+              {m.id === 'air_quality_pm25' && aqHistory != null && aqHistory.local.length > 1 && (
+                <div className="mt-2">
+                  <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="pm25" />
+                </div>
+              )}
+              {m.id === 'air_quality_no2' && aqHistory != null && aqHistory.local.length > 1 && (
+                <div className="mt-2">
+                  <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="no2" />
+                </div>
+              )}
             </div>
           ))}
-          {/* Interactive tools for Property tab */}
-          {activeTab === 'Property & Market' && (tabData?.metrics?.length ?? 0) > 0 && (() => {
-            const metrics = tabData!.metrics;
-            const medianPrice = metrics.find(m => m.id === 'median_price')?.local_value as number | undefined;
-            const medianEarnings = metrics.find(m => m.id === 'median_earnings')?.local_value as number | undefined;
-            const medianRent = metrics.find(m => m.id === 'median_rent')?.local_value as number | undefined;
-            const avgPrice = metrics.find(m => m.id === 'avg_price')?.local_value as number | undefined;
-            return (
-              <CollapsibleSection title="Property Calculators">
-                <div className="grid gap-3 sm:grid-cols-2 mt-3">
-                  <MortgageCalculator
-                    defaultPrice={medianPrice ? Math.round(medianPrice) : undefined}
-                    medianEarnings={medianEarnings ? Math.round(medianEarnings) : undefined}
-                  />
-                  <RentalYieldCalculator
-                    defaultPrice={avgPrice ? Math.round(avgPrice) : undefined}
-                    defaultRent={medianRent ? Math.round(medianRent) : undefined}
-                  />
-                </div>
-              </CollapsibleSection>
-            );
-          })()}
           {/* Comparable areas */}
           {activeTab === 'Property & Market' && comparable != null && comparable.comparable.length > 0 && (
             <CollapsibleSection title="Comparable Areas">
@@ -137,16 +139,6 @@ export function ResultsMetricsPanel() {
               />
             </CollapsibleSection>
           )}
-          {/* Air quality trend chart */}
-          {activeTab === 'Environment & Safety' && aqHistory != null && aqHistory.local.length > 1 && (
-            <CollapsibleSection title="Air Quality Trend">
-              <AirQualityChart
-                local={aqHistory.local}
-                national={aqHistory.national}
-                ladName={aqHistory.lad_name}
-              />
-            </CollapsibleSection>
-          )}
 
           {/* Useful resources — always shown when data is resolved */}
           {tabData != null && (
@@ -156,6 +148,23 @@ export function ResultsMetricsPanel() {
                 ladCode={codes?.lad}
               />
             </CollapsibleSection>
+          )}
+
+          {hiddenMetrics.length > 0 && (
+            <div className="rounded-xl bg-surface border border-divider/60 px-4 py-3 mt-2">
+              <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider mb-1.5">
+                Hidden metrics ({hiddenMetrics.length})
+              </p>
+              <ul className="space-y-1">
+                {hiddenMetrics.map((h) => (
+                  <li key={h.name} className="text-[11px] text-ink-muted">
+                    <span className="font-medium text-ink-faint">{h.name}</span>
+                    <span className="mx-1">—</span>
+                    <span>{h.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {tabData?.metrics.length === 0 && (

@@ -20,9 +20,7 @@ const AmenityRadarChart       = lazy(() => import('./AmenityRadarChart'));
 const PriceByTypeChart        = lazy(() => import('./PriceByTypeChart'));
 const DistrictPriceHistoryChart = lazy(() => import('./DistrictPriceHistoryChart'));
 const EpcRatingChart          = lazy(() => import('./EpcRatingChart'));
-const TransportModeChart      = lazy(() => import('./TransportModeChart'));
 const PtalGauge               = lazy(() => import('./PtalGauge'));
-const FloodRiskGauge          = lazy(() => import('./FloodRiskGauge'));
 const DemographicsCards       = lazy(() => import('./DemographicsCards'));
 const ImdDeprivationBlock     = lazy(() => import('./ImdDeprivationBlock'));
 const CouncilTaxBandGrid      = lazy(() => import('./CouncilTaxBandGrid'));
@@ -71,7 +69,6 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   investment_grade:       { label: 'HM Land Registry / ONS', licence: 'OGL v3' },
   epc_rating:             { label: 'MHCLG EPC Register', licence: 'OGL v3' },
   epc_energy_score:       { label: 'MHCLG EPC Register', licence: 'OGL v3' },
-  epc_rating_c_plus:      { label: 'MHCLG EPC Register', licence: 'OGL v3' },
   // Lifestyle & Connectivity
   nearest_station:        { label: 'NaPTAN / Network Rail', licence: 'OGL v3' },
   ptal:                   { label: 'TfL / NaPTAN', licence: 'OGL v3' },
@@ -81,7 +78,6 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   mobile_coverage:        { label: 'Ofcom Connected Nations', licence: 'OGL v3' },
   ev_chargers:            { label: 'DfT EVCD Register', licence: 'OGL v3' },
   amenities_15min:        { label: 'OpenStreetMap', licence: 'ODbL' },
-  wfh:                    { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   commute_distance:       { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   // Environment & Safety
   flood_risk:             { label: 'EA Flood Map for Planning', licence: 'OGL v3' },
@@ -254,7 +250,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           <span className="text-lg font-bold font-mono text-ink tracking-tight">
             {formatValue(metric.local_value, metric.unit)}
           </span>
-          {trend && <TrendBadge trend={trend} />}
+          {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
         </div>
 
         {/* Parent */}
@@ -326,7 +322,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
             <span className="text-xl font-bold font-mono text-ink tracking-tight">
               {formatValue(metric.local_value, metric.unit)}
             </span>
-            {trend && <TrendBadge trend={trend} />}
+            {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
             {metric.parent_value !== null ? (
               <span className={`flex items-center gap-1 text-xs ${compColourClass}`}>
                 <ComparisonIcon className="w-3 h-3" />
@@ -380,24 +376,35 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
                 />
               )}
-              <DetailsRenderer
-                details={priceByTypeData && metric.details
-                  ? Object.fromEntries(Object.entries(metric.details).filter(([k]) => !['detached', 'semi', 'terraced', 'flat', 'uk_median', 'parent_median'].includes(k)))
-                  : metric.details ?? {}
-                }
-                unit={metric.unit}
-              />
+              {!(priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0) && (
+                <DetailsRenderer
+                  details={metric.details ?? {}}
+                  unit={metric.unit}
+                />
+              )}
               {metric.id === 'transaction_volume' && sessionKey && (
                 <TransactionTable sessionKey={sessionKey} />
               )}
-              {/* Quality flags (prefer nested array, fall back to flat string) */}
-              {(metric.quality_flags?.length > 0 || metric.quality_notes) && (
-                <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200/60 text-[11px] text-amber-800">
-                  {metric.quality_flags?.length > 0
-                    ? metric.quality_flags.map((flag, i) => <p key={i}>{flag}</p>)
-                    : metric.quality_notes}
-                </div>
-              )}
+              {/* Quality flags (deduplicated against data notes) */}
+              {(() => {
+                // Collect all _note texts from details to avoid showing them twice
+                const noteTexts = new Set<string>();
+                if (metric.details) {
+                  for (const [k, v] of Object.entries(metric.details)) {
+                    if (k.endsWith('_note') && typeof v === 'string') noteTexts.add(v);
+                  }
+                }
+                const flags = metric.quality_flags?.filter(f => !noteTexts.has(f)) ?? [];
+                const fallback = metric.quality_notes && !noteTexts.has(metric.quality_notes) ? metric.quality_notes : null;
+                if (flags.length === 0 && !fallback) return null;
+                return (
+                  <div className="mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200/60 text-[11px] text-amber-800">
+                    {flags.length > 0
+                      ? flags.map((flag, i) => <p key={i}>{flag}</p>)
+                      : fallback}
+                  </div>
+                );
+              })()}
               {METRIC_SOURCES[metric.id] && (
                 <div className="mt-3 flex items-center gap-1.5">
                   <span className="text-[10px] text-ink-faint">Source:</span>
@@ -444,48 +451,168 @@ function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; 
   return <>{content}{notes}</>;
 }
 
-function renderDetailsContent(details: Record<string, unknown>, unit: string): React.ReactNode {
-  if (Array.isArray(details.schools)) {
-    return (
-      <div className="space-y-2 mt-2">
-        {arr(details, 'schools').map((s, i) => (
-          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
-            <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-xs font-bold text-brand-600">
-              {i + 1}
-            </div>
+/** NHS facilities with type filter toggles and scrollable table */
+function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) {
+  const [activeType, setActiveType] = useState<string | null>(null);
+  const typeSummary = rec<Record<string, { count: number; nearest_m: number | null }>>(details, 'type_summary');
+  const TYPE_ORDER = ['GP', 'Hospital', 'Pharmacy', 'Dentist', 'Optician', 'Care Home'];
+  const summaryEntries = typeSummary
+    ? [...TYPE_ORDER.filter((t) => t in typeSummary), ...Object.keys(typeSummary).filter((t) => !TYPE_ORDER.includes(t))]
+        .map((t) => ({ type: t, ...typeSummary[t] }))
+    : [];
+
+  const allFacilities = arr(details, 'facilities');
+  const filtered = activeType
+    ? allFacilities.filter((f) => String(f.type) === activeType)
+    : allFacilities;
+
+  return (
+    <div className="space-y-3 mt-2">
+      {summaryEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setActiveType(null)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              activeType === null
+                ? 'bg-brand-600 text-white border-brand-600'
+                : 'bg-surface text-ink-muted border-divider hover:border-brand-300'
+            }`}
+          >
+            All ({allFacilities.length})
+          </button>
+          {summaryEntries.map(({ type, count }) => (
+            <button
+              key={type}
+              onClick={() => setActiveType(activeType === type ? null : type)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                activeType === type
+                  ? 'bg-brand-600 text-white border-brand-600'
+                  : 'bg-surface text-ink-muted border-divider hover:border-brand-300'
+              }`}
+            >
+              {type} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="max-h-[260px] overflow-y-auto space-y-1.5">
+        {filtered.map((f, i) => (
+          <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface">
+            <Stethoscope className="w-3.5 h-3.5 text-brand-600 shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-ink truncate">{String(s.name)}</div>
-              <div className="flex flex-wrap gap-2 mt-0.5">
-                {s.ofsted ? <span className="text-xs px-1.5 py-0.5 rounded bg-brand-50 text-brand-700">{String(s.ofsted)}</span> : null}
-                {s.distance_m != null && <span className="text-xs text-ink-faint">{Number(s.distance_m).toLocaleString()}m</span>}
-                {s.ks2_reading != null && <span className="text-xs text-ink-muted">Reading: {Number(s.ks2_reading).toFixed(1)}</span>}
-                {s.ks2_maths != null && <span className="text-xs text-ink-muted">Maths: {Number(s.ks2_maths).toFixed(1)}</span>}
-                {s.progress_8 != null && <span className="text-xs text-ink-muted">P8: {Number(s.progress_8).toFixed(2)}</span>}
-                {s.attainment_8 != null && <span className="text-xs text-ink-muted">A8: {Number(s.attainment_8).toFixed(1)}</span>}
-              </div>
+              <span className="text-sm text-ink truncate block">{String(f.name)}</span>
+              {f.type != null && <span className="text-[10px] text-ink-faint">{String(f.type)}</span>}
             </div>
+            {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
           </div>
         ))}
+        {filtered.length === 0 && (
+          <div className="text-xs text-ink-faint text-center py-3">No facilities of this type</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function renderDetailsContent(details: Record<string, unknown>, unit: string): React.ReactNode {
+  if (Array.isArray(details.schools)) {
+    const qualityPct = num(details, 'quality_pct');
+    const parentQualityPct = num(details, 'parent_quality_pct');
+    const goodCount = num(details, 'good_count');
+    const totalInArea = num(details, 'total_in_area');
+    return (
+      <div className="space-y-2 mt-2">
+        {qualityPct != null && (
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2 rounded-lg bg-brand-50/50 border border-brand-100/60">
+            <span className="text-sm font-semibold text-brand-700">{qualityPct.toFixed(0)}% Outstanding/Good</span>
+            {goodCount != null && totalInArea != null && (
+              <span className="text-xs text-ink-muted">({goodCount} of {totalInArea})</span>
+            )}
+            {parentQualityPct != null && (
+              <span className="text-xs text-ink-faint">vs {parentQualityPct.toFixed(0)}% area avg</span>
+            )}
+          </div>
+        )}
+        <div className="max-h-[260px] overflow-y-auto space-y-2">
+          {arr(details, 'schools').map((s, i) => (
+            <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
+              <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-xs font-bold text-brand-600">
+                {i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-ink truncate">{String(s.name)}</div>
+                <div className="flex flex-wrap gap-2 mt-0.5">
+                  {s.ofsted ? <span className="text-xs px-1.5 py-0.5 rounded bg-brand-50 text-brand-700">{String(s.ofsted)}</span> : null}
+                  {s.distance_m != null && <span className="text-xs text-ink-faint">{Number(s.distance_m).toLocaleString()}m</span>}
+                  {s.ks2_reading != null && <span className="text-xs text-ink-muted">Reading: {Number(s.ks2_reading).toFixed(1)}</span>}
+                  {s.ks2_maths != null && <span className="text-xs text-ink-muted">Maths: {Number(s.ks2_maths).toFixed(1)}</span>}
+                  {s.progress_8 != null && <span className="text-xs text-ink-muted">P8: {Number(s.progress_8).toFixed(2)}</span>}
+                  {s.attainment_8 != null && <span className="text-xs text-ink-muted">A8: {Number(s.attainment_8).toFixed(1)}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   if (Array.isArray(details.stations)) {
-    const modeCounts = rec<Record<string, number>>(details, 'mode_counts_1km');
+    const stations = arr(details, 'stations');
     return (
       <div className="space-y-2 mt-2">
-        {modeCounts && Object.keys(modeCounts).length > 0 && (
-          <TransportModeChart modeCounts={modeCounts} />
-        )}
-        {arr(details, 'stations').map((s, i) => (
-          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
-            <Train className="w-4 h-4 text-ink-faint shrink-0" />
-            <span className="text-sm text-ink flex-1 truncate">{String(s.name)}</span>
-            {s.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(s.distance_m).toLocaleString()}m</span>}
-          </div>
-        ))}
+        <div className="max-h-[260px] overflow-y-auto space-y-2">
+          {stations.map((s, i) => {
+            const sType = String(s.type ?? '');
+            const isBus = sType.startsWith('B') || sType === 'FBT';
+            const StopIcon = isBus ? Coffee : TrainFront;
+            return (
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
+                <StopIcon className={`w-4 h-4 shrink-0 ${isBus ? 'text-amber-600' : 'text-brand-600'}`} />
+                <span className="text-sm text-ink flex-1 truncate">{String(s.name)}</span>
+                {s.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(s.distance_m).toLocaleString()}m</span>}
+              </div>
+            );
+          })}
+        </div>
         {details.bus_stops_500m != null && (
           <div className="text-xs text-ink-muted mt-1">Bus stops within 500m: {String(details.bus_stops_500m)}</div>
+        )}
+        {details.bus_stops != null && (
+          <div className="text-xs text-ink-muted mt-1">Bus stops in area: {String(details.bus_stops)}</div>
+        )}
+      </div>
+    );
+  }
+
+  // Sports & recreation: tabulated list with type counts
+  if (Array.isArray(details.facilities) && !details.type_summary) {
+    const facilities = arr(details, 'facilities');
+    const typeCountEntries = Object.entries(details).filter(
+      ([k, v]) => k.endsWith('_count') && typeof v === 'number'
+    );
+    return (
+      <div className="space-y-3 mt-2">
+        {typeCountEntries.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {typeCountEntries.map(([k, v]) => (
+              <span key={k} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface border border-divider text-xs text-ink-muted font-medium">
+                {k.replace(/_count$/, '').replace(/_/g, ' ').replace(/^(.)/, c => c.toUpperCase())}: {String(v)}
+              </span>
+            ))}
+          </div>
+        )}
+        {facilities.length > 0 && (
+          <div className="max-h-[220px] overflow-y-auto space-y-1.5">
+            {facilities.map((f, i) => (
+              <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface">
+                <Dumbbell className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+                <span className="text-sm text-ink flex-1 truncate">{String(f.name)}</span>
+                {f.type != null && <span className="text-[10px] text-ink-faint shrink-0">{String(f.type)}</span>}
+                {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     );
@@ -510,47 +637,9 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
     );
   }
 
-  // NHS facilities: type_summary + list
+  // NHS facilities: type_summary + filterable list
   if (Array.isArray(details.facilities)) {
-    const typeSummary = rec<Record<string, { count: number; nearest_m: number | null }>>(details, 'type_summary');
-    const TYPE_ORDER = ['GP', 'Hospital', 'Pharmacy', 'Dentist', 'Optician', 'Care Home'];
-    const summaryEntries = typeSummary
-      ? [...TYPE_ORDER.filter((t) => t in typeSummary), ...Object.keys(typeSummary).filter((t) => !TYPE_ORDER.includes(t))]
-          .map((t) => ({ type: t, ...typeSummary[t] }))
-      : [];
-
-    return (
-      <div className="space-y-3 mt-2">
-        {/* Per-type summary grid */}
-        {summaryEntries.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {summaryEntries.map(({ type, count, nearest_m }) => (
-              <div key={type} className="bg-white rounded-xl border border-divider p-2.5 flex items-start gap-2">
-                <Stethoscope className="w-3.5 h-3.5 text-brand-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-[10px] text-ink-faint truncate">{type}</div>
-                  <div className="text-sm font-bold text-ink">{count}</div>
-                  {nearest_m != null && (
-                    <div className="text-[10px] text-ink-faint">nearest {nearest_m.toLocaleString()}m</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Individual facility list */}
-        {arr(details, 'facilities').map((f, i) => (
-          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
-            <Stethoscope className="w-4 h-4 text-brand-600 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <span className="text-sm text-ink truncate block">{String(f.name)}</span>
-              {f.type != null && <span className="text-xs text-ink-faint">{String(f.type)}</span>}
-            </div>
-            {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
-          </div>
-        ))}
-      </div>
-    );
+    return <NhsFacilitiesDetail details={details} />;
   }
 
   // Demographics overview cards
@@ -576,19 +665,40 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
     );
   }
 
-  // Flood risk gauge
+  // Flood risk: simple breakdown (P34: dropped infographic)
   if (details.flood_level != null) {
+    const z3 = num(details, 'zone_3_pct');
+    const z2 = num(details, 'zone_2_pct');
+    const pz3 = num(details, 'parent_zone_3_pct');
+    const totalLsoas = num(details, 'total_lsoas');
     return (
-      <FloodRiskGauge
-        floodLevel={str(details, 'flood_level') ?? ''}
-        riskScore={num(details, 'risk_score') ?? 5}
-        zone3Pct={num(details, 'zone_3_pct')}
-        zone2Pct={num(details, 'zone_2_pct')}
-        highRiskLsoaCount={num(details, 'high_risk_lsoa_count')}
-        mediumRiskLsoaCount={num(details, 'medium_risk_lsoa_count')}
-        totalLsoas={num(details, 'total_lsoas')}
-        parentZone3Pct={num(details, 'parent_zone_3_pct')}
-      />
+      <div className="space-y-2 mt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="p-2.5 rounded-xl bg-surface">
+            <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Risk Level</div>
+            <div className="text-sm font-semibold text-ink mt-0.5">{String(details.flood_level)}</div>
+          </div>
+          {z3 != null && (
+            <div className="p-2.5 rounded-xl bg-surface">
+              <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Zone 3 (High)</div>
+              <div className="text-sm font-semibold text-ink mt-0.5">{z3.toFixed(1)}% of LSOAs</div>
+              {pz3 != null && <div className="text-[10px] text-ink-faint mt-0.5">vs {pz3.toFixed(1)}% region</div>}
+            </div>
+          )}
+          {z2 != null && (
+            <div className="p-2.5 rounded-xl bg-surface">
+              <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Zone 2 (Medium)</div>
+              <div className="text-sm font-semibold text-ink mt-0.5">{z2.toFixed(1)}% of LSOAs</div>
+            </div>
+          )}
+          {totalLsoas != null && (
+            <div className="p-2.5 rounded-xl bg-surface">
+              <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">LSOAs Assessed</div>
+              <div className="text-sm font-semibold text-ink mt-0.5">{totalLsoas}</div>
+            </div>
+          )}
+        </div>
+      </div>
     );
   }
 
@@ -781,8 +891,18 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
     );
   }
 
+  // Transaction volume YoY summary: single readable sentence
+  if (typeof details.yoy_summary === 'string') {
+    return (
+      <div className="mt-2 text-xs text-ink-muted">
+        {details.yoy_summary}
+      </div>
+    );
+  }
+
   // Generic fallback: key-value grid (notes handled by parent DetailsRenderer wrapper)
-  const entries = Object.entries(details).filter(([k, v]) => v !== null && v !== undefined && !k.endsWith('_note') && k !== 'trend');
+  const detailUnit = typeof details.detail_unit === 'string' ? details.detail_unit : null;
+  const entries = Object.entries(details).filter(([k, v]) => v !== null && v !== undefined && !k.endsWith('_note') && k !== 'trend' && k !== 'detail_unit');
   if (entries.length === 0) return null;
 
   return (
@@ -792,10 +912,11 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
           if (typeof value === 'object') return null;
           const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
           const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
+          const isPct = detailUnit === '%' || String(key).includes('pct');
           const display = typeof value === 'number'
             ? isGbp
               ? '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 })
-              : typeof value === 'number' && String(key).includes('pct')
+              : isPct
               ? value.toFixed(1) + '%'
               : value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
             : typeof value === 'boolean'
