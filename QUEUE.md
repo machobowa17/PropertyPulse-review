@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-18 (session 41)
+Last updated: 2026-04-18 (session 44)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -210,6 +210,105 @@ Source: Session 41. Gemini AI Studio full audit (15-section report in `Gemini_Re
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | R15 | Isochrone school catchments — Outstanding schools within 15-min walk | Pending | Family persona "holy grail". 90% infra exists. |
+| M1 | Choropleth: widen scope to full LAD (not just ward) | Pending | ~10-line backend change in `area_map.py`. Postcode search currently scopes to ward (~30-80 LSOAs). Widen to `lad_code` (~300-500 LSOAs). Geometry simplification already handles >200 LSOAs. GeoJSON grows from ~100KB to ~500KB-1MB, Redis 24hr TTL cache absorbs it. Zero frontend changes. Covers 95% use case (whole borough fills in). |
+| M2 | Choropleth: national coverage via PMTiles (vector tiles) | Pending | Pre-generate PMTiles per choropleth layer using `tippecanoe` from `core_lsoa_boundaries` + pre-joined metric values. ~35k polygons/layer → ~10-50MB per file. Host on S3/CloudFront (free tier). Frontend: swap `type: 'geojson'` for `type: 'vector'` + PMTiles protocol. Quantiles baked at generation time (no flicker). ~30 layers × ~20MB = ~600MB on S3. Best UX: instant pan/zoom, full national coverage, no API calls. Requires ETL pipeline addition. Do after M1 proves demand. |
+| M3 | EC2: Ingest `core_epc_domestic` + re-run EPC backfill | **HIGH PRIORITY** | `core_epc_domestic` table is MISSING on EC2 entirely — only `_epc_staging` and `core_epc_lsoa` exist. This means transaction table beds/size/EPC columns are blank for ~80% of rows, and map sold-price marker tooltips lack floor area. Need to: (1) restore `core_epc_domestic` from `gdrive:PropertyPulse/core_epc_domestic.dump` (1.2 GB), (2) run `backfill_epc_matching.py` to populate `bedrooms_estimated`, `floor_area_sqm`, `epc_rating` on `core_property_transactions`. Currently ~20% match rate (from pg_dump migration bake-in only). |
+| M4 | EC2: Full data integrity audit | Pending | Compare all local tables vs EC2 tables — row counts, column coverage, missing tables. Identify any other data gaps that shipped with the pg_dump migration. Triggered by discovery that `core_epc_domestic` was missing without anyone noticing. |
+| M5 | Fix duplicate data notes globally | **DONE** | Frontend MetricCard.tsx now collects all `_note` texts from details into a Set, then filters quality_flags to exclude any matching text. Prevents duplicate display across DataNotes + quality_flags. |
+
+---
+
+### Phase 7: User Review Polish (session 43)
+
+Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data accuracy, metric consolidation, tab restructuring, map improvements, and label readability.
+
+#### 7A — Cross-tab / Structural
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P1 | Create Overview tab | Pending | New central tab. Houses: comparable areas (cross-tab, not per-tab), useful resources, and other cross-cutting content. Comparable areas comparison should use metrics from ALL tabs, not just one. Create provision first, populate later. |
+| P2 | Mini overview at top of each tab | Pending | Consider a summary/overview strip at the top of every tab (like demographics overview but without metric comparison indicators). Design TBD. |
+| P3 | Move useful resources to Overview tab | Pending | Currently duplicated across multiple tabs. Move to P1's Overview tab. |
+| P4 | Move comparable areas to Overview tab | Pending | Currently per-tab. Rearchitect to use cross-tab metrics for comparison. |
+| P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | Pending | Across all tabs. Simpler, easier to tune per persona. **To be discussed.** |
+| P6 | Shortlisted vs Watch buttons — rethink UX | Pending | Unclear what each does, where saved, what the difference is. Sort out or simplify. |
+| P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Pending | User can't see what changes when toggling. Need evidence of effect. **To be discussed.** |
+| P8 | Download report button broken | Pending | PDF generation not working on live site. Investigate and fix. |
+| P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
+| P10 | DB scan: unused table data → new metrics | Pending | Full scan of all `core_*` tables to find columns/data never queried by tab services. Identify valuable metrics we can surface. |
+| P51 | Saved areas — clarify persistence model | Pending | Where does it save? How does it remember the user? Currently localStorage only — no cross-device sync, no account system. Clarify UX and consider if this is sufficient. |
+| P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
+| P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. |
+
+#### 7B — Map
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P11 | Map scroll-follow logic — rethink UX | Pending | Buggy and confusing. Layers change as user scrolls/hovers but behaviour is unpredictable. Needs fundamental rethink. Audit across ALL 5 tabs. |
+| P12 | Distinct map icons per layer | Pending | All POI layers (schools, NHS, stations, etc.) use identical icons. Need unique icons for each layer type. |
+| P13 | Map layers showing nothing (parks, sports/rec) | Pending | Toggle activates but no markers appear. Investigate why and fix. |
+| P14 | Map concentric circles — add legend/explanation | Pending | Three concentric circles on map have no label or tooltip explaining what they represent. |
+| P15 | Metric vs map count mismatch | Pending | EV charger metric says 5, map shows 3. Universal audit: check consistency between metric values and map marker counts for ALL metrics across all tabs. |
+| P16 | Bus stops on map + in transport table | Pending | Add bus stops as a map layer with distinct icon. Also add to nearest station table. Different icons for bus vs train. |
+| P17 | Median earnings choropleth on Governance tab | **DONE** | Moved choropleth_median_earnings to Property & Market. Also moved choropleth_housing_tenure, choropleth_housing_type. Removed dead choropleth layers (full_fibre, superfast_broadband, mobile_4g_indoor, mobile_5g_outdoor, wfh). |
+
+#### 7C — Property tab
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P18 | Price history chart tooltip position | Pending | When only "Combined average" filter selected, tooltip appears top-left of chart regardless of cursor position. Should follow cursor or appear near the data point. |
+| P19 | New build proportion — add "(last 12m)" to title | **DONE** | Title changed to "New Build Proportion (last 12m)" in tab_property.py. |
+| P20 | Hide blank metrics for inapplicable search types | **DONE** | Added `.filter((m) => m.local_value != null)` in ResultsMetricsPanel.tsx. Metrics with null local_value are now hidden. |
+| P21 | Remove EPC C+ metric (redundant) | **DONE** | Removed from tab_property.py, tab_environment.py, resultsConstants.ts, personalization.ts, personas.ts, tabs.ts, MetricCard.tsx METRIC_SOURCES. |
+| P22 | Remove property calculators section | **DONE** | Removed MortgageCalculator + RentalYieldCalculator imports and CollapsibleSection from ResultsMetricsPanel.tsx. Test updated. |
+| P23 | Move housing tenure + housing stock from Community → Property | **DONE** | Moved queries + metric emission from tab_community.py → tab_property.py. Moved choropleth bindings in resultsConstants.ts. Updated METRIC_TAB in personalization.ts. Human-readable detail keys. |
+| P24 | Freehold vs leasehold — redesign expanded details | Pending | Current key-value dump layout doesn't work. Figure out better grouping/presentation. |
+| P25 | Move EPC chart from Environment → Property | **DONE** | EPC chart already lives in Property tab via `epc_energy_score` metric. P35 removed all EPC metrics from Environment tab. Verified — no action needed. |
+
+#### 7D — Lifestyle tab
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P26 | 15-minute amenities — rethink | Pending | Current implementation needs rethink. **To be discussed.** |
+| P27 | Nearest station — drop chart, keep table only | **DONE** | Removed TransportModeChart from station details in MetricCard.tsx. Added scrollable container with bus/train icon differentiation (Coffee=bus, TrainFront=train). |
+| P28 | Transport table: bus vs train icons + bus stops | Pending | Different icons for bus and train. Add bus stops. Cap table at 5 visible rows with scroll for more. |
+| P29 | Sports/recreation — tabulate details, scrollable | **DONE** | Added sports/recreation renderer in MetricCard.tsx with type count badges and scrollable max-h-[220px] list. |
+| P30 | Broadband: remove separate fibre + superfast metrics | **DONE** | Removed full_fibre + superfast_broadband metric emissions from tab_lifestyle.py. Cleaned up choropleth layers in area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
+| P31 | Mobile: remove separate 4G + 5G metrics | **DONE** | Removed mobile_4g_indoor + mobile_5g_outdoor from tab_lifestyle.py, area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
+| P32 | Cycling to work — rethink | Pending | Current presentation needs rethink. **To be discussed.** |
+| P33 | Community connectivity — compute travel to named hubs | Pending | Needs actual computed travel times to named major hubs (airports, city centres) relative to the search location. Not a generic metric. |
+
+#### 7E — Environment tab
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P34 | Flood risk — drop infographic | **DONE** | Replaced FloodRiskGauge with simple key-value grid (Risk Level, Zone 3, Zone 2, LSOAs Assessed) in MetricCard.tsx. Removed lazy import. |
+| P35 | Remove EPC metrics from Environment tab | **DONE** | Removed entire EPC section from tab_environment.py (queries, parent comparison, epc_rating + epc_rating_c_plus metrics). |
+| P36 | Air quality PMI trend chart → under PMI metric | **DONE** | AirQualityChart now accepts `pollutant` prop ('pm25'/'no2'). Rendered inline after `air_quality_pm25` metric in ResultsMetricsPanel. Standalone AQ trend CollapsibleSection removed. |
+| P37 | NO2 trend chart | **DONE** | NO2 trend chart rendered inline after `air_quality_no2` metric using same AirQualityChart with `pollutant="no2"`. WHO limit: 10 µg/m³. |
+| P38 | Park cover — data accuracy + methodology | Pending | CR5 1RA shows 17% vs London 21.3% — suspect wrong for a green area. (1) Verify data accuracy. (2) Rethink methodology: 1km radius may not be right, consider LSOA-scoped instead. |
+
+#### 7F — Community tab
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P39 | Demographics overview — remove metric comparison | **DONE** | Removed parent comparison display (trend icons + "area X" text) from DemographicsCards.tsx. |
+| P40 | Median age — readable age band labels | **DONE** | Changed detail keys to "0–15 years", "16–64 years", "65+ years" with detail_unit="%" in tab_community.py. Frontend generic fallback renders with % suffix. |
+| P41 | Work from home — remove (duplicative) | **DONE** | Removed WFH standalone metric + demographics overview card entry from tab_community.py. Cleaned up choropleth in area_map.py, MapView.tsx, personalization.ts, personas.ts, tabs.ts, resultsConstants.ts. |
+| P42 | Commute distance labels — human-readable | **DONE** | Changed detail keys to "Under 2 km", "2–10 km", "10–30 km", "30+ km", "Work from home" with detail_unit="%" in tab_lifestyle.py. |
+| P43 | Household size labels — fix formatting | **DONE** | Changed detail keys to "1 person", "2 people", "3–4 people", "5+ people" with detail_unit="%" in tab_community.py. |
+| P44 | Religion metric — label the headline religion | **DONE** | Dynamic dominant religion detection in tab_community.py. Unit changes to "% {dominant_name}". Human-readable detail keys. |
+| P45 | Primary school + school quality → combined metric | **DONE** | Merged in tab_community.py (both area-mode + postcode-mode). local_value = total count, details includes quality_pct, parent_quality_pct, good_count, total_in_area. Frontend MetricCard shows quality summary bar above school list. Removed separate primary_school_quality emission. |
+| P46 | Secondary school + school quality → combined metric | **DONE** | Same pattern as P45. Removed secondary_school_quality emission. Cleaned up resultsConstants.ts METRIC_MAP_BINDINGS and tabs.ts METRIC_ICONS. |
+| P47 | Consolidate all deprivation indices | Pending | IMD, education, health, etc. — combine into a single view, possibly a chart (spider/radar?). Design TBD. |
+| P48 | NHS facilities — tabulate + type filter toggles | **DONE** | Added NhsFacilitiesDetail component in MetricCard.tsx with type filter toggle buttons (pill-shaped, brand-600 active state) and scrollable max-h-[260px] facility list. |
+
+#### 7G — Governance tab
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| P49 | Enrich governance tab content | Pending | Currently thin. Add more: council performance, factual info, non-comparative text summaries. Research what's available. |
+| P50 | Utility providers — add electricity/gas alongside water | Pending | Water company is shown but no other utilities. Research available data sources for electricity/gas distribution companies by postcode. |
 
 ---
 

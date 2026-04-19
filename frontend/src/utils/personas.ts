@@ -80,7 +80,9 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
 
   // --- Freehold vs Leasehold ---
   if (id === 'freehold_leasehold') {
-    const fhPct = val;
+    // Dynamic headline: val is the dominant type's %, unit tells us which type
+    const isFreehold = metric.unit?.includes('freehold') ?? true;
+    const fhPct = isFreehold ? val : 100 - val;
     if (fhPct > 70) {
       if (persona === 'family') return { soWhat: 'Mostly freehold', watchOut: 'None', colour: 'green' };
       if (persona === 'investor') return { soWhat: 'Freehold stock', watchOut: 'Higher entry price', colour: 'green' };
@@ -519,16 +521,18 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     }
   }
 
-  // --- Housing Tenure ---
+  // --- Housing Tenure (dynamic dominant type) ---
   if (id === 'housing_tenure') {
-    if (isHigher) {
-      // Higher = more owner-occupied
+    const tenureType = (metric.unit ?? '').replace('% ', '').toLowerCase(); // e.g. "owner-occupied", "privately rented", "socially rented"
+    const isOwnerDominant = tenureType.includes('owner');
+    const isRentDominant = tenureType.includes('rent');
+    if (isOwnerDominant) {
       if (persona === 'family') return { soWhat: 'Settled community', watchOut: 'Less rental stock', colour: 'green' };
       if (persona === 'investor') return { soWhat: 'Owner-occupier area', watchOut: 'Less BTL demand?', colour: 'amber' };
       if (persona === 'young_professional') return { soWhat: 'Ownership-heavy', watchOut: 'Fewer rentals', colour: 'amber' };
       return { soWhat: 'Stable community', watchOut: 'None', colour: 'green' };
     }
-    if (isLower) {
+    if (isRentDominant) {
       if (persona === 'investor') return { soWhat: 'Strong rental demand', watchOut: 'Competition', colour: 'green' };
       if (persona === 'young_professional' || persona === 'student') return { soWhat: 'Renter-friendly area', watchOut: 'Turnover', colour: 'green' };
       if (persona === 'family') return { soWhat: 'Transient area', watchOut: 'Community stability', colour: 'amber' };
@@ -536,15 +540,17 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     }
   }
 
-  // --- Housing Type (% detached) ---
+  // --- Housing Type (dynamic dominant type) ---
   if (id === 'housing_type') {
-    const detPct = val;
-    if (detPct > 40) {
+    const dominantType = (metric.unit ?? '').replace('% ', '').toLowerCase(); // e.g. "flats", "detached"
+    const isHouseType = dominantType === 'detached' || dominantType === 'semi-detached' || dominantType === 'terraced';
+    const isFlatType = dominantType === 'flat' || dominantType === 'flats';
+    if (isHouseType && val > 40) {
       if (persona === 'family') return { soWhat: 'Spacious homes', watchOut: 'Premium prices', colour: 'green' };
       if (persona === 'retired') return { soWhat: 'Detached living', watchOut: 'Maintenance costs', colour: 'green' };
       return { soWhat: 'Houses dominate', watchOut: 'Higher prices', colour: 'neutral' };
     }
-    if (detPct < 15) {
+    if (isFlatType && val > 60) {
       if (persona === 'family') return { soWhat: 'Limited family homes', watchOut: 'Lack of gardens', colour: 'red' };
       if (persona === 'young_professional') return { soWhat: 'High availability', watchOut: 'Service charges', colour: 'green' };
       if (persona === 'investor') return { soWhat: 'Strong rental demand', watchOut: 'Leasehold restrictions', colour: 'green' };

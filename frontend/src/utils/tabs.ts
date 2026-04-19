@@ -25,19 +25,18 @@ export function formatValue(value: number | string | null, unit: string): string
   if (unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month') {
     return '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 });
   }
-  if (unit === '%' || unit === '% freehold' || unit === '% families' || unit === '% owner-occupied' || unit === '% detached' || unit === '% gigabit') {
+  if (unit === '%' || unit === '% of workers' || unit === '% commuters' || unit === '% 4G outdoor') {
     return value.toFixed(1) + '%';
+  }
+  if (unit.startsWith('% ')) {
+    return value.toFixed(1) + unit;  // e.g. "100.0% leasehold", "45.2% of income"
   }
   if (unit === 'metres') {
     return value >= 1000 ? (value / 1000).toFixed(1) + ' km' : Math.round(value) + ' m';
   }
   if (unit === 'GBP/sqft') return '£' + Math.round(value).toLocaleString('en-GB') + '/sqft';
-  if (unit === '% of income') return value.toFixed(1) + '% of income';
-  if (unit === '% of workers') return value.toFixed(1) + '%';
   if (unit === 'grade') return String(value);
   if (unit === 'score /100') return Math.round(value) + '/100';
-  if (unit === '% commuters') return value.toFixed(1) + '%';
-  if (unit === '% 4G outdoor') return value.toFixed(1) + '%';
   if (unit === 'party' || unit === 'provider' || unit === 'status' || unit === 'persona' || unit === 'name' || unit === 'level') return String(value);
   if (unit === 'per 1,000') return value.toFixed(1) + ' per 1k';
   if (unit === 'µg/m³') return value.toFixed(1) + ' µg/m³';

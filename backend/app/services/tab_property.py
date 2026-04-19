@@ -406,6 +406,7 @@ async def fetch_property_market(
     leasehold_pct = round(local_leasehold / total_tenure * 100, 1) if total_tenure > 0 else None
 
     parent_freehold_pct = None
+    parent_leasehold_pct = None
     if parent_lads:
         parent_tenure_result = await db.execute(
             text(
@@ -425,6 +426,7 @@ async def fetch_property_market(
             parent_tenure_total = int(parent_tenure_row["fh"] or 0) + int(parent_tenure_row["lh"] or 0)
             if parent_tenure_total > 0:
                 parent_freehold_pct = round(int(parent_tenure_row["fh"]) / parent_tenure_total * 100, 1)
+                parent_leasehold_pct = round(int(parent_tenure_row["lh"]) / parent_tenure_total * 100, 1)
 
     local_fh_price = _wavg(
         [float(row["avg_freehold_price"]) for row in local_rows if row["avg_freehold_price"] and row["property_type"] in PRICE_TYPES],
@@ -434,35 +436,38 @@ async def fetch_property_market(
         [float(row["avg_leasehold_price"]) for row in local_rows if row["avg_leasehold_price"] and row["property_type"] in PRICE_TYPES],
         [int(row["leasehold_count"]) for row in local_rows if row["avg_leasehold_price"] and row["property_type"] in PRICE_TYPES],
     )
-    price_diff = round(local_fh_price - local_lh_price) if local_fh_price and local_lh_price else None
+
+    # Build breakdown for table rendering
+    fl_breakdown = [
+        {"label": "Freehold", "count": local_freehold, "pct": freehold_pct, "parent_pct": parent_freehold_pct},
+        {"label": "Leasehold", "count": local_leasehold, "pct": leasehold_pct, "parent_pct": parent_leasehold_pct},
+    ]
+
+    # Dynamic headline: pick dominant type, parent comparison is SAME type
+    if (freehold_pct or 0) >= (leasehold_pct or 0):
+        fl_headline_value = freehold_pct
+        fl_headline_parent = parent_freehold_pct
+        fl_headline_unit = "% freehold"
+    else:
+        fl_headline_value = leasehold_pct
+        fl_headline_parent = parent_leasehold_pct
+        fl_headline_unit = "% leasehold"
 
     freehold_details = {
-        "freehold_pct": freehold_pct,
-        "leasehold_pct": leasehold_pct,
+        "breakdown": fl_breakdown,
         "avg_freehold_price": _round(local_fh_price),
         "avg_leasehold_price": _round(local_lh_price),
-        "price_difference": price_diff,
+        "breakdown_type": "tenure_table",
+        "count_label": "Transactions",
     }
-    if stock_row and stock_row["total_households"] is not None:
-        freehold_details.update(
-            {
-                "stock_owned_pct": _round(stock_row["pct_owned"]),
-                "stock_private_rent_pct": _round(stock_row["pct_private_rent"]),
-                "stock_social_rent_pct": _round(stock_row["pct_social_rent"]),
-                "parent_stock_owned_pct": _round(stock_parent_row["pct_owned"]) if stock_parent_row else None,
-                "parent_stock_private_rent_pct": _round(stock_parent_row["pct_private_rent"]) if stock_parent_row else None,
-                "parent_stock_social_rent_pct": _round(stock_parent_row["pct_social_rent"]) if stock_parent_row else None,
-                "data_note": "Recent sales tenure and Census housing-stock tenure are shown together because recent transaction mix can differ materially from the resident stock mix.",
-            }
-        )
 
     metrics.append(
         metric(
             "freehold_leasehold",
             "Freehold vs Leasehold",
-            freehold_pct,
-            parent_freehold_pct,
-            "% freehold",
+            fl_headline_value,
+            fl_headline_parent,
+            fl_headline_unit,
             details=freehold_details,
         )
     )
@@ -712,7 +717,7 @@ async def fetch_property_market(
                         "%",
                         details={
                             "source_period": rent_period,
-                            "data_note": "Gross rental yield is withheld for postcode, place, and ward searches because rent is only available at LAD level while sale prices are available at finer local resolution.",
+                            "data_note": "Rent data is only available at local authority level, so yield cannot be calculated for this search type.",
                         },
                     )
                 )
@@ -762,7 +767,7 @@ async def fetch_property_market(
                         "% of income",
                         details={
                             "source_period": rent_period,
-                            "data_note": "Rent affordability is withheld for postcode, place, and ward searches because both rent and earnings are only available at LAD level.",
+                            "data_note": "Rent and earnings data are only available at local authority level.",
                         },
                     )
                 )
@@ -828,7 +833,7 @@ async def fetch_property_market(
                     "grade",
                     details={
                         "source_period": rent_period,
-                        "data_note": "Investment grade is withheld for postcode, place, and ward searches because its source ingredients are LAD-level only.",
+                        "data_note": "Source data is only available at local authority level.",
                     },
                 )
             )
@@ -959,6 +964,7 @@ async def fetch_property_market(
         text(
             """
             SELECT SUM(h.total_households * h.pct_owned) / NULLIF(SUM(h.total_households), 0) as avg_owned,
+                   SUM(h.total_households * h.pct_social_rent) / NULLIF(SUM(h.total_households), 0) as avg_social_rent,
                    SUM(h.total_households * h.pct_private_rent) / NULLIF(SUM(h.total_households), 0) as avg_priv_rent,
                    SUM(h.total_households * h.pct_detached) / NULLIF(SUM(h.total_households), 0) as avg_det,
                    SUM(h.total_households * h.pct_semi) / NULLIF(SUM(h.total_households), 0) as avg_semi,
@@ -974,35 +980,73 @@ async def fetch_property_market(
     housing_parent_row = housing_parent.mappings().first()
 
     if housing_row:
+        total_hh = int(housing_row["total_households"]) if housing_row["total_households"] else 0
+
+        # Housing Tenure — breakdown with counts derived from total_households * pct
+        # (label, local_col, parent_col, unit_qualifier)
+        tenure_categories = [
+            ("Owner-occupied", "pct_owned", "avg_owned", "owner-occupied"),
+            ("Social rent", "pct_social_rent", "avg_social_rent", "socially rented"),
+            ("Private rent", "pct_private_rent", "avg_priv_rent", "privately rented"),
+        ]
+        tenure_breakdown = []
+        for label, local_key, parent_key, _uq in tenure_categories:
+            pct = _round(housing_row[local_key])
+            count = round(total_hh * float(pct) / 100) if pct and total_hh else None
+            parent_pct = _round(housing_parent_row[parent_key]) if housing_parent_row else None
+            tenure_breakdown.append({"label": label, "count": count, "pct": pct, "parent_pct": parent_pct})
+
+        # Dynamic headline: pick dominant tenure type
+        dominant_idx = max(range(len(tenure_breakdown)), key=lambda i: tenure_breakdown[i]["pct"] or 0)
+        dominant_tenure = tenure_breakdown[dominant_idx]
+        dominant_tenure_unit = tenure_categories[dominant_idx][3]
         metrics.append(
             metric(
                 "housing_tenure",
                 "Housing Tenure",
-                _round(housing_row["pct_owned"]),
-                _round(housing_parent_row["avg_owned"]) if housing_parent_row else None,
-                "% owner-occupied",
+                dominant_tenure["pct"],
+                dominant_tenure["parent_pct"],
+                f"% {dominant_tenure_unit}",
                 details={
-                    "Owner-occupied": _round(housing_row["pct_owned"]),
-                    "Social rent": _round(housing_row["pct_social_rent"]),
-                    "Private rent": _round(housing_row["pct_private_rent"]),
-                    "detail_unit": "%",
+                    "breakdown": tenure_breakdown,
+                    "total_households": total_hh or None,
+                    "breakdown_type": "tenure_table",
+                    "count_label": "Households",
                 },
             )
         )
 
+        # Housing Stock — breakdown with counts derived from total_households * pct
+        # (label, local_col, parent_col, unit_qualifier)
+        stock_categories = [
+            ("Detached", "pct_detached", "avg_det", "detached"),
+            ("Semi-detached", "pct_semi", "avg_semi", "semi-detached"),
+            ("Terraced", "pct_terraced", "avg_terr", "terraced"),
+            ("Flat", "pct_flat", "avg_flat", "flats"),
+        ]
+        stock_breakdown = []
+        for label, local_key, parent_key, _uq in stock_categories:
+            pct = _round(housing_row[local_key])
+            count = round(total_hh * float(pct) / 100) if pct and total_hh else None
+            parent_pct = _round(housing_parent_row[parent_key]) if housing_parent_row else None
+            stock_breakdown.append({"label": label, "count": count, "pct": pct, "parent_pct": parent_pct})
+
+        # Dynamic headline: pick dominant stock type
+        dominant_idx = max(range(len(stock_breakdown)), key=lambda i: stock_breakdown[i]["pct"] or 0)
+        dominant_stock = stock_breakdown[dominant_idx]
+        dominant_stock_unit = stock_categories[dominant_idx][3]
         metrics.append(
             metric(
                 "housing_type",
                 "Housing Stock",
-                _round(housing_row["pct_detached"]),
-                _round(housing_parent_row["avg_det"]) if housing_parent_row else None,
-                "% detached",
+                dominant_stock["pct"],
+                dominant_stock["parent_pct"],
+                f"% {dominant_stock_unit}",
                 details={
-                    "Detached": _round(housing_row["pct_detached"]),
-                    "Semi-detached": _round(housing_row["pct_semi"]),
-                    "Terraced": _round(housing_row["pct_terraced"]),
-                    "Flat": _round(housing_row["pct_flat"]),
-                    "detail_unit": "%",
+                    "breakdown": stock_breakdown,
+                    "total_households": total_hh or None,
+                    "breakdown_type": "tenure_table",
+                    "count_label": "Households",
                 },
             )
         )

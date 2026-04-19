@@ -147,7 +147,7 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         metrics.append(metric(
             "crime_rate", "Crime Rate (per 1,000 pop/yr)",
             None, None, "per 1,000/yr",
-            details={"data_unavailable_note": "Greater Manchester Police do not publish crime data to the national open data platform. Data not available for this area."},
+            details={"data_unavailable_note": "Crime data is not published for this police force area."},
         ))
     elif local_rate is not None:
         crime_details = dict(crime_breakdown) if crime_breakdown else {}

@@ -153,7 +153,7 @@ export function ResultsMetricsPanel() {
           {hiddenMetrics.length > 0 && (
             <div className="rounded-xl bg-surface border border-divider/60 px-4 py-3 mt-2">
               <p className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider mb-1.5">
-                Hidden metrics ({hiddenMetrics.length})
+                Metrics not shown for this search key ({hiddenMetrics.length})
               </p>
               <ul className="space-y-1">
                 {hiddenMetrics.map((h) => (

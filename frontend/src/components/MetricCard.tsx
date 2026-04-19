@@ -380,6 +380,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 <DetailsRenderer
                   details={metric.details ?? {}}
                   unit={metric.unit}
+                  parentName={parentName}
                 />
               )}
               {metric.id === 'transaction_volume' && sessionKey && (
@@ -443,8 +444,8 @@ function DataNotes({ details }: { details: Record<string, unknown> }) {
 }
 
 /** Render details object as sub-rows or list, always appending data notes */
-function DetailsRenderer({ details, unit }: { details: Record<string, unknown>; unit: string }) {
-  const content = renderDetailsContent(details, unit);
+function DetailsRenderer({ details, unit, parentName }: { details: Record<string, unknown>; unit: string; parentName: string }) {
+  const content = renderDetailsContent(details, unit, parentName);
   const notes = <DataNotes details={details} />;
   // If only notes and no content, still show notes
   if (!content) return notes;
@@ -472,7 +473,7 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
         <div className="flex flex-wrap gap-1.5">
           <button
             onClick={() => setActiveType(null)}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
               activeType === null
                 ? 'bg-brand-600 text-white border-brand-600'
                 : 'bg-surface text-ink-muted border-divider hover:border-brand-300'
@@ -484,7 +485,7 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
             <button
               key={type}
               onClick={() => setActiveType(activeType === type ? null : type)}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
                 activeType === type
                   ? 'bg-brand-600 text-white border-brand-600'
                   : 'bg-surface text-ink-muted border-divider hover:border-brand-300'
@@ -497,11 +498,11 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
       )}
       <div className="max-h-[260px] overflow-y-auto space-y-1.5">
         {filtered.map((f, i) => (
-          <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface">
-            <Stethoscope className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
+            <Stethoscope className="w-4 h-4 text-brand-600 shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="text-sm text-ink truncate block">{String(f.name)}</span>
-              {f.type != null && <span className="text-[10px] text-ink-faint">{String(f.type)}</span>}
+              {f.type != null && <span className="text-xs text-ink-faint">{String(f.type)}</span>}
             </div>
             {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
           </div>
@@ -514,7 +515,7 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
   );
 }
 
-function renderDetailsContent(details: Record<string, unknown>, unit: string): React.ReactNode {
+function renderDetailsContent(details: Record<string, unknown>, unit: string, parentName: string): React.ReactNode {
   if (Array.isArray(details.schools)) {
     const qualityPct = num(details, 'quality_pct');
     const parentQualityPct = num(details, 'parent_quality_pct');
@@ -533,7 +534,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
             )}
           </div>
         )}
-        <div className="max-h-[260px] overflow-y-auto space-y-2">
+        <div className="max-h-[260px] overflow-y-auto space-y-1.5">
           {arr(details, 'schools').map((s, i) => (
             <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
               <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-xs font-bold text-brand-600">
@@ -561,7 +562,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
     const stations = arr(details, 'stations');
     return (
       <div className="space-y-2 mt-2">
-        <div className="max-h-[260px] overflow-y-auto space-y-2">
+        <div className="max-h-[260px] overflow-y-auto space-y-1.5">
           {stations.map((s, i) => {
             const sType = String(s.type ?? '');
             const isBus = sType.startsWith('B') || sType === 'FBT';
@@ -603,12 +604,12 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
           </div>
         )}
         {facilities.length > 0 && (
-          <div className="max-h-[220px] overflow-y-auto space-y-1.5">
+          <div className="max-h-[260px] overflow-y-auto space-y-1.5">
             {facilities.map((f, i) => (
-              <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface">
-                <Dumbbell className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
+                <Dumbbell className="w-4 h-4 text-brand-500 shrink-0" />
                 <span className="text-sm text-ink flex-1 truncate">{String(f.name)}</span>
-                {f.type != null && <span className="text-[10px] text-ink-faint shrink-0">{String(f.type)}</span>}
+                {f.type != null && <span className="text-xs text-ink-faint shrink-0">{String(f.type)}</span>}
                 {f.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(f.distance_m).toLocaleString()}m</span>}
               </div>
             ))}
@@ -621,18 +622,20 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
   // Parks list: details has { parks: [...] }
   if (Array.isArray(details.parks)) {
     return (
-      <div className="space-y-2 mt-2">
-        {arr(details, 'parks').map((p, i) => (
-          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
-            <TreePine className="w-4 h-4 text-signal-green shrink-0" />
-            <div className="flex-1 min-w-0">
-              <span className="text-sm text-ink truncate block">{String(p.name)}</span>
-              {p.type != null && <span className="text-xs text-ink-faint">{String(p.type)}</span>}
+      <div className="mt-2">
+        <div className="max-h-[260px] overflow-y-auto space-y-1.5">
+          {arr(details, 'parks').map((p, i) => (
+            <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-surface">
+              <TreePine className="w-4 h-4 text-signal-green shrink-0" />
+              <div className="flex-1 min-w-0">
+                <span className="text-sm text-ink truncate block">{String(p.name)}</span>
+                {p.type != null && <span className="text-xs text-ink-faint">{String(p.type)}</span>}
+              </div>
+              {p.area_ha != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.area_ha).toFixed(1)} ha</span>}
+              {p.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.distance_m).toLocaleString()}m</span>}
             </div>
-            {p.area_ha != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.area_ha).toFixed(1)} ha</span>}
-            {p.distance_m != null && <span className="text-xs text-ink-muted shrink-0">{Number(p.distance_m).toLocaleString()}m</span>}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }
@@ -833,50 +836,67 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
     );
   }
 
-  // Housing-stock context (Census 2021 dwelling types)
-  if (details.housing_stock && typeof details.housing_stock === 'object' && !Array.isArray(details.housing_stock)) {
-    const hs = rec<Record<string, number | null>>(details, 'housing_stock')!;
-    const types = [
-      { label: 'Detached', key: 'pct_detached', parentKey: 'parent_pct_detached', icon: Home },
-      { label: 'Semi-detached', key: 'pct_semi', parentKey: 'parent_pct_semi', icon: Building2 },
-      { label: 'Terraced', key: 'pct_terraced', parentKey: 'parent_pct_terraced', icon: Building },
-      { label: 'Flat', key: 'pct_flat', parentKey: 'parent_pct_flat', icon: LayoutGrid },
-    ];
-    // Filter to non-null entries and render the rest of details normally below
-    const otherEntries = Object.entries(details).filter(
-      ([k, v]) => k !== 'housing_stock' && k !== 'trend' && !k.endsWith('_note') && v !== null && v !== undefined && typeof v !== 'object'
+
+
+  // Transaction volume YoY summary: single readable sentence
+  if (typeof details.yoy_summary === 'string') {
+    return (
+      <div className="mt-2 text-xs text-ink-muted">
+        {details.yoy_summary}
+      </div>
+    );
+  }
+
+  // Breakdown table: freehold/leasehold, housing tenure, housing stock
+  if (str(details, 'breakdown_type') === 'tenure_table' && Array.isArray(details.breakdown)) {
+    const rows = details.breakdown as { label: string; count: number | null; pct: number | null; parent_pct: number | null }[];
+    const countLabel = str(details, 'count_label') || '#';
+    // Extra fields beyond the breakdown (e.g. avg prices for freehold)
+    const extraKeys = new Set(['breakdown', 'breakdown_type', 'count_label', 'total_households']);
+    const extras = Object.entries(details).filter(
+      ([k, v]) => v !== null && v !== undefined && !extraKeys.has(k) && !k.endsWith('_note') && k !== 'trend' && k !== 'detail_unit',
     );
     return (
       <div className="space-y-3 mt-2">
-        <div className="text-[11px] font-semibold text-ink-muted uppercase tracking-wide">Housing Stock (Census 2021)</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {types.map(({ label, key, parentKey, icon: TypeIcon }) => {
-            const local = hs[key];
-            const parent = hs[parentKey];
-            if (local == null) return null;
-            return (
-              <div key={key} className="p-3 rounded-xl bg-surface border border-divider/50">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <TypeIcon className="w-3.5 h-3.5 text-brand-500" />
-                  <span className="text-[11px] text-ink-faint font-medium">{label}</span>
-                </div>
-                <div className="text-lg font-bold text-ink">{local.toFixed(1)}%</div>
-                {parent != null && (
-                  <div className="text-[10px] text-ink-faint mt-0.5">vs {parent.toFixed(1)}% region</div>
-                )}
-              </div>
-            );
-          })}
+        <div className="overflow-x-auto rounded-xl border border-divider">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-surface">
+                <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Type</th>
+                <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{countLabel}</th>
+                <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">%</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-divider/50">
+              {rows.map((row) => (
+                <tr key={row.label} className="hover:bg-brand-50/30 transition-colors">
+                  <td className="px-3 py-2 font-medium text-ink">{row.label}</td>
+                  <td className="px-3 py-2 text-right text-ink-muted tabular-nums">
+                    {row.count != null ? row.count.toLocaleString('en-GB') : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right text-ink tabular-nums">
+                    {row.pct != null ? (
+                      <div>
+                        <span className="font-semibold">{row.pct.toFixed(1)}%</span>
+                        {row.parent_pct != null && (
+                          <div className="text-[10px] text-ink-faint leading-tight">vs {row.parent_pct.toFixed(1)}% for {parentName}</div>
+                        )}
+                      </div>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {otherEntries.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {otherEntries.map(([key, value]) => {
-              const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
-              const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
+        {extras.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {extras.map(([key, value]) => {
+              if (typeof value === 'object') return null;
+              const label = key.replace(/_/g, ' ').replace(/^(.)/, (c) => c.toUpperCase());
+              const isGbp = unit === 'GBP' || key.toLowerCase().includes('price');
               const display = typeof value === 'number'
-                ? isGbp ? '£' + Number(value).toLocaleString('en-GB', { maximumFractionDigits: 0 })
-                : String(key).includes('pct') ? Number(value).toFixed(1) + '%'
-                : Number(value).toLocaleString('en-GB', { maximumFractionDigits: 1 })
+                ? isGbp ? '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) : value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
                 : String(value);
               return (
                 <div key={key} className="p-2.5 rounded-xl bg-surface">
@@ -887,15 +907,6 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string): R
             })}
           </div>
         )}
-      </div>
-    );
-  }
-
-  // Transaction volume YoY summary: single readable sentence
-  if (typeof details.yoy_summary === 'string') {
-    return (
-      <div className="mt-2 text-xs text-ink-muted">
-        {details.yoy_summary}
       </div>
     );
   }

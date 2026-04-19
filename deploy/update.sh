@@ -31,7 +31,7 @@ echo ""
 echo "Health checks:"
 $COMPOSE exec db pg_isready -U ukproperty && echo "  PostgreSQL: OK" || echo "  PostgreSQL: FAIL"
 $COMPOSE exec redis redis-cli ping | grep -q PONG && echo "  Redis: OK" || echo "  Redis: FAIL"
-curl -sf http://localhost:8000/api/docs > /dev/null && echo "  API: OK" || echo "  API: waiting..."
+curl -sk https://localhost/api/v1/resolve?q=test > /dev/null && echo "  API: OK" || echo "  API: waiting..."
 curl -sf http://localhost/nginx-health > /dev/null && echo "  Nginx: OK" || echo "  Nginx: waiting..."
 
 echo ""
