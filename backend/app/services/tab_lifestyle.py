@@ -12,6 +12,34 @@ AMENITY_TYPES = [
     "park", "pharmacy", "dentist", "hospital", "doctors",
 ]
 
+# NaPTAN stop type → frontend category mapping (fallback when SQL cat column absent)
+_STOP_CATEGORY = {
+    'RSE': 'rail', 'RLY': 'rail', 'RPL': 'rail',
+    'MET': 'tram', 'PLT': 'tram',   # MET/PLT default; SQL CASE refines by ATCO
+    'TMU': 'tram', 'STR': 'tram',
+    'BCT': 'bus', 'BCS': 'bus', 'BCE': 'bus', 'BCQ': 'bus', 'BST': 'bus', 'FBT': 'bus',
+    'FER': 'ferry', 'FTD': 'ferry',
+}
+
+# SQL fragment that classifies stops into UK-correct categories.
+# NaPTAN stop_type alone is not enough — MET/PLT/TMU are shared across
+# Underground, DLR, Overground, and tram systems.  ATCO code prefix
+# disambiguates: ZZLU = Underground, ZZDL = DLR, ZZLO = London Overground.
+# Everything else MET/PLT/TMU/STR = tram (Metrolink, Supertram, Tramlink, etc.)
+# {a} is the table alias prefix (e.g. "t." or "").
+_CAT_CASE = """
+    CASE
+      WHEN {a}stop_type IN ('RSE','RLY','RPL') THEN 'rail'
+      WHEN {a}atco_code LIKE '%ZZLU%'          THEN 'underground'
+      WHEN {a}atco_code LIKE '%ZZDL%'          THEN 'dlr'
+      WHEN {a}atco_code LIKE '%ZZLO%'          THEN 'overground'
+      WHEN {a}stop_type IN ('MET','PLT','STR') THEN 'tram'
+      WHEN {a}stop_type = 'TMU'
+           AND {a}atco_code LIKE '%ZZ%'        THEN 'tram'
+      WHEN {a}stop_type IN ('FER','FTD')       THEN 'ferry'
+      WHEN {a}stop_type IN ('BCT','BCS','BCE','BCQ','BST','FBT') THEN 'bus'
+    END"""
+
 
 async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, centroid_lat, centroid_lon, search_mode="postcode", local_lads=None, parent_lads=None, parent_name="England", boundary_source="lad"):
     metrics = []
@@ -126,31 +154,55 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
         parent_station_m = round(float(ps_row["avg_station_m"])) if ps_row and ps_row["avg_station_m"] else None
 
     if is_area:
-        # Area mode: stations within boundary
-        rail_result = await db.execute(
-            text("""
-                SELECT DISTINCT ON (base_name)
-                       REGEXP_REPLACE(t.stop_name,
-                           ' (Rail Station|Underground Station|DLR Station|Overground Station|Tram Stop|Station)$',
-                           '', 'i') AS base_name,
-                       t.stop_name, t.stop_type
-                FROM core_transport_stops t
-                JOIN core_lsoa_boundaries lb ON ST_Within(t.geom, lb.geom)
-                WHERE t.stop_type IN ('RSE', 'RLY', 'MET', 'TMU')
-                  AND lb.lsoa_code = ANY(:codes)
-                ORDER BY base_name, t.stop_name LIMIT 15
+        # Area mode: all stop types within boundary
+        # Dedup by (category, base_name) so bus "Green Park" doesn't shadow
+        # the tube station "Green Park Underground Station".
+        # Priority sort: rail/metro/tram/ferry first, bus last.
+        all_stops_result = await db.execute(
+            text(f"""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (cat, base_name)
+                           {_CAT_CASE.format(a='t.')} AS cat,
+                           REGEXP_REPLACE(
+                             REGEXP_REPLACE(
+                               REGEXP_REPLACE(t.stop_name,
+                                   ' (Rail Station|Underground Station|DLR Station|Overground Station|Tram Stop|Station|Bus Station)$',
+                                   '', 'i'),
+                               '^London ', '', 'i'),
+                             ' \\(London\\)$', '', 'i') AS base_name,
+                           t.stop_name, t.stop_type, t.atco_code,
+                           t.street, t.indicator, t.locality_name,
+                           t.parent_locality, t.suburb, t.status,
+                           t.crs_code, t.lines, t.operator, t.zone,
+                           t.step_free, t.facilities
+                    FROM core_transport_stops t
+                    JOIN core_lsoa_boundaries lb ON ST_Within(t.geom, lb.geom)
+                    WHERE lb.lsoa_code = ANY(:codes)
+                    ORDER BY cat, base_name,
+                             CASE WHEN t.stop_type = 'RLY' THEN 0
+                                  WHEN t.stop_type = 'RSE' THEN 1
+                                  ELSE 2 END,
+                             t.stop_name
+                ) deduped
+                WHERE cat IS NOT NULL
+                ORDER BY base_name
+                LIMIT 500
             """),
             {"codes": lsoa_codes},
         )
-        rail_rows = rail_result.mappings().all()
+        all_stop_rows = all_stops_result.mappings().all()
+        # Rail rows for backward compat headline (rail + tube/dlr/overground/tram)
+        rail_rows = [r for r in all_stop_rows if r.get("cat", "") in ('rail', 'underground', 'dlr', 'overground', 'tram')]
 
         mode_result = await db.execute(
-            text("""
+            text(f"""
                 SELECT
                   COUNT(*) FILTER (WHERE t.stop_type IN ('BCT','BCS','BCE','BCQ','BST','FBT')) AS bus_count,
                   COUNT(*) FILTER (WHERE t.stop_type IN ('RLY','RSE','RPL'))                  AS rail_count,
-                  COUNT(*) FILTER (WHERE t.stop_type IN ('MET','PLT'))                        AS metro_count,
-                  COUNT(*) FILTER (WHERE t.stop_type IN ('TMU','STR'))                        AS tram_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='t.')} = 'underground')          AS underground_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='t.')} = 'dlr')                  AS dlr_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='t.')} = 'overground')           AS overground_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='t.')} = 'tram')                 AS tram_count,
                   COUNT(*) FILTER (WHERE t.stop_type IN ('FER','FTD'))                        AS ferry_count
                 FROM core_transport_stops t
                 JOIN core_lsoa_boundaries lb ON ST_Within(t.geom, lb.geom)
@@ -160,30 +212,54 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
         )
         mode_row = mode_result.mappings().first()
     else:
-        rail_result = await db.execute(
-            text("""
-                SELECT DISTINCT ON (base_name)
-                       REGEXP_REPLACE(stop_name,
-                           ' (Rail Station|Underground Station|DLR Station|Overground Station|Tram Stop|Station)$',
-                           '', 'i') AS base_name,
-                       stop_name, stop_type,
-                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m
-                FROM core_transport_stops
-                WHERE stop_type IN ('RSE', 'RLY', 'MET', 'TMU')
-                  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
-                ORDER BY base_name, distance_m LIMIT 5
+        # Postcode mode: all stop types within 2km
+        # Dedup by (category, base_name) to prevent bus/rail name collisions.
+        # Inner query deduplicates; outer query re-sorts by distance with LIMIT.
+        all_stops_result = await db.execute(
+            text(f"""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (cat, base_name)
+                           {_CAT_CASE.format(a='')} AS cat,
+                           REGEXP_REPLACE(
+                             REGEXP_REPLACE(
+                               REGEXP_REPLACE(stop_name,
+                                   ' (Rail Station|Underground Station|DLR Station|Overground Station|Tram Stop|Station|Bus Station)$',
+                                   '', 'i'),
+                               '^London ', '', 'i'),
+                             ' \\(London\\)$', '', 'i') AS base_name,
+                           stop_name, stop_type, atco_code,
+                           street, indicator, locality_name,
+                           parent_locality, suburb, status,
+                           crs_code, lines, operator, zone,
+                           step_free, facilities,
+                           ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m
+                    FROM core_transport_stops
+                    WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
+                    ORDER BY cat, base_name,
+                             CASE WHEN stop_type = 'RLY' THEN 0
+                                  WHEN stop_type = 'RSE' THEN 1
+                                  ELSE 2 END,
+                             distance_m
+                ) deduped
+                WHERE cat IS NOT NULL
+                ORDER BY distance_m
+                LIMIT 150
             """),
             {"lat": lat, "lon": lon},
         )
-        rail_rows = rail_result.mappings().all()
+        all_stop_rows = all_stops_result.mappings().all()
+        # Rail rows for backward compat headline (all non-bus, non-ferry)
+        rail_rows = [r for r in all_stop_rows if r.get("cat", "") in ('rail', 'underground', 'dlr', 'overground', 'tram')]
 
         mode_result = await db.execute(
-            text("""
+            text(f"""
                 SELECT
                   COUNT(*) FILTER (WHERE stop_type IN ('BCT','BCS','BCE','BCQ','BST','FBT')) AS bus_count,
                   COUNT(*) FILTER (WHERE stop_type IN ('RLY','RSE','RPL'))                  AS rail_count,
-                  COUNT(*) FILTER (WHERE stop_type IN ('MET','PLT'))                        AS metro_count,
-                  COUNT(*) FILTER (WHERE stop_type IN ('TMU','STR'))                        AS tram_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='')} = 'underground')          AS underground_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='')} = 'dlr')                  AS dlr_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='')} = 'overground')           AS overground_count,
+                  COUNT(*) FILTER (WHERE {_CAT_CASE.format(a='')} = 'tram')                 AS tram_count,
                   COUNT(*) FILTER (WHERE stop_type IN ('FER','FTD'))                        AS ferry_count
                 FROM core_transport_stops
                 WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
@@ -195,24 +271,110 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     # Bus stops within 500m (kept for backward compat display)
     bus_count = int(mode_row["bus_count"]) if mode_row and mode_row["bus_count"] else 0
 
+    def _station_row(r, include_distance=False):
+        """Build a station detail dict from a DB row."""
+        cat = r.get("cat") or _STOP_CATEGORY.get(r["stop_type"], "other")
+        d = {
+            "name": r["base_name"],
+            "type": r["stop_type"],
+            "category": cat,
+            "atco_code": r["atco_code"],
+        }
+        if r.get("street"):          d["street"] = r["street"]
+        if r.get("indicator"):       d["indicator"] = r["indicator"]
+        if r.get("locality_name"):   d["locality"] = r["locality_name"]
+        if r.get("parent_locality"): d["parent_locality"] = r["parent_locality"]
+        if r.get("suburb"):          d["suburb"] = r["suburb"]
+        if r.get("status"):          d["status"] = r["status"]
+        # Enrichment columns (may be NULL until enrichment ETL runs)
+        if r.get("crs_code"):        d["crs_code"] = r["crs_code"]
+        if r.get("lines"):           d["lines"] = r["lines"]
+        if r.get("operator"):        d["operator"] = r["operator"]
+        if r.get("zone"):            d["zone"] = r["zone"]
+        if r.get("step_free") is not None: d["step_free"] = bool(r["step_free"])
+        if r.get("facilities"):
+            fac = r["facilities"]
+            d["facilities"] = fac if isinstance(fac, dict) else {}
+        if include_distance and r.get("distance_m") is not None:
+            d["distance_m"] = round(float(r["distance_m"]))
+        return d
+
     if is_area:
-        stations_detail = [{"name": r["base_name"], "type": r["stop_type"]} for r in rail_rows]
+        # Rail/metro/tram for headline (backward compat)
+        stations_detail = [_station_row(r) for r in rail_rows]
+        # ALL stops categorised for the detail table
+        all_stations = [_station_row(r) for r in all_stop_rows]
         nearest_station_m = None
     else:
         stations_detail = sorted(
-            [{"name": r["base_name"], "type": r["stop_type"], "distance_m": round(float(r["distance_m"]))}
-             for r in rail_rows],
-            key=lambda x: x["distance_m"],
+            [_station_row(r, include_distance=True) for r in rail_rows],
+            key=lambda x: x.get("distance_m", 0),
+        )
+        all_stations = sorted(
+            [_station_row(r, include_distance=True) for r in all_stop_rows],
+            key=lambda x: x.get("distance_m", 0),
         )
         nearest_station_m = stations_detail[0]["distance_m"] if stations_detail else None
 
+    # Attach top commute destinations to National Rail stations
+    rail_crs_codes = [s["crs_code"] for s in all_stations if s.get("category") == "rail" and s.get("crs_code")]
+    if rail_crs_codes:
+        dest_result = await db.execute(
+            text(f"""
+                SELECT origin_crs, dest_crs, dest_name, journey_min,
+                       trains_per_hour, pct_on_time, season_ticket_gbp, rank,
+                       COALESCE(is_travelcard, FALSE) AS is_travelcard,
+                       travelcard_zones,
+                       journey_type, num_changes, modes, peak_fare_pence,
+                       offpeak_fare_pence, fare_zones, legs, fare_caveats
+                FROM {TABLE_NAMES['station_destinations']}
+                WHERE origin_crs = ANY(:crs_codes)
+                ORDER BY origin_crs, rank
+            """),
+            {"crs_codes": rail_crs_codes},
+        )
+        # Group by origin
+        dest_by_origin = {}
+        for row in dest_result.mappings().all():
+            origin = row["origin_crs"]
+            if origin not in dest_by_origin:
+                dest_by_origin[origin] = []
+            dest_entry = {
+                "dest_crs": row["dest_crs"],
+                "dest_name": row["dest_name"],
+                "journey_min": int(row["journey_min"]) if row["journey_min"] else None,
+                "trains_per_hour": float(row["trains_per_hour"]) if row["trains_per_hour"] else None,
+                "pct_on_time": float(row["pct_on_time"]) if row["pct_on_time"] else None,
+                "season_ticket_gbp": float(row["season_ticket_gbp"]) if row["season_ticket_gbp"] else None,
+                "journey_type": row["journey_type"] or "direct",
+                "num_changes": int(row["num_changes"]) if row["num_changes"] else 0,
+                "modes": list(row["modes"]) if row["modes"] else [],
+                "peak_fare_pence": int(row["peak_fare_pence"]) if row["peak_fare_pence"] else None,
+                "offpeak_fare_pence": int(row["offpeak_fare_pence"]) if row["offpeak_fare_pence"] else None,
+                "fare_zones": row["fare_zones"],
+                "legs": row["legs"],
+                "fare_caveats": list(row["fare_caveats"]) if row["fare_caveats"] else [],
+            }
+            if row["is_travelcard"]:
+                dest_entry["is_travelcard"] = True
+                if row["travelcard_zones"]:
+                    dest_entry["travelcard_zones"] = row["travelcard_zones"]
+            dest_by_origin[origin].append(dest_entry)
+        # Attach to station dicts (both lists are separate objects)
+        for station_list in (all_stations, stations_detail):
+            for s in station_list:
+                if s.get("crs_code") and s["crs_code"] in dest_by_origin:
+                    s["destinations"] = dest_by_origin[s["crs_code"]]
+
     mode_counts = {}
     if mode_row:
-        if mode_row["bus_count"]:   mode_counts["bus"]   = int(mode_row["bus_count"])
-        if mode_row["rail_count"]:  mode_counts["rail"]  = int(mode_row["rail_count"])
-        if mode_row["metro_count"]: mode_counts["metro"] = int(mode_row["metro_count"])
-        if mode_row["tram_count"]:  mode_counts["tram"]  = int(mode_row["tram_count"])
-        if mode_row["ferry_count"]: mode_counts["ferry"] = int(mode_row["ferry_count"])
+        if mode_row["bus_count"]:         mode_counts["bus"]         = int(mode_row["bus_count"])
+        if mode_row["rail_count"]:        mode_counts["rail"]        = int(mode_row["rail_count"])
+        if mode_row["underground_count"]: mode_counts["underground"] = int(mode_row["underground_count"])
+        if mode_row["dlr_count"]:         mode_counts["dlr"]         = int(mode_row["dlr_count"])
+        if mode_row["overground_count"]:  mode_counts["overground"]  = int(mode_row["overground_count"])
+        if mode_row["tram_count"]:        mode_counts["tram"]        = int(mode_row["tram_count"])
+        if mode_row["ferry_count"]:       mode_counts["ferry"]       = int(mode_row["ferry_count"])
 
     if is_area:
         metrics.append(metric(
@@ -220,6 +382,7 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             len(stations_detail), None, "count",
             details={
                 "stations": stations_detail,
+                "all_stations": all_stations,
                 "bus_stops": bus_count,
                 "mode_counts": mode_counts if mode_counts else None,
             },
@@ -230,6 +393,7 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             nearest_station_m, parent_station_m, "metres",
             details={
                 "stations": stations_detail,
+                "all_stations": all_stations,
                 "bus_stops_500m": bus_count,
                 "mode_counts_1km": mode_counts if mode_counts else None,
             },

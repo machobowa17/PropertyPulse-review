@@ -317,6 +317,11 @@ export async function fetchPriceByType(
 export interface Transaction {
   date: string;
   address: string;
+  transaction_id: string;
+  postcode: string;
+  paon: string;
+  saon: string;
+  street: string;
   price: number;
   property_type: string;
   property_type_label: string;
@@ -326,6 +331,25 @@ export interface Transaction {
   tenure: string;
   tenure_label: string;
   epc: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface PropertyHistoryEntry {
+  date: string;
+  price: number;
+  property_type: string;
+  property_type_label: string;
+  beds: number | null;
+  size_sqm: number | null;
+  tenure: string;
+  tenure_label: string;
+  epc: string | null;
+}
+
+export interface PropertyHistoryResponse {
+  history: PropertyHistoryEntry[];
+  count: number;
 }
 
 export interface TransactionsResponse {
@@ -334,6 +358,7 @@ export interface TransactionsResponse {
   page: number;
   page_size: number;
   total_pages: number;
+  available_years?: number[];
 }
 
 export async function fetchTransactions(
@@ -344,7 +369,9 @@ export async function fetchTransactions(
     sortBy?: string;
     sortDir?: string;
     propertyType?: string;
+    year?: number;
   } = {},
+  _searchQuery?: string,
 ): Promise<TransactionsResponse> {
   const qs = new URLSearchParams({ session_key: sessionKey });
   if (params.page) qs.set('page', String(params.page));
@@ -352,7 +379,53 @@ export async function fetchTransactions(
   if (params.sortBy) qs.set('sort_by', params.sortBy);
   if (params.sortDir) qs.set('sort_dir', params.sortDir);
   if (params.propertyType) qs.set('property_type', params.propertyType);
-  const res = await fetch(`${BASE}/transactions?${qs}`);
+  if (params.year) qs.set('year', String(params.year));
+  const url = `${BASE}/transactions?${qs}`;
+  let res = await fetch(url, { cache: 'no-store' });
+  if (res.status === 410 && _searchQuery) {
+    // Session expired — re-resolve to refresh TTL, then retry once
+    const resolveRes = await fetch(
+      `${BASE}/resolve?q=${encodeURIComponent(_searchQuery)}`,
+      { cache: 'no-store' },
+    );
+    if (resolveRes.ok) {
+      res = await fetch(url, { cache: 'no-store' });
+    }
+  }
+  if (res.status === 410) throw new SessionExpiredError();
   if (!res.ok) throw new Error(`Transactions fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPropertyHistory(
+  sessionKey: string,
+  postcode: string,
+  paon: string,
+  saon: string,
+  street: string,
+  excludeId: string,
+  _searchQuery?: string,
+): Promise<PropertyHistoryResponse> {
+  const qs = new URLSearchParams({
+    session_key: sessionKey,
+    postcode,
+    paon,
+    saon: saon || '',
+    street,
+    exclude_id: excludeId,
+  });
+  const url = `${BASE}/transactions/history?${qs}`;
+  let res = await fetch(url, { cache: 'no-store' });
+  if (res.status === 410 && _searchQuery) {
+    const resolveRes = await fetch(
+      `${BASE}/resolve?q=${encodeURIComponent(_searchQuery)}`,
+      { cache: 'no-store' },
+    );
+    if (resolveRes.ok) {
+      res = await fetch(url, { cache: 'no-store' });
+    }
+  }
+  if (res.status === 410) throw new SessionExpiredError();
+  if (!res.ok) throw new Error(`Property history fetch failed: ${res.status}`);
   return res.json();
 }

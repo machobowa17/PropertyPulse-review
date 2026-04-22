@@ -54,32 +54,26 @@ async def get_map_pois(
 
     if tab == "Property & Market":
         # Recent sold prices — use union of ward + LSOA boundaries
+        # Time window: 13 months (matches metrics + transaction table)
+        # No per-LSOA cap — MapLibre clusters pins at low zoom levels
         res = None
         all_rows = None
         if ward_code and ward_code != '_' and lsoa_code and lsoa_code != '_':
             # Two separate indexed queries merged in Python — each uses GiST index.
-            # PARTITION BY lsoa_code limits to 10 per LSOA for geographic spread.
             ward_res = await db.execute(
                 text("""
-                    SELECT price, date_of_transfer, property_type, duration,
-                           paon, saon, street, town, postcode, latitude, longitude, lsoa_code,
-                           dist_m, bedrooms, floor_area_sqm, epc_rating
-                    FROM (
-                        SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
-                               t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
-                               ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                               t.bedrooms_estimated AS bedrooms,
-                               t.floor_area_sqm,
-                               t.epc_rating,
-                               ROW_NUMBER() OVER (PARTITION BY t.lsoa_code ORDER BY t.date_of_transfer DESC) AS rn
-                        FROM core_property_transactions t
-                        JOIN core_ward_boundaries w ON w.ward_code = :ward_code
-                        WHERE t.geom IS NOT NULL
-                          AND ST_Within(t.geom, w.geom)
-                          AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '24 months'
-                    ) sub
-                    WHERE rn <= 10
-                    ORDER BY date_of_transfer DESC
+                    SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
+                           t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
+                           ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           t.bedrooms_estimated AS bedrooms,
+                           t.floor_area_sqm,
+                           t.epc_rating
+                    FROM core_property_transactions t
+                    JOIN core_ward_boundaries w ON w.ward_code = :ward_code
+                    WHERE t.geom IS NOT NULL
+                      AND ST_Within(t.geom, w.geom)
+                      AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    ORDER BY t.date_of_transfer DESC
                     LIMIT 500
                 """),
                 {"lat": lat, "lon": lon, "ward_code": ward_code},
@@ -88,25 +82,18 @@ async def get_map_pois(
 
             lsoa_res = await db.execute(
                 text("""
-                    SELECT price, date_of_transfer, property_type, duration,
-                           paon, saon, street, town, postcode, latitude, longitude, lsoa_code,
-                           dist_m, bedrooms, floor_area_sqm, epc_rating
-                    FROM (
-                        SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
-                               t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
-                               ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                               t.bedrooms_estimated AS bedrooms,
-                               t.floor_area_sqm,
-                               t.epc_rating,
-                               ROW_NUMBER() OVER (PARTITION BY t.lsoa_code ORDER BY t.date_of_transfer DESC) AS rn
-                        FROM core_property_transactions t
-                        JOIN core_lsoa_boundaries l ON l.lsoa_code = :lsoa_code
-                        WHERE t.geom IS NOT NULL
-                          AND ST_Within(t.geom, l.geom)
-                          AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '24 months'
-                    ) sub
-                    WHERE rn <= 10
-                    ORDER BY date_of_transfer DESC
+                    SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
+                           t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
+                           ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           t.bedrooms_estimated AS bedrooms,
+                           t.floor_area_sqm,
+                           t.epc_rating
+                    FROM core_property_transactions t
+                    JOIN core_lsoa_boundaries l ON l.lsoa_code = :lsoa_code
+                    WHERE t.geom IS NOT NULL
+                      AND ST_Within(t.geom, l.geom)
+                      AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    ORDER BY t.date_of_transfer DESC
                     LIMIT 500
                 """),
                 {"lat": lat, "lon": lon, "lsoa_code": lsoa_code},
@@ -126,26 +113,19 @@ async def get_map_pois(
         elif ward_code and ward_code != '_':
             res = await db.execute(
                 text("""
-                    SELECT price, date_of_transfer, property_type, duration,
-                           paon, saon, street, town, postcode, latitude, longitude, lsoa_code,
-                           dist_m, in_ward, bedrooms, floor_area_sqm, epc_rating
-                    FROM (
-                        SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
-                               t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
-                               ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                               true AS in_ward,
-                               t.bedrooms_estimated AS bedrooms,
-                               t.floor_area_sqm,
-                               t.epc_rating,
-                               ROW_NUMBER() OVER (PARTITION BY t.lsoa_code ORDER BY t.date_of_transfer DESC) AS rn
-                        FROM core_property_transactions t
-                        JOIN core_ward_boundaries w ON w.ward_code = :ward_code
-                        WHERE t.geom IS NOT NULL
-                          AND ST_Within(t.geom, w.geom)
-                          AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '24 months'
-                    ) sub
-                    WHERE rn <= 10
-                    ORDER BY date_of_transfer DESC
+                    SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
+                           t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
+                           ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           true AS in_ward,
+                           t.bedrooms_estimated AS bedrooms,
+                           t.floor_area_sqm,
+                           t.epc_rating
+                    FROM core_property_transactions t
+                    JOIN core_ward_boundaries w ON w.ward_code = :ward_code
+                    WHERE t.geom IS NOT NULL
+                      AND ST_Within(t.geom, w.geom)
+                      AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    ORDER BY t.date_of_transfer DESC
                     LIMIT 500
                 """),
                 {"lat": lat, "lon": lon, "ward_code": ward_code},
@@ -154,25 +134,18 @@ async def get_map_pois(
             sample_codes = area_lsoa_list[:50]
             res = await db.execute(
                 text("""
-                    SELECT price, date_of_transfer, property_type, duration,
-                           paon, saon, street, town, postcode, latitude, longitude, lsoa_code,
-                           dist_m, in_ward, bedrooms, floor_area_sqm, epc_rating
-                    FROM (
-                        SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
-                               t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
-                               ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                               true AS in_ward,
-                               t.bedrooms_estimated AS bedrooms,
-                               t.floor_area_sqm,
-                               t.epc_rating,
-                               ROW_NUMBER() OVER (PARTITION BY t.lsoa_code ORDER BY t.date_of_transfer DESC) AS rn
-                        FROM core_property_transactions t
-                        WHERE t.geom IS NOT NULL
-                          AND t.lsoa_code = ANY(:codes)
-                          AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '24 months'
-                    ) sub
-                    WHERE rn <= 10
-                    ORDER BY date_of_transfer DESC
+                    SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
+                           t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
+                           ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           true AS in_ward,
+                           t.bedrooms_estimated AS bedrooms,
+                           t.floor_area_sqm,
+                           t.epc_rating
+                    FROM core_property_transactions t
+                    WHERE t.geom IS NOT NULL
+                      AND t.lsoa_code = ANY(:codes)
+                      AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    ORDER BY t.date_of_transfer DESC
                     LIMIT 500
                 """),
                 {"lat": lat, "lon": lon, "codes": sample_codes},
@@ -180,25 +153,18 @@ async def get_map_pois(
         else:
             res = await db.execute(
                 text("""
-                    SELECT price, date_of_transfer, property_type, duration,
-                           paon, saon, street, town, postcode, latitude, longitude, lsoa_code,
-                           dist_m, in_ward, bedrooms, floor_area_sqm, epc_rating
-                    FROM (
-                        SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
-                               t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
-                               ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                               true AS in_ward,
-                               t.bedrooms_estimated AS bedrooms,
-                               t.floor_area_sqm,
-                               t.epc_rating,
-                               ROW_NUMBER() OVER (PARTITION BY t.lsoa_code ORDER BY t.date_of_transfer DESC) AS rn
-                        FROM core_property_transactions t
-                        WHERE t.geom IS NOT NULL
-                          AND ST_DWithin(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
-                          AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                    ) sub
-                    WHERE rn <= 10
-                    ORDER BY date_of_transfer DESC
+                    SELECT t.price, t.date_of_transfer, t.property_type, t.duration,
+                           t.paon, t.saon, t.street, t.town, t.postcode, t.latitude, t.longitude, t.lsoa_code,
+                           ST_Distance(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           true AS in_ward,
+                           t.bedrooms_estimated AS bedrooms,
+                           t.floor_area_sqm,
+                           t.epc_rating
+                    FROM core_property_transactions t
+                    WHERE t.geom IS NOT NULL
+                      AND ST_DWithin(t.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
+                      AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    ORDER BY t.date_of_transfer DESC
                     LIMIT 500
                 """),
                 {"lat": lat, "lon": lon},

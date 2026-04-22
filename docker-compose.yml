@@ -54,6 +54,8 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - ./etl/lib:/app/etl_lib
+      - ./etl/data:/app/etl_data
     restart: unless-stopped
 
   frontend:

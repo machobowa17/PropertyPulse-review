@@ -382,13 +382,14 @@ async def fetch_property_market(
         if prior_txn_raw and prior_txn_raw > 0:
             txn_yoy = round((local_txn_raw - prior_txn_raw) / prior_txn_raw * 100, 1)
 
-    txn_details = None
+    txn_details = {
+        "local_absolute": local_txn_raw or None,
+        "parent_absolute": parent_txn_total or None,
+    }
     if txn_yoy is not None and prior_txn_raw:
         direction = "up" if txn_yoy > 0 else "down"
-        prior_per_lsoa = round(prior_txn_raw / local_lsoa_count, 1)
-        prior_str = f"{prior_per_lsoa:g}"
         yoy_str = f"{abs(txn_yoy):g}"
-        txn_details = {"yoy_summary": f"{yoy_str}% {direction} from {prior_str} sales/LSOA in the prior 12 months"}
+        txn_details["yoy_summary"] = f"{yoy_str}% {direction} from {prior_txn_raw:,} sales in the prior 12 months"
 
     metrics.append(
         metric(
@@ -439,8 +440,8 @@ async def fetch_property_market(
 
     # Build breakdown for table rendering
     fl_breakdown = [
-        {"label": "Freehold", "count": local_freehold, "pct": freehold_pct, "parent_pct": parent_freehold_pct},
-        {"label": "Leasehold", "count": local_leasehold, "pct": leasehold_pct, "parent_pct": parent_leasehold_pct},
+        {"label": "Freehold", "count": local_freehold, "pct": freehold_pct, "parent_pct": parent_freehold_pct, "avg_price": _round(local_fh_price)},
+        {"label": "Leasehold", "count": local_leasehold, "pct": leasehold_pct, "parent_pct": parent_leasehold_pct, "avg_price": _round(local_lh_price)},
     ]
 
     # Dynamic headline: pick dominant type, parent comparison is SAME type
@@ -455,8 +456,6 @@ async def fetch_property_market(
 
     freehold_details = {
         "breakdown": fl_breakdown,
-        "avg_freehold_price": _round(local_fh_price),
-        "avg_leasehold_price": _round(local_lh_price),
         "breakdown_type": "tenure_table",
         "count_label": "Transactions",
     }
@@ -536,64 +535,89 @@ async def fetch_property_market(
     )
 
     # ------------------------------------------------------------------
-    # HPI price trend
+    # Price trend (year-on-year) — from raw transactions at search-key level
     # ------------------------------------------------------------------
-    hpi_local = await db.execute(
+    local_price_yoy = None   # used later by investment_grade
+    parent_price_yoy = None
+    trend_series_result = await db.execute(
         text(
-            """
-            SELECT AVG(average_price) AS average_price,
-                   AVG(yearly_change_pct) AS yearly_change_pct,
-                   AVG(detached_price) AS detached_price,
-                   AVG(semi_detached_price) AS semi_detached_price,
-                   AVG(terraced_price) AS terraced_price,
-                   AVG(flat_price) AS flat_price,
-                   SUM(sales_volume) AS sales_volume
-            FROM core_hpi_lad
-            WHERE lad_code = ANY(:lads)
-              AND date = (SELECT MAX(date) FROM core_hpi_lad WHERE lad_code = ANY(:lads))
+            f"""
+            SELECT EXTRACT(YEAR FROM date_of_transfer)::int AS year,
+                   ROUND(AVG(price))::int AS avg_price,
+                   COUNT(*) AS txn_count,
+                   ROUND(AVG(CASE WHEN property_type = 'D' THEN price END))::int AS detached,
+                   ROUND(AVG(CASE WHEN property_type = 'S' THEN price END))::int AS semi,
+                   ROUND(AVG(CASE WHEN property_type = 'T' THEN price END))::int AS terraced,
+                   ROUND(AVG(CASE WHEN property_type = 'F' THEN price END))::int AS flat
+            FROM core_property_transactions
+            WHERE {local_txn_filter_plain}
+              AND property_type = ANY(:price_types)
+              AND date_of_transfer >= '2010-01-01'
+            GROUP BY 1
+            ORDER BY 1
             """
         ),
-        {"lads": local_lads},
+        local_txn_params,
     )
-    hpi_row = hpi_local.mappings().first()
+    trend_rows = trend_series_result.mappings().all()
 
-    hpi_parent = await db.execute(
-        text(
-            """
-            WITH latest_per_lad AS (
-                SELECT DISTINCT ON (lad_code) yearly_change_pct
-                FROM core_hpi_lad
-                WHERE lad_code = ANY(:lads)
-                ORDER BY lad_code, date DESC
+    if len(trend_rows) >= 2:
+        # Build series with YoY % computed from avg prices
+        trend_series = []
+        for i, r in enumerate(trend_rows):
+            avg = int(r["avg_price"]) if r["avg_price"] else None
+            prev_avg = int(trend_rows[i - 1]["avg_price"]) if i > 0 and trend_rows[i - 1]["avg_price"] else None
+            yoy = round((avg - prev_avg) / prev_avg * 100, 1) if avg and prev_avg and prev_avg > 0 else None
+            trend_series.append({
+                "year": int(r["year"]),
+                "avg_price": avg,
+                "yoy_pct": yoy,
+                "detached": int(r["detached"]) if r["detached"] else None,
+                "semi": int(r["semi"]) if r["semi"] else None,
+                "terraced": int(r["terraced"]) if r["terraced"] else None,
+                "flat": int(r["flat"]) if r["flat"] else None,
+            })
+
+        # Headline: latest year's YoY %
+        latest_yoy = trend_series[-1]["yoy_pct"]
+        local_price_yoy = latest_yoy  # for investment_grade later
+
+        # Parent YoY from pre-computed materialized view
+        parent_yoy = None
+        if parent_lads:
+            parent_trend_result = await db.execute(
+                text(
+                    """
+                    SELECT avg_price
+                    FROM mv_parent_yearly_price_stats
+                    WHERE parent_comparison = :parent_name
+                      AND property_type = 'ALL'
+                    ORDER BY year DESC
+                    LIMIT 2
+                    """
+                ),
+                {"parent_name": parent_name},
             )
-            SELECT AVG(yearly_change_pct) AS avg_yoy FROM latest_per_lad
-            """
-        ),
-        {"lads": parent_lads},
-    )
-    hpi_parent_row = hpi_parent.mappings().first()
+            parent_rows_yoy = parent_trend_result.mappings().all()
+            if len(parent_rows_yoy) >= 2:
+                cur_p = float(parent_rows_yoy[0]["avg_price"]) if parent_rows_yoy[0]["avg_price"] else None
+                prev_p = float(parent_rows_yoy[1]["avg_price"]) if parent_rows_yoy[1]["avg_price"] else None
+                if cur_p and prev_p and prev_p > 0:
+                    parent_yoy = round((cur_p - prev_p) / prev_p * 100, 1)
+        parent_price_yoy = parent_yoy  # for investment_grade later
 
-    if hpi_row and hpi_row["yearly_change_pct"] is not None:
-        hpi_details = {
-            "data_note": "Source: ONS/Land Registry House Price Index. Published at local-authority level only, so sub-LAD searches inherit the relevant LAD value.",
+        trend_details = {
+            "hpi_series": trend_series,
+            "data_note": "Year-on-year price change computed from Land Registry transactions for this search area.",
         }
-        if is_lad_or_coarser:
-            hpi_details.update(
-                {
-                    "detached": _round(hpi_row["detached_price"]),
-                    "semi": _round(hpi_row["semi_detached_price"]),
-                    "terraced": _round(hpi_row["terraced_price"]),
-                    "flat": _round(hpi_row["flat_price"]),
-                }
-            )
         metrics.append(
             metric(
                 "price_trend_yoy",
                 "Price Trend (Year-on-Year)",
-                _round(hpi_row["yearly_change_pct"]),
-                _round(hpi_parent_row["avg_yoy"]) if hpi_parent_row else None,
+                latest_yoy,
+                parent_yoy,
                 "%",
-                details=hpi_details,
+                details=trend_details,
             )
         )
 
@@ -791,19 +815,18 @@ async def fetch_property_market(
             return "E"
         return "F"
 
-    if hpi_row and hpi_row["yearly_change_pct"] is not None:
-        yoy = float(hpi_row["yearly_change_pct"] or 0)
-        combined = (gross_yield or 0) + (yoy or 0)
+    if local_price_yoy is not None:
+        yoy = float(local_price_yoy)
+        combined = (gross_yield or 0) + yoy
 
-        # Derive parent investment grade from parent yield + parent HPI
+        # Derive parent investment grade from parent yield + parent price YoY
         parent_grade = None
-        parent_yoy = float(hpi_parent_row["avg_yoy"]) if hpi_parent_row and hpi_parent_row["avg_yoy"] is not None else None
         # parent_yield may not be in scope (defined inside rent block); recompute from available data
         p_yield = None
         if parent_avg and rent_parent_row and rent_parent_row["avg_rent"]:
             p_yield = round(float(rent_parent_row["avg_rent"]) * 12 / parent_avg * 100, 2)
-        if parent_yoy is not None and p_yield is not None:
-            parent_grade = _grade_from_combined(p_yield + parent_yoy)
+        if parent_price_yoy is not None and p_yield is not None:
+            parent_grade = _grade_from_combined(p_yield + parent_price_yoy)
 
         if is_lad_or_coarser and gross_yield is not None:
             grade = _grade_from_combined(combined)
@@ -819,7 +842,7 @@ async def fetch_property_market(
                         "capital_growth_yoy": _round(yoy),
                         "combined_score": round(combined, 2),
                         "source_period": rent_period,
-                        "data_note": "This is a heuristic interpretation layer built from gross rental yield and official HPI momentum. It should be read as a quick synthesis, not as an official statistic.",
+                        "data_note": "This is a heuristic interpretation layer built from gross rental yield and year-on-year price growth. It should be read as a quick synthesis, not as an official statistic.",
                     },
                 )
             )

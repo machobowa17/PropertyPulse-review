@@ -44,6 +44,7 @@ export function formatValue(value: number | string | null, unit: string): string
   if (unit === 'people/hectare') return value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) + '/ha';
   if (unit === 'years') return value.toFixed(1) + ' yrs';
   if (unit === 'sales/LSOA') return value.toLocaleString('en-GB', { maximumFractionDigits: 1 }) + ' sales/LSOA';
+  if (unit === 'sales') return value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) + ' sales';
   if (unit === 'count/LSOA') return value.toLocaleString('en-GB', { maximumFractionDigits: 1 }) + '/LSOA';
   if (unit === 'count') return value.toLocaleString('en-GB');
   if (unit === 'score' || unit.startsWith('score')) return value.toFixed(1);

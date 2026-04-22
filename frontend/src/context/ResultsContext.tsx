@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -94,6 +94,9 @@ export interface ResultsUIContextValue {
   handleLayerToggle: (key: string) => void;
   handleMetricMapFocus: (metricId: string, source?: 'click' | 'scroll') => void;
   setMetricElementRef: (metricId: string, node: HTMLDivElement | null) => void;
+  mapFlyToRef: MutableRefObject<((lng: number, lat: number, zoom?: number) => void) | null>;
+  mapHighlightRef: MutableRefObject<((lng: number, lat: number, props?: Record<string, unknown>) => void) | null>;
+  clearMapHighlight: () => void;
 }
 
 // Combined type for backward-compatible useResults()
@@ -290,6 +293,12 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   // Map state — call useResultsMap BEFORE choropleth query (activeChoropleth comes from hook)
   const mapState = useResultsMap({ allMetrics, activeTab, isDesktop, sessionKey, q });
 
+  // Ref for map flyTo function — populated by MapView's onMapReady callback
+  const mapFlyToRef = useRef<((lng: number, lat: number, zoom?: number) => void) | null>(null);
+  // Ref for map temporary highlight marker — shows a marker at coordinates, removed on clear
+  const mapHighlightRef = useRef<((lng: number, lat: number, props?: Record<string, unknown>) => void) | null>(null);
+  const clearMapHighlight = useCallback(() => { mapHighlightRef.current?.(0, 0); }, []);
+
   // Lazy-fetch choropleth data only when a heatmap layer is active
   const choroplethLayer = mapState.activeChoropleth?.replace('choropleth_', '') || null;
   const { data: choroplethData } = useQuery({
@@ -336,7 +345,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     isDesktop,
   };
 
-  const uiValue: ResultsUIContextValue = { ...mapState };
+  const uiValue: ResultsUIContextValue = { ...mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight };
 
   const combinedValue: ResultsContextValue = { ...dataValue, ...uiValue };
 

@@ -139,8 +139,8 @@ METRIC_REGISTRY = {
     "price_trend_yoy": {
         "section": "Property & Market",
         "label": "Price Trend (YoY)",
-        "description": "HPI year-on-year change. LAD-level only",
-        "local_grain": "lad",
+        "description": "Year-on-year average price change from Land Registry transactions",
+        "local_grain": "search_key",
         "supports_parent": True,
         "supports_trend": True,
         "map_binding": "none",
@@ -150,8 +150,8 @@ METRIC_REGISTRY = {
         "decision_question": "Are values rising or falling here?",
         "metric_family": "property_prices",
         "interpretation_direction": "higher_is_better",
-        "quality_notes": "ONS/Land Registry HPI is only published at local-authority level.",
-        "source_tables": ["core_hpi_lad"],
+        "quality_notes": "Computed from raw Land Registry transactions at the search area level. Small areas may have volatile year-on-year swings due to low transaction counts.",
+        "source_tables": ["core_property_transactions"],
     },
     "median_rent": {
         "section": "Property & Market",

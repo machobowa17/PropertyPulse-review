@@ -45,7 +45,22 @@ CREATE TABLE IF NOT EXISTS core_transport_stops (
     latitude            DOUBLE PRECISION,
     longitude           DOUBLE PRECISION,
     geom                GEOMETRY(Point, 4326),
-    lad_code            TEXT
+    lad_code            TEXT,
+    short_name          TEXT,        -- NaPTAN ShortCommonName
+    landmark            TEXT,        -- NaPTAN Landmark
+    street              TEXT,        -- NaPTAN Street
+    indicator           TEXT,        -- NaPTAN Indicator (platform/stance/bay)
+    locality_name       TEXT,        -- NaPTAN LocalityName
+    parent_locality     TEXT,        -- NaPTAN ParentLocalityName
+    suburb              TEXT,        -- NaPTAN Suburb
+    status              TEXT,        -- NaPTAN Status (active/inactive)
+    crs_code            TEXT,        -- 3-letter NR station code (from RailReferences.csv)
+    tiploc_code         TEXT,        -- TIPLOC code (from RailReferences.csv)
+    lines               TEXT,        -- Comma-separated line/route names
+    operator            TEXT,        -- Train operating company or "TfL"
+    zone                TEXT,        -- Oyster zone (London only)
+    step_free           BOOLEAN,     -- Step-free access available
+    facilities          JSONB        -- Flexible: {ticket_office, toilets, car_park, bike_parking, wifi, ...}
 );
 CREATE INDEX IF NOT EXISTS idx_transport_geom ON core_transport_stops USING GIST (geom);
 

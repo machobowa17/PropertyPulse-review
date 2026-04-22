@@ -26,7 +26,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v9"  # bumped: nested metric contract
+AREA_CACHE_VERSION = "v13"  # bumped: travelcard zones, single fares, shared MOTIS
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

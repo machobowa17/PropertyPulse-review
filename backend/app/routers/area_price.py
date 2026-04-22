@@ -416,6 +416,7 @@ async def get_transactions(
     sort_by: str = Query("date"),
     sort_dir: str = Query("desc"),
     property_type: str | None = Query(None, description="Comma-separated type codes, e.g. D,S"),
+    year: int | None = Query(None, description="Calendar year to filter by, e.g. 2023. Default: last 12 months"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return paginated individual transactions for the session's area."""
@@ -450,11 +451,31 @@ async def get_transactions(
         params["type_filter"] = list(PRICE_TYPES)
     type_filter_clause = "AND property_type = ANY(:type_filter)"
 
+    # Date filter: calendar year or last 13 months (default)
+    if year is not None:
+        date_filter = "AND EXTRACT(YEAR FROM date_of_transfer) = :year"
+        params["year"] = year
+    else:
+        date_filter = "AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'"
+
     where = f"""
         WHERE {area_filter}
-          AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+          {date_filter}
           {type_filter_clause}
     """
+
+    # Available years for the dropdown
+    years_result = await db.execute(
+        text(f"""
+            SELECT DISTINCT EXTRACT(YEAR FROM date_of_transfer)::int AS yr
+            FROM core_property_transactions
+            WHERE {area_filter}
+              AND property_type = ANY(:type_filter)
+            ORDER BY yr DESC
+        """),
+        params,
+    )
+    available_years = [r["yr"] for r in years_result.mappings().all()]
 
     # Count query
     count_result = await db.execute(
@@ -481,12 +502,19 @@ async def get_transactions(
                        NULLIF(TRIM(street), ''),
                        NULLIF(TRIM(town), '')
                    ) AS address,
+                   transaction_id,
+                   postcode,
+                   paon,
+                   saon,
+                   street,
                    price,
                    property_type,
                    duration,
                    bedrooms_estimated,
                    floor_area_sqm,
-                   epc_rating
+                   epc_rating,
+                   latitude,
+                   longitude
             FROM core_property_transactions
             {where}
             ORDER BY {sort_col} {sort_dir} {nulls}
@@ -501,9 +529,15 @@ async def get_transactions(
         pt = (r["property_type"] or "").strip()
         dur = (r["duration"] or "").strip()
         beds = r["bedrooms_estimated"]
+        raw_saon = (r["saon"] or "").strip()
         transactions.append({
             "date": r["date_of_transfer"].isoformat() if r["date_of_transfer"] else None,
             "address": r["address"] or "",
+            "transaction_id": r["transaction_id"] or "",
+            "postcode": (r["postcode"] or "").strip(),
+            "paon": (r["paon"] or "").strip(),
+            "saon": "" if raw_saon in ("", "N", "Y") else raw_saon,
+            "street": (r["street"] or "").strip(),
             "price": r["price"],
             "property_type": pt,
             "property_type_label": TYPE_NAMES.get(pt, pt),
@@ -513,6 +547,8 @@ async def get_transactions(
             "tenure": dur,
             "tenure_label": TENURE_NAMES.get(dur, dur),
             "epc": (r["epc_rating"] or "").strip() or None,
+            "lat": float(r["latitude"]) if r["latitude"] else None,
+            "lon": float(r["longitude"]) if r["longitude"] else None,
         })
 
     return {
@@ -521,4 +557,78 @@ async def get_transactions(
         "page": page,
         "page_size": page_size,
         "total_pages": total_pages,
+        "available_years": available_years,
     }
+
+
+# ---------------------------------------------------------------------------
+# Property sale history (previous sales of same property)
+# ---------------------------------------------------------------------------
+
+@router.get("/transactions/history")
+async def get_property_history(
+    session_key: str = Query(..., description="LSOA session key from /resolve"),
+    postcode: str = Query(..., description="Property postcode"),
+    paon: str = Query(..., description="Primary address number"),
+    street: str = Query(..., description="Street name"),
+    saon: str = Query("", description="Secondary address number (flat, unit)"),
+    exclude_id: str = Query("", description="Transaction ID to exclude from results"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return previous sales of the same property, matched by address fields."""
+    await require_session(session_key)
+
+    # Uppercase to match stored data format; postcode uses idx_transactions_postcode
+    params: dict = {
+        "postcode": postcode.strip().upper(),
+        "paon": paon.strip().upper(),
+        "street": street.strip().upper(),
+        "saon": saon.strip().upper(),
+        "exclude_id": exclude_id.strip(),
+    }
+
+    # SAON matching: if empty (original had no flat/unit), skip saon filter
+    # to catch historical records with varying saon descriptions.
+    # If non-empty (e.g. "FLAT 4"), filter to that specific unit.
+    if not params["saon"]:
+        saon_clause = "TRUE"
+    else:
+        saon_clause = "saon = :saon"
+
+    exclude_clause = "AND transaction_id != :exclude_id" if params["exclude_id"] else ""
+
+    result = await db.execute(
+        text(f"""
+            SELECT date_of_transfer, price, property_type, duration,
+                   bedrooms_estimated, floor_area_sqm, epc_rating
+            FROM core_property_transactions
+            WHERE postcode = :postcode
+              AND paon = :paon
+              AND street = :street
+              AND {saon_clause}
+              {exclude_clause}
+            ORDER BY date_of_transfer DESC
+            LIMIT 20
+        """),
+        params,
+    )
+    rows = result.mappings().all()
+
+    history = []
+    for r in rows:
+        pt = (r["property_type"] or "").strip()
+        dur = (r["duration"] or "").strip()
+        beds = r["bedrooms_estimated"]
+        history.append({
+            "date": r["date_of_transfer"].isoformat() if r["date_of_transfer"] else None,
+            "price": r["price"],
+            "property_type": pt,
+            "property_type_label": TYPE_NAMES.get(pt, pt),
+            "beds": beds,
+            "size_sqm": round(r["floor_area_sqm"], 1) if r["floor_area_sqm"] else None,
+            "tenure": dur,
+            "tenure_label": TENURE_NAMES.get(dur, dur),
+            "epc": (r["epc_rating"] or "").strip() or None,
+        })
+
+    return {"history": history, "count": len(history)}

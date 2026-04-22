@@ -1,0 +1,15 @@
+osm: /input/great-britain-latest.osm.pbf
+
+timetable:
+  first_day: TODAY
+  num_days: 14
+  datasets:
+    gb:
+      path: /input/great_britain_gtfs.zip
+
+# Disable features we don't need (saves RAM on 8 GB server)
+elevators: false
+street_routing: true
+osr_footpath: true
+geocoding: false
+reverse_geocoding: false

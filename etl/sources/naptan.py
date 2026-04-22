@@ -100,6 +100,14 @@ def run(db_url: str) -> int:
                 lat,
                 lon,
                 None,   # lad_code — not populated here
+                r.get("ShortCommonName", "") or None,
+                r.get("Landmark", "") or None,
+                r.get("Street", "") or None,
+                r.get("Indicator", "") or None,
+                r.get("LocalityName", "") or None,
+                r.get("ParentLocalityName", "") or None,
+                r.get("Suburb", "") or None,
+                r.get("Status", "") or None,
             ))
 
     print(f"  Collected {len(rows):,} supported-country stops", flush=True)
@@ -116,7 +124,9 @@ def run(db_url: str) -> int:
             cur,
             f"""
             INSERT INTO {TABLE_NAMES['transport_stops']}_new
-                (atco_code, stop_name, stop_type, latitude, longitude, lad_code)
+                (atco_code, stop_name, stop_type, latitude, longitude, lad_code,
+                 short_name, landmark, street, indicator,
+                 locality_name, parent_locality, suburb, status)
             VALUES %s
             ON CONFLICT DO NOTHING
             """,

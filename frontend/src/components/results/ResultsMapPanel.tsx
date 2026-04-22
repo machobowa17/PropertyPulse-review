@@ -26,6 +26,8 @@ export function ResultsMobileMap() {
     focusLabel,
     focusReason,
     handleLayerToggle,
+    mapFlyToRef,
+    mapHighlightRef,
   } = useResults();
 
   if (isDesktop) return null;
@@ -70,6 +72,8 @@ export function ResultsMobileMap() {
               onViewportChange={handleViewportChange}
               choroplethData={activeChoropleth ? choroplethData : null}
               choroplethUrl={activeChoropleth ? choroplethUrl : null}
+              onMapReady={(flyTo) => { mapFlyToRef.current = flyTo; }}
+              onHighlightReady={(cb) => { mapHighlightRef.current = cb; }}
             />
             <MapLayerControl
               activeTab={activeTab}
@@ -110,6 +114,8 @@ export function ResultsDesktopMap() {
     choroplethUrl,
     activeChoropleth,
     handleLayerToggle,
+    mapFlyToRef,
+    mapHighlightRef,
   } = useResults();
 
   if (!isDesktop || !resolved?.coordinates?.lat) return null;
@@ -130,6 +136,8 @@ export function ResultsDesktopMap() {
           onViewportChange={handleViewportChange}
           choroplethData={activeChoropleth ? choroplethData : null}
           choroplethUrl={activeChoropleth ? choroplethUrl : null}
+          onMapReady={(flyTo) => { mapFlyToRef.current = flyTo; }}
+          onHighlightReady={(cb) => { mapHighlightRef.current = cb; }}
         />
         <MapLayerControl
           activeTab={activeTab}

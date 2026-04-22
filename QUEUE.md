@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-18 (session 44)
+Last updated: 2026-04-20 (session 48)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -235,10 +235,11 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Pending | User can't see what changes when toggling. Need evidence of effect. **To be discussed.** |
 | P8 | Download report button broken | Pending | PDF generation not working on live site. Investigate and fix. |
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
-| P10 | DB scan: unused table data → new metrics | Pending | Full scan of all `core_*` tables to find columns/data never queried by tab services. Identify valuable metrics we can surface. |
+| P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
 | P51 | Saved areas — clarify persistence model | Pending | Where does it save? How does it remember the user? Currently localStorage only — no cross-device sync, no account system. Clarify UX and consider if this is sufficient. |
 | P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
-| P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. |
+| P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
+| P54 | Add bedroom layer to price history charts | Pending | After EPC re-ingestion (M3) brings bedroom coverage from ~20% to ~80%+, add bedroom breakdown (1-bed, 2-bed, 3-bed, 4-bed, 5+) as an additional filter toggle on DistrictPriceHistoryChart and HpiTrendChart. Same multi-select pattern as property type. Blocked by M3. |
 
 #### 7B — Map
 
@@ -249,7 +250,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P13 | Map layers showing nothing (parks, sports/rec) | Pending | Toggle activates but no markers appear. Investigate why and fix. |
 | P14 | Map concentric circles — add legend/explanation | Pending | Three concentric circles on map have no label or tooltip explaining what they represent. |
 | P15 | Metric vs map count mismatch | Pending | EV charger metric says 5, map shows 3. Universal audit: check consistency between metric values and map marker counts for ALL metrics across all tabs. |
-| P16 | Bus stops on map + in transport table | Pending | Add bus stops as a map layer with distinct icon. Also add to nearest station table. Different icons for bus vs train. |
+| P16 | Bus stops on map + in transport table | Partial (S48) | Bus stops now in station detail table with type toggle (rail/metro/tram/bus/ferry). Map layer icons still pending (P12). |
 | P17 | Median earnings choropleth on Governance tab | **DONE** | Moved choropleth_median_earnings to Property & Market. Also moved choropleth_housing_tenure, choropleth_housing_type. Removed dead choropleth layers (full_fibre, superfast_broadband, mobile_4g_indoor, mobile_5g_outdoor, wfh). |
 
 #### 7C — Property tab
@@ -264,6 +265,11 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P23 | Move housing tenure + housing stock from Community → Property | **DONE** | Moved queries + metric emission from tab_community.py → tab_property.py. Moved choropleth bindings in resultsConstants.ts. Updated METRIC_TAB in personalization.ts. Human-readable detail keys. |
 | P24 | Freehold vs leasehold — redesign expanded details | Pending | Current key-value dump layout doesn't work. Figure out better grouping/presentation. |
 | P25 | Move EPC chart from Environment → Property | **DONE** | EPC chart already lives in Property tab via `epc_energy_score` metric. P35 removed all EPC metrics from Environment tab. Verified — no action needed. |
+| P55 | Expandable transaction rows — previous sales | **DONE** | Session 47. Click row → sub-rows show previous sales of same property. Backend `/transactions/history` endpoint matches by `postcode + paon + street`. SAON handling: empty=match all (houses), specific=exact match (flats). +/− indicator, % change vs older sale, main row shows % in brackets. |
+| P56 | Map fly-to on transaction row click | **DONE** | Session 47. Expanding a row flies map to property at zoom 17. Collapsing row or metric card restores original viewport. `mapFlyToRef` in ResultsContext, populated by MapView `onMapReady` callback. `lat`/`lon` added to `/transactions` response. |
+| P57 | Sold price popup format change | **DONE** | Session 47. Changed from Address → £price (big) → Type · Tenure → Date to: Address → Type · Tenure · Beds · Floor area → "Last sold: Month Year, £price". |
+| P58 | EPC rating distribution — enhanced with type + period toggles | Pending | Redesign `epc_energy_score` metric expanded view: show property count per band (not just %), classic UK EPC arrow-style visual (A green → G red), toggle by property type (D/S/T/F), toggle by period built (requires `CONSTRUCTION_AGE_BAND` from M3). **Phase 1 (now):** type toggle using existing `core_epc_lsoa` + `core_property_transactions` EPC match data. **Phase 2 (after M3):** add period-built toggle. |
+| P59 | Property energy & building profile metric | Pending | New metric on Property tab showing area-level EPC-derived building characteristics in a table with type toggles (same pattern as freehold/leasehold, housing stock tables): heating type breakdown (gas/electric/oil/district), fuel type, energy consumption (kWh/yr), CO2 emissions (t/yr), running costs (heating £/yr, hot water £/yr, lighting £/yr), glazing quality, wall construction/insulation, solar adoption, mains gas connectivity. **Fully blocked by M3** — requires EPC re-ingestion with additional columns (D17-D21). All columns exist in raw EPC CSV but are not currently loaded. |
 
 #### 7D — Lifestyle tab
 
@@ -271,7 +277,8 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 |---|------|--------|-------|
 | P26 | 15-minute amenities — rethink | Pending | Current implementation needs rethink. **To be discussed.** |
 | P27 | Nearest station — drop chart, keep table only | **DONE** | Removed TransportModeChart from station details in MetricCard.tsx. Added scrollable container with bus/train icon differentiation (Coffee=bus, TrainFront=train). |
-| P28 | Transport table: bus vs train icons + bus stops | Pending | Different icons for bus and train. Add bus stops. Cap table at 5 visible rows with scroll for more. |
+| P28 | Transport table: bus vs train icons + bus stops | **DONE (S48)** | Full redesign: StationTable component with type toggle pills (Rail/Metro-DLR/Tram/Bus/Ferry), TransactionTable-matching style (rounded-xl, bg-surface header, alternating rows). Shows: name, lines served, operator, zone, location, distance, step-free/facilities icons. Backend returns all stop types with 8 new NaPTAN columns + enrichment columns (crs, lines, operator, zone, step_free, facilities via TfL API). |
+| P60 | Station enrichment — TfL + NR data | **In Deploy** | S48: Created `station_enrichment.py` ETL + `rail_references.csv` (ATCO↔CRS↔TIPLOC). TfL API provides lines/zones/step-free/facilities for London stations. NR Knowledgebase deferred to next phase. **Needs:** run migration (`sql/migrate_transport_stops.sql`), re-run NaPTAN ETL, run station_enrichment ETL on EC2. |
 | P29 | Sports/recreation — tabulate details, scrollable | **DONE** | Added sports/recreation renderer in MetricCard.tsx with type count badges and scrollable max-h-[220px] list. |
 | P30 | Broadband: remove separate fibre + superfast metrics | **DONE** | Removed full_fibre + superfast_broadband metric emissions from tab_lifestyle.py. Cleaned up choropleth layers in area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
 | P31 | Mobile: remove separate 4G + 5G metrics | **DONE** | Removed mobile_4g_indoor + mobile_5g_outdoor from tab_lifestyle.py, area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
@@ -309,6 +316,253 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 |---|------|--------|-------|
 | P49 | Enrich governance tab content | Pending | Currently thin. Add more: council performance, factual info, non-comparative text summaries. Research what's available. |
 | P50 | Utility providers — add electricity/gas alongside water | Pending | Water company is shown but no other utilities. Research available data sources for electricity/gas distribution companies by postcode. |
+
+---
+
+### Phase 8: Idle Data — Audit & Proposals (session 47)
+
+Source: Full DB schema audit — every table, every column checked against backend query usage. Identifies data already sitting in the database that we're not surfacing.
+
+#### Audit Report
+
+**`core_property_transactions` — 12 pre-computed `lsoa_month_*` columns NEVER queried at runtime:**
+
+| Column | What it is |
+|--------|-----------|
+| `lsoa_month_avg_price` | Average price per LSOA per month |
+| `lsoa_month_median_price` | Median price per LSOA per month |
+| `lsoa_month_min_price` | Min sale price in that LSOA/month |
+| `lsoa_month_max_price` | Max sale price in that LSOA/month |
+| `lsoa_month_transaction_count` | Sales volume per LSOA per month |
+| `lsoa_month_new_build_count` | New builds per LSOA per month |
+| `lsoa_month_freehold_count` | Freehold sales count |
+| `lsoa_month_leasehold_count` | Leasehold sales count |
+| `lsoa_month_avg_freehold_price` | Avg freehold price |
+| `lsoa_month_avg_leasehold_price` | Avg leasehold price |
+| `lsoa_month_avg_ppsm` | Avg price/sqm per LSOA per month (only populated by ETL, never queried) |
+| `lsoa_month_avg_ppsft` | Avg price/sqft per LSOA per month (same) |
+
+Also idle: `price_per_sqm` (per-transaction, never queried — only sqft is used), `epc_match_score` (EPC→transaction match confidence, never exposed).
+
+**`core_price_sqm_lad` (318 rows) + `core_price_sqm_lsoa` (35,670 rows) — entire tables NEVER queried:**
+Pre-computed price-per-sqm breakdowns by property type (detached/semi/terraced/flat). Both have `avg_price_per_sqm`, `avg_ppsm_detached`, `avg_ppsm_semi`, `avg_ppsm_terraced`, `avg_ppsm_flat`, `transaction_count`.
+
+**`core_hpi_lad` (122,533 rows) — only used by comparable-areas algorithm, NEVER displayed:**
+Official ONS House Price Index. Monthly time series with: `average_price`, `index_value`, `sales_volume`, `detached_price`, `semi_detached_price`, `terraced_price`, `flat_price`, `yearly_change_pct`. Could power an official HPI trend chart or validate our transaction-derived prices.
+
+**`core_epc_lsoa` — heating + CO2 columns exist in schema but are ALL NULL (0 of 35,672 rows populated):**
+`avg_co2_emissions`, `heat_gas_pct`, `heat_electric_pct`, `heat_oil_pct`, `heat_district_pct`, `heat_other_pct`, `heat_none_pct` — schema is ready but the ETL aggregation step never populated these. The heating columns ARE queried by `tab_property.py` but return NULLs. Fixing requires re-running EPC ETL with additional raw columns (`MAIN_FUEL`, `CO2_EMISSIONS_CURRENT`).
+
+**Raw EPC CSV — 84 of 93 columns not loaded:**
+ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`, `TOTAL_FLOOR_AREA`, `NUMBER_HABITABLE_ROOMS`, `CURRENT_ENERGY_RATING`). Notable idle raw columns that would need fresh ETL ingestion:
+
+| Raw CSV column | Potential metric |
+|---------------|-----------------|
+| `CONSTRUCTION_AGE_BAND` | "Period built" distribution (Victorian / Inter-war / Post-2000 etc.) |
+| `WALLS_DESCRIPTION`, `ROOF_DESCRIPTION` | Construction quality insights |
+| `HEATING_COST_CURRENT`, `HOT_WATER_COST_CURRENT`, `LIGHTING_COST_CURRENT` | Running costs estimate |
+| `CO2_EMISSIONS_CURRENT` | Carbon footprint per property |
+| `MAIN_FUEL` | Gas/electric/oil heating breakdown (would populate the empty `core_epc_lsoa` heating columns) |
+| `SOLAR_WATER_HEATING_FLAG`, `PHOTO_SUPPLY` | Renewable energy adoption rate |
+| `BUILT_FORM` | Granular type (bungalow, maisonette, end-terrace, etc.) |
+| `ENVIRONMENT_IMPACT_CURRENT/POTENTIAL` | Environmental impact score |
+| `ENERGY_CONSUMPTION_CURRENT` | kWh/year energy use |
+| `MAINHEAT_DESCRIPTION` | Specific heating system (e.g. "Gas boiler, radiators") |
+| `WINDOWS_DESCRIPTION` | Double/triple glazing prevalence |
+| `FLOOR_DESCRIPTION` | Floor insulation quality |
+| `TENURE` | Ownership type at individual property level (owner-occupied / rented / social) |
+
+#### Proposals — Quick Wins (zero ETL, just query existing data)
+
+| # | Proposal | Effort | Impact | Notes |
+|---|----------|--------|--------|-------|
+| D10 | Surface `lsoa_month_*` freehold vs leasehold pricing | Low | Medium | Freehold premium metric: `avg_freehold_price / avg_leasehold_price`. Already computed. Answers "how much more do freeholds cost here?" |
+| D11 | Surface `lsoa_month_*` price range (min/max) | Low | Medium | Price spread metric showing min–max range and volatility. Already computed. |
+| D12 | Surface `lsoa_month_*` new build counts | Low | Medium | New build activity metric at LSOA granularity (more granular than current LAD-level new_build_proportion). Already computed. |
+| D13 | Surface `core_price_sqm_lad` / `core_price_sqm_lsoa` | Low | Medium | Price per sqm by property type — separate table, never queried. Could complement existing price_per_sqft with metric comparison. |
+| D14 | Display `core_hpi_lad` as official HPI trend chart | Medium | High | ONS official HPI monthly time series with prices by type. Would be a rich chart component. Only used by comparable-areas internally today. |
+| D15 | Display `core_hpi_lad` official YoY change % | Low | High | `yearly_change_pct` column — ready-made official price growth rate, not our derived one. |
+
+#### Proposals — Medium Effort (re-run EPC ETL with additional columns)
+
+| # | Proposal | Effort | Impact | Notes |
+|---|----------|--------|--------|-------|
+| D16 | Construction age band distribution | Medium | High | Requires adding `CONSTRUCTION_AGE_BAND` to EPC ETL `_COLUMN_MAP` + new LSOA aggregation. Answers "what era were properties here built?" |
+| D17 | Running costs (heating + hot water + lighting) | Medium | High | Requires adding 3 cost columns to EPC ETL. Powerful for buyers: "how much does it cost to run a home here?" |
+| D18 | CO2 emissions per property | Medium | Medium | Requires `CO2_EMISSIONS_CURRENT`. Environmental metric. Would populate the empty `avg_co2_emissions` in `core_epc_lsoa`. |
+| D19 | Heating fuel type breakdown | Medium | Medium | Requires `MAIN_FUEL`. Would populate the empty `heat_gas_pct` etc. in `core_epc_lsoa`. Tab_property.py already queries these — just needs data. |
+| D20 | Solar/renewable adoption rate | Medium | Medium | Requires `SOLAR_WATER_HEATING_FLAG` + `PHOTO_SUPPLY`. Trending metric for eco-conscious buyers. |
+| D21 | Glazing + insulation quality | Medium | Low | Requires `WINDOWS_DESCRIPTION` + `FLOOR_DESCRIPTION`. Niche but relevant to energy bills. |
+| D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | Requires `BUILT_FORM`. More granular than D/S/T/F. Shows "is this a bungalow area?" |
+
+All D16–D22 are **blocked by M3** (EPC re-ingestion on EC2). Could be done locally first, then deployed.
+
+#### Proposals — Zero ETL, Census Data Already in `core_census_lsoa`
+
+| # | Proposal | Tab | Census Columns | Notes |
+|---|----------|-----|----------------|-------|
+| D23 | Age distribution metric | Community & Education | `pct_age_0_15`, `pct_age_16_64`, `pct_age_65_plus` | Breakdown of population by age band. Useful for families (young area?), retirees (aging area?). Currently shown in demographics overview but NOT as a standalone metric with parent comparison + persona takeaway. |
+| D24 | Household size distribution metric | Community & Education | `pct_1person`, `pct_2person`, `pct_3_4person`, `pct_5plus` | Shows whether area skews towards singles, couples, or large families. Complements existing household composition (families/singles/sharers). |
+| D25 | Born abroad / national identity metric | Community & Education | `pct_born_abroad`, `pct_uk_identity` | Cultural diversity indicator. "X% of residents were born outside the UK." Sensitive — present factually without value judgement. |
+| D26 | Commute distance distribution metric | Lifestyle & Connectivity | `pct_lt2km`, `pct_2_10km`, `pct_10_30km`, `pct_30plus` | Shows how far residents commute. Complements existing WFH and cycling metrics. Useful for people evaluating commute patterns of an area. Already have human-readable labels from P42. |
+
+All D23–D26 are **zero ETL** — data already exists in `core_census_lsoa`, just needs backend metric emission + metric registry entry + persona weights.
+
+#### D29 — Surface INSPIRE + LLC at Area Level (current portal)
+
+Both `core_inspire_parcels` (24.3M rows) and `core_llc_charges` (7.7M rows) were ingested in Phase 1 but **zero backend queries exist** for either table. They sit completely idle today.
+
+**LLC — `Area_Management` charges (6,037 rows across 116 authorities):**
+
+| Metric | Tab | Query approach | Notes |
+|--------|-----|---------------|-------|
+| **Conservation area coverage** | Environment & Safety or Local Governance | `ST_Intersects` of LSOA/LAD boundary with `Area_Management` charge polygons | "This area includes a conservation area" / "X% of the area is within a conservation zone" |
+| **Active land charges count** | Local Governance | Count `LU_Residential` charges per LSOA/LAD | Total registered charges — shows legal activity density |
+
+**INSPIRE — marginal at area level:**
+
+| Metric | Tab | Query approach | Notes |
+|--------|-----|---------------|-------|
+| **Avg land parcel size** | Property & Market | `AVG(ST_Area(geom::geography))` per LSOA | "Average plot size: 280 sqm" — niche, mildly interesting |
+
+**Verdict:** LLC `Area_Management` (conservation areas) is the clear win for the current portal. INSPIRE parcels and LLC `LU_Residential` are per-property datasets that belong in P53.
+
+#### D30 — Surface INSPIRE + LLC at Property Level (feeds P53)
+
+For the address-level search feature, these become high-value:
+
+| Dataset | Property-level use | Query |
+|---------|-------------------|-------|
+| **INSPIRE parcels** | Show exact land parcel boundary on map + title number + plot area in sqm | `ST_Contains(geom, property_point)` or nearest parcel |
+| **LLC `LU_Residential`** | Residential land-use charge polygon for that property | `ST_Contains(geom, property_point)` |
+| **LLC `Area_Management`** | "This property is within a conservation area" / "TPO applies" | `ST_Contains(geom, property_point)` |
+
+Already covered under D28-3 and D28-4 but noting here that the data is **already ingested and indexed** — no ETL needed, just property-level query endpoints.
+
+#### D27 — Enrich Transaction Table with Additional Columns
+
+Expand the sales history table beyond the current 8 columns. Three tiers based on effort required.
+
+**Currently showing (8 columns):**
+
+| Column | Source |
+|--------|--------|
+| Date | `date_of_transfer` |
+| Address | `CONCAT(saon, paon, street, town)` |
+| Price | `price` |
+| Type | `property_type` (D/S/T/F) |
+| Beds | `bedrooms_estimated` (est. from habitable rooms) |
+| Size | `floor_area_sqm` |
+| Tenure | `duration` (F/L) |
+| EPC | `epc_rating` (A-G) |
+
+**Tier 1 — Zero effort (already in DB, just add to SELECT):**
+
+| Column | Display as | Notes |
+|--------|-----------|-------|
+| `old_new` | New Build | Y/N flag — "Was this a new build when sold?" |
+| `price_per_sqft` | £/sqft | Already computed per-row |
+| `price_per_sqm` | £/sqm | Metric variant — pick one or show both |
+| `locality` | Locality | Sub-area name (often blank but useful when present) |
+| `town` | Town | Currently folded into address, could be separate |
+| `ppd_category` | PPD Category | A = standard, B = additional (transfers, repossessions) |
+| `habitable_rooms` | Rooms | Raw room count from EPC |
+| floor_area → sqft | Size (sqft) | Easy conversion from sqm |
+| `epc_match_score` | EPC Confidence | Match confidence 0-1 (niche but transparent) |
+
+**Tier 1b — Zero effort (contextual, from `lsoa_month_*` columns):**
+
+| Column | Display as | Notes |
+|--------|-----------|-------|
+| `lsoa_month_avg_price` | Area Avg | "You paid X, area average was Y" |
+| `lsoa_month_median_price` | Area Median | Same but median |
+| `lsoa_month_transaction_count` | Sales/Month | Market activity context for that LSOA/month |
+
+**Tier 2 — Requires EPC ETL re-run (blocked by M3), high value:**
+
+| EPC Column | Display as | Example | Notes |
+|-----------|-----------|---------|-------|
+| `CONSTRUCTION_AGE_BAND` | Period Built | "1950-1966" | When was it built? Very popular. |
+| `BUILT_FORM` | Built Form | "End-Terrace", "Bungalow" | More granular than D/S/T/F |
+| `MAINHEAT_DESCRIPTION` | Heating | "Gas boiler, radiators" | What heats the property? |
+| `MAIN_FUEL` | Fuel Type | "mains gas", "oil" | Gas vs electric vs oil |
+| `ENERGY_CONSUMPTION_CURRENT` | Energy kWh/yr | "15,230" | Annual energy consumption |
+| `CO2_EMISSIONS_CURRENT` | CO2 t/yr | "3.2" | Carbon footprint |
+| `HEATING_COST_CURRENT` | Heating £/yr | "£824" | Annual heating cost at EPC time |
+| `HOT_WATER_COST_CURRENT` | Hot Water £/yr | "£142" | Annual hot water cost |
+| `LIGHTING_COST_CURRENT` | Lighting £/yr | "£96" | Annual lighting cost |
+| `WINDOWS_DESCRIPTION` | Glazing | "Double glazed" | Window quality |
+| `WALLS_DESCRIPTION` | Walls | "Cavity wall, insulated" | Construction/insulation |
+| `SOLAR_WATER_HEATING_FLAG` | Solar | Y/N | Has solar water heating? |
+| `PHOTO_SUPPLY` | Solar PV | "2.5 kWp" | Has photovoltaic panels? |
+| `MAINS_GAS_FLAG` | Mains Gas | Y/N | Connected to gas network? |
+| `NUMBER_HEATED_ROOMS` | Heated Rooms | "5" | vs total habitable rooms |
+| `FLOOR_LEVEL` | Floor | "1st", "Ground" | For flats — which floor? |
+| `TENURE` | EPC Tenure | "owner-occupied" | More granular than F/L |
+| `INSPECTION_DATE` | EPC Date | "2022-03-15" | When was the EPC done? |
+| `POTENTIAL_ENERGY_RATING` | Potential EPC | "B" | What property *could* achieve |
+
+**Tier 3 — Requires EPC ETL re-run (blocked by M3), moderate value:**
+
+| EPC Column | Display as |
+|-----------|-----------|
+| `ROOF_DESCRIPTION` | Roof construction/insulation |
+| `FLOOR_DESCRIPTION` | Floor insulation |
+| `LOW_ENERGY_LIGHTING` | % low-energy lighting |
+| `EXTENSION_COUNT` | Number of extensions |
+| `WIND_TURBINE_COUNT` | Wind turbines |
+| `MULTI_GLAZE_PROPORTION` | % double/triple glazed |
+
+**Implementation:** Tier 1 can be done immediately. Tiers 2-3 blocked by M3 (EPC re-ingestion). Frontend table needs horizontal scroll for wider layout.
+
+#### D28 — Per-Property Data Sources for Address-Level Search (feeds P53)
+
+New feature: search by **specific address** and show everything we know about THAT property. Requires ingesting additional free/OGL datasets that provide per-property (not just per-area) information. This is the data sourcing plan for P53.
+
+**Datasets we already have (just need property-level queries):**
+
+| # | Dataset | Licence | Join key | What it adds at property level | Current area-level coverage |
+|---|---------|---------|----------|-------------------------------|----------------------------|
+| D28-1 | **Land Registry PPD** (existing) | OGL v3 | address match | Full transaction history for that address — every sale, price, date, type, tenure | Yes — `core_property_transactions` |
+| D28-2 | **EPC certificates** (existing, expand columns) | OGL v3 | address/UPRN | All 93 columns: energy rating, floor area, construction age, heating system, running costs, glazing, walls, roof, CO2, solar, etc. | Partially — 9 of 93 columns loaded |
+| D28-3 | **INSPIRE Index Polygons** (existing) | OGL v3 | spatial (coordinate) | Land parcel boundary + title number for that property | Yes — `core_inspire_parcels` |
+| D28-4 | **Local Land Charges** (existing) | OGL v3 | spatial (coordinate) | Planning charges, tree preservation orders, conservation area designations, smoke control zones affecting that property | Yes — `core_llc_charges` |
+| D28-5 | **Flood zones** (existing) | OGL v3 | spatial (coordinate) | "This property is in Flood Zone 2" (specific, not % of LSOAs) | Yes — area-level `core_flood_zones` |
+| D28-6 | **Crime** (existing) | OGL v3 | spatial (nearby) | Crimes within 200m of this address in last 12 months, by type | Yes — LSOA-level `core_crime_lsoa` |
+| D28-7 | **Noise** (existing) | OGL v3 | spatial (coordinate) | Road/rail noise level at this exact location (dB) | Yes — `core_noise` |
+| D28-8 | **Broadband** (existing) | OGL v3 | postcode | Max download/upload speed at this postcode | Yes — area-level in `tab_lifestyle` |
+
+**New datasets to ingest (all free, OGL or equivalent):**
+
+| # | Dataset | Licence | Source URL | Records | Join key | What it adds | Effort |
+|---|---------|---------|-----------|---------|----------|-------------|--------|
+| D28-9 | **Council Tax Band (VOA)** | OGL v3 | `gov.uk/check-council-tax-bands` / VOA bulk download | ~26M | address match | Band A-H + annual cost. Everyone asks this. | Medium |
+| D28-10 | **Listed Building status (Historic England)** | OGL v3 | `historicengland.org.uk/listing/the-list/data-downloads` | ~400K | UPRN / coordinate | Grade I, II*, II status + listing description. Affects planning rights. | Low |
+| D28-11 | **Ground stability / subsidence (BGS GeoSure)** | OGL v3 | `bgs.ac.uk/datasets/geosure/` | National grid | coordinate | Shrink-swell clay risk, landslip, dissolution, compressible ground. Affects insurance + structure. | Medium |
+| D28-12 | **Planning applications** | OGL v3 (council data) | Individual council APIs / PlanIt aggregator | Millions | address/UPRN | Extensions, new builds, change of use, demolitions — submitted, approved, refused. | High |
+| D28-13 | **Corporate & Overseas Ownership (CCOD/OCOD)** | OGL v3 | `gov.uk/government/collections/price-paid-data` (Land Registry) | ~6M titles | title number / address | Company name + country for every corporate-owned property. "Is this owned by a company?" | Medium |
+| D28-14 | **Radon risk (UKHSA)** | Free (public health) | `ukradon.org` / UKHSA bulk data | National | postcode | Radon affected area probability band (1-5%). Health risk, especially SW England. | Low |
+| D28-15 | **OS Open UPRN** | OGL v3 | `osdatahub.os.uk/downloads/open/OpenUPRN` | ~41M | UPRN = canonical ID | Lat/lng for every UPRN. Enables reliable matching across ALL other datasets. Foundation dataset. | Medium |
+
+**How these feed the address-level view (P53):**
+
+The address search would resolve to a specific UPRN (via D28-15), then fan out queries:
+1. **Property identity**: address, UPRN, land parcel (D28-3), council tax band (D28-9), listed status (D28-10)
+2. **Transaction history**: every sale of this property (D28-1), with % change between sales
+3. **EPC deep dive**: full energy certificate — rating, potential, construction age, heating, costs, glazing, walls, roof, solar, CO2 (D28-2)
+4. **Legal & planning**: LLC charges (D28-4), planning applications (D28-12), corporate ownership (D28-13)
+5. **Environmental risks**: flood zone (D28-5), ground stability (D28-11), radon (D28-14), noise (D28-7)
+6. **Local context**: nearby crime (D28-6), broadband speed (D28-8)
+7. **Area context**: pull in existing LSOA/LAD metrics as neighbourhood backdrop
+
+**Priority order for ingestion:**
+1. **D28-15 OS Open UPRN** — foundation, improves all other joins
+2. **D28-9 Council Tax Band** — highest buyer demand, easy to display
+3. **D28-10 Listed Building** — low effort, high impact for affected properties
+4. **D28-14 Radon** — low effort, important safety data
+5. **D28-11 Ground stability** — medium effort, high insurance/structural relevance
+6. **D28-13 Corporate ownership** — medium effort, investor/transparency interest
+7. **D28-12 Planning applications** — highest effort, highest long-term value
 
 ---
 

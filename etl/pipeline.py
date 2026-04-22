@@ -345,6 +345,28 @@ SOURCE_REGISTRY = {
         "critical":     False,
     },
 
+    "station_enrichment": {
+        "module":       "sources.station_enrichment",
+        "schedule":     SCHEDULE_ANNUAL,
+        "depends_on":   ["naptan"],
+        "description":  "Enrich core_transport_stops with CRS codes, TfL lines/zones/facilities.",
+        "tables_written": [],
+        "cache_key_patterns": ["area:*"],
+        "expected_row_range": (500, 10_000),
+        "critical":     False,
+    },
+
+    "nr_destinations": {
+        "module":       "sources.nr_destinations",
+        "schedule":     SCHEDULE_ANNUAL,
+        "depends_on":   ["station_enrichment"],
+        "description":  "Top commute destinations per NR station (timetable + HSP punctuality).",
+        "tables_written": ["core_station_destinations"],
+        "cache_key_patterns": ["area:*"],
+        "expected_row_range": (5_000, 20_000),
+        "critical":     False,
+    },
+
     "council_tax": {
         "module":       "sources.council_tax",
         "schedule":     SCHEDULE_ANNUAL,

@@ -7,28 +7,68 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  ReferenceLine,
 } from 'recharts';
-import type { PriceByTypeResponse, PriceHistoryPoint, BedroomBreakdownPoint } from '../api/client';
+import type { PriceByTypeResponse, PriceHistoryPoint } from '../api/client';
 
-const TYPE_COLOURS: Record<string, string> = {
-  Detached: '#2563eb',
-  'Semi-Detached': '#7c3aed',
-  Terraced: '#059669',
-  Flat: '#ea580c',
-};
+const TYPE_LINES = [
+  { key: 'Detached',       label: 'Detached',       colour: '#2563eb' },
+  { key: 'Semi-Detached',  label: 'Semi-Detached',  colour: '#7c3aed' },
+  { key: 'Terraced',       label: 'Terraced',       colour: '#059669' },
+  { key: 'Flat',           label: 'Flat',           colour: '#ea580c' },
+] as const;
 
-const fmtAxis = (v: number) => {
+const TYPE_COLOUR_MAP: Record<string, string> = Object.fromEntries(
+  TYPE_LINES.map((t) => [t.key, t.colour]),
+);
+
+const fmtPrice = (v: number) => {
   if (v >= 1_000_000) return '£' + (v / 1_000_000).toFixed(1) + 'm';
   if (v >= 1_000) return '£' + (v / 1_000).toFixed(0) + 'k';
   return '£' + Math.round(v);
 };
 
-function LineSwatch({ color, dash, opacity = 1, width = 2 }: { color: string; dash?: string; opacity?: number; width?: number }) {
-  return (
-    <svg width="22" height="8" className="shrink-0">
-      <line x1="0" y1="4" x2="22" y2="4" stroke={color} strokeWidth={width} strokeDasharray={dash} strokeOpacity={opacity} />
-    </svg>
-  );
+const fmtPct = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+
+const fmtAxisPct = (v: number) => `${v > 0 ? '+' : ''}${Number.isInteger(v) ? v : v.toFixed(1)}%`;
+
+// Layout constants — shared between Recharts props and proximity math
+const LC_MARGIN = { top: 8, right: 8, bottom: 0, left: 8 } as const;
+const Y_AXIS_W = 62;
+const Y_AXIS_W_PCT = 55;
+const X_AXIS_H = 20;
+
+type ViewMode = 'price' | 'yoy';
+type Row = Record<string, number | string | null>;
+
+/** Generate nice round tick values for a given range */
+function niceScale(lo: number, hi: number, targetTicks: number): { min: number; max: number; ticks: number[] } {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const range = hi - lo;
+  const rawStep = range / Math.max(targetTicks - 1, 1);
+
+  // Find a "nice" step: 1, 2, 5, 10, 20, 50, 100, 200, 500, ...
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / mag;
+  let niceStep: number;
+  if (residual <= 1.5) niceStep = mag;
+  else if (residual <= 3.5) niceStep = 2 * mag;
+  else if (residual <= 7.5) niceStep = 5 * mag;
+  else niceStep = 10 * mag;
+
+  const niceMin = Math.floor(lo / niceStep) * niceStep;
+  const niceMax = Math.ceil(hi / niceStep) * niceStep;
+
+  const ticks: number[] = [];
+  for (let v = niceMin; v <= niceMax + niceStep * 0.01; v += niceStep) {
+    ticks.push(Math.round(v * 1e6) / 1e6); // avoid float drift
+  }
+  return { min: niceMin, max: niceMax, ticks };
+}
+
+/** Check if a year string is a real calendar year (4 digits) */
+function isCalendarYear(y: string): boolean {
+  return /^\d{4}$/.test(y);
 }
 
 interface Props {
@@ -37,29 +77,15 @@ interface Props {
   overallRegional?: PriceHistoryPoint[];
   regionalName?: string;
   areaName?: string;
-  byBedrooms?: BedroomBreakdownPoint[];
   priceField?: 'avg_price' | 'median_price' | 'avg_ppsf';
 }
 
-const BEDROOM_COLOURS: Record<number, string> = {
-  1: '#06b6d4',
-  2: '#8b5cf6',
-  3: '#f59e0b',
-  4: '#ef4444',
-  5: '#10b981',
-};
-
-// Layout values defined ONCE — used both in Recharts props and in proximity calculation.
-// Nothing is derived from magic numbers; everything comes from these or measured DOM size.
-const LC_MARGIN = { top: 8, right: 8, bottom: 0, left: 8 } as const;
-const Y_AXIS_W  = 62;
-const X_AXIS_H  = 20;
-
-function CustomTooltip({ active, payload, label, activeKey, fmtGBP }: {
+function CustomTooltip({ active, payload, label, activeKey, mode, fmtGBP }: {
   active?: boolean;
-  payload?: Array<{ dataKey: string; name: string; value: number; payload: Record<string, unknown> }>;
+  payload?: Array<{ dataKey: string; name: string; value: number; color: string; payload: Record<string, unknown> }>;
   label?: string;
   activeKey: string | null;
+  mode: ViewMode;
   fmtGBP: (v: number) => string;
 }) {
   if (!active || !payload?.length) return null;
@@ -69,31 +95,78 @@ function CustomTooltip({ active, payload, label, activeKey, fmtGBP }: {
   return (
     <div className="rounded-xl border border-divider bg-white px-3 py-2 shadow-md text-[13px] pointer-events-none">
       <div className="text-[11px] text-ink-faint mb-1">{label}</div>
-      <div className="font-bold text-ink">{fmtGBP(Number(item.value))}</div>
+      <div className="font-bold text-ink">
+        {mode === 'price' ? fmtGBP(Number(item.value)) : fmtPct(Number(item.value))}
+      </div>
       <div className="text-[11px] text-ink-muted mt-0.5">{item.name}</div>
-      {txn != null && <div className="text-[11px] text-ink-faint mt-0.5">{txn.toLocaleString('en-GB')} {txn === 1 ? 'transaction' : 'transactions'}</div>}
+      {mode === 'price' && txn != null && (
+        <div className="text-[11px] text-ink-faint mt-0.5">
+          {txn.toLocaleString('en-GB')} {txn === 1 ? 'transaction' : 'transactions'}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function DistrictPriceHistoryChart({ data, overallLocal, overallRegional, regionalName, areaName, byBedrooms, priceField = 'avg_price' }: Props) {
-  const localLabel  = areaName     ?? 'Local';
+/** Compute YoY % from yearly price data keyed by type */
+function computeYoy(
+  priceRows: Row[],
+  valueKeys: string[],
+): Row[] {
+  const result: Row[] = [];
+  for (let i = 1; i < priceRows.length; i++) {
+    const cur = priceRows[i];
+    const prev = priceRows[i - 1];
+    const row: Row = { year: cur.year };
+    for (const key of valueKeys) {
+      const curVal = cur[key] as number | undefined;
+      const prevVal = prev[key] as number | undefined;
+      if (curVal != null && prevVal != null && prevVal !== 0) {
+        row[key] = Math.round(((curVal - prevVal) / prevVal) * 1000) / 10;
+      } else {
+        row[key] = null;
+      }
+    }
+    result.push(row);
+  }
+  return result;
+}
+
+export default function DistrictPriceHistoryChart({
+  data,
+  overallLocal,
+  overallRegional,
+  regionalName,
+  areaName,
+  priceField = 'avg_price',
+}: Props) {
+  const localLabel = areaName ?? 'Local';
   const parentLabel = regionalName ?? 'Parent';
 
-  const [showLocalByType,  setShowLocalByType]  = useState(true);
-  const [showLocalAvg,     setShowLocalAvg]     = useState(true);
-  const [showParentByType, setShowParentByType] = useState(true);
-  const [showParentAvg,    setShowParentAvg]    = useState(true);
-  const [showBedrooms,     setShowBedrooms]     = useState(false);
+  const [showParent, setShowParent] = useState(false);
+  const [mode, setMode] = useState<ViewMode>('price');
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['__all']));
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-  const toggleSeries = (key: string) => setHiddenSeries(prev => {
-    const next = new Set(prev);
-    next.has(key) ? next.delete(key) : next.add(key);
-    return next;
-  });
 
-  // Measure the actual rendered container so we never guess at pixel dimensions
+  const toggleType = (key: string) => {
+    setActiveTypes((prev) => {
+      const next = new Set(prev);
+      if (key === '__all') {
+        if (next.has('__all') && next.size === 1) return next;
+        return new Set(['__all']);
+      }
+      next.delete('__all');
+      if (next.has(key)) {
+        next.delete(key);
+        if (next.size === 0) next.add('__all');
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Measure DOM for proximity detection
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -104,11 +177,22 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
     return () => obs.disconnect();
   }, []);
 
-  const chartData = useMemo(() => {
+  // Available types
+  const localTypes = Object.keys(data.by_type).filter((t) => t in TYPE_COLOUR_MAP);
+  const parentTypes = data.parent_by_type
+    ? Object.keys(data.parent_by_type).filter((t) => t in TYPE_COLOUR_MAP)
+    : [];
+  const hasParentAvg = !!overallRegional && overallRegional.length > 0;
+  const hasParent = parentTypes.length > 0 || hasParentAvg;
+
+  // Build price data keyed by year — ONLY calendar years (exclude "Last 12m" etc.)
+  const priceData = useMemo((): Row[] => {
     const byYear: Record<string, Record<string, number>> = {};
 
+    // Local by type
     for (const [typeName, points] of Object.entries(data.by_type)) {
       for (const point of points) {
+        if (!isCalendarYear(point.year)) continue;
         if (!byYear[point.year]) byYear[point.year] = {};
         const v = point[priceField];
         if (v) {
@@ -117,19 +201,23 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
         }
       }
     }
+    // Local overall
     if (overallLocal) {
       for (const point of overallLocal) {
+        if (!isCalendarYear(point.year)) continue;
         if (!byYear[point.year]) byYear[point.year] = {};
         const v = point[priceField];
         if (v) {
-          byYear[point.year]['__local_avg'] = v;
-          byYear[point.year]['__txn___local_avg'] = point.transactions;
+          byYear[point.year]['__all'] = v;
+          byYear[point.year]['__txn___all'] = point.transactions;
         }
       }
     }
+    // Parent by type
     if (data.parent_by_type) {
       for (const [typeName, points] of Object.entries(data.parent_by_type)) {
         for (const point of points) {
+          if (!isCalendarYear(point.year)) continue;
           if (!byYear[point.year]) byYear[point.year] = {};
           const v = point[priceField];
           if (v) {
@@ -139,51 +227,102 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
         }
       }
     }
+    // Parent overall
     if (overallRegional) {
       for (const point of overallRegional) {
+        if (!isCalendarYear(point.year)) continue;
         if (!byYear[point.year]) byYear[point.year] = {};
         const v = point[priceField];
         if (v) {
-          byYear[point.year]['__parent_avg'] = v;
-          byYear[point.year]['__txn___parent_avg'] = point.transactions;
-        }
-      }
-    }
-    if (byBedrooms) {
-      for (const point of byBedrooms) {
-        if (!byYear[point.year]) byYear[point.year] = {};
-        if (point.avg_price) {
-          byYear[point.year][`__bed_${point.bedrooms}`] = point.avg_price;
-          byYear[point.year][`__txn___bed_${point.bedrooms}`] = point.transaction_count;
+          byYear[point.year]['__p___all'] = v;
+          byYear[point.year]['__txn___p___all'] = point.transactions;
         }
       }
     }
 
     return Object.entries(byYear)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([year, values]) => ({ year, ...values }));
-  }, [data, overallLocal, overallRegional, byBedrooms, priceField]);
+      .map(([year, values]): Row => ({ year, ...values }));
+  }, [data, overallLocal, overallRegional, priceField]);
 
-  // Y domain set explicitly so we control the exact scale used in proximity math
-  const yDomain = useMemo((): [number, number] => {
-    const vals = chartData.flatMap((d) =>
-      Object.entries(d)
-        .filter(([k]) => k !== 'year' && !k.startsWith('__txn_'))
-        .map(([, v]) => Number(v))
-        .filter((v) => !isNaN(v) && v > 0),
-    );
-    if (!vals.length) return [0, 1];
+  // Compute YoY from price data
+  const yoyData = useMemo(() => {
+    const localValueKeys = ['__all', ...localTypes];
+    const parentValueKeys = ['__p___all', ...parentTypes.map((t) => `__p_${t}`)];
+    return computeYoy(priceData, [...localValueKeys, ...parentValueKeys]);
+  }, [priceData, localTypes, parentTypes]);
+
+  // Y-domain: computed from currently visible lines only, so scale fits what
+  // the user is actually looking at. Now that local + parent show simultaneously
+  // (rather than toggling), axes don't need to be stable across geo.
+  const visibleKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const typeKey of activeTypes) {
+      // Local keys (always shown)
+      keys.push(typeKey === '__all' ? '__all' : typeKey);
+      // Parent keys (when toggled on)
+      if (showParent) {
+        keys.push(typeKey === '__all' ? '__p___all' : `__p_${typeKey}`);
+      }
+    }
+    return keys;
+  }, [activeTypes, showParent]);
+
+  const stableScale = useMemo(() => {
+    const source = mode === 'price' ? priceData : yoyData;
+    const vals: number[] = [];
+    for (const row of source) {
+      for (const key of visibleKeys) {
+        const v = row[key];
+        if (v != null && typeof v === 'number' && !isNaN(v)) vals.push(v);
+      }
+    }
+    if (!vals.length) return niceScale(0, 100, 5);
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
-    const pad = (hi - lo) * 0.06;
-    return [Math.max(0, lo - pad), hi + pad];
-  }, [chartData]);
+    return niceScale(mode === 'price' ? Math.max(0, lo) : lo, hi, 5);
+  }, [mode, priceData, yoyData, visibleKeys]);
 
-  // 2D proximity: search every (year × series) data point, pick the one closest
-  // to the actual cursor in pixel space. Uses measured dims + the same layout
-  // constants passed to the Recharts props below — no independent magic numbers.
-  // In Recharts v3, state.chartX/chartY are not populated — use native event coords instead.
-  const handleMouseMove = (_state: any, nativeEvent: any) => {
+  // Select active data based on mode + active type keys.
+  // Local is always included; parent is added when showParent is true.
+  const chartData = useMemo(() => {
+    const source = mode === 'price' ? priceData : yoyData;
+    return source.map((row) => {
+      const filtered: Row = { year: row.year };
+      for (const typeKey of activeTypes) {
+        // Always include local
+        if (typeKey === '__all') {
+          if (row['__all'] != null) filtered['__all'] = row['__all'];
+          if (row['__txn___all'] != null) filtered['__txn___all'] = row['__txn___all'];
+        } else {
+          if (row[typeKey] != null) filtered[typeKey] = row[typeKey];
+          if (row[`__txn_${typeKey}`] != null) filtered[`__txn_${typeKey}`] = row[`__txn_${typeKey}`];
+        }
+        // Include parent when toggled on
+        if (showParent) {
+          if (typeKey === '__all') {
+            if (row['__p___all'] != null) {
+              filtered['__p___all'] = row['__p___all'];
+              if (row['__txn___p___all'] != null) filtered['__txn___p___all'] = row['__txn___p___all'];
+            }
+          } else {
+            const pk = `__p_${typeKey}`;
+            if (row[pk] != null) {
+              filtered[pk] = row[pk];
+              if (row[`__txn_${pk}`] != null) filtered[`__txn_${pk}`] = row[`__txn_${pk}`];
+            }
+          }
+        }
+      }
+      return filtered;
+    });
+  }, [priceData, yoyData, mode, showParent, activeTypes]);
+
+  const yAxisW = mode === 'price' ? Y_AXIS_W : Y_AXIS_W_PCT;
+  const yDomain: [number, number] = [stableScale.min, stableScale.max];
+
+  // 2D proximity hover
+  const handleMouseMove = (_state: unknown, nativeEvent: { clientX?: number; clientY?: number; nativeEvent?: { clientX?: number; clientY?: number } }) => {
     if (!dims.w || !dims.h) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -193,8 +332,8 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
     const cx = clientX - rect.left;
     const cy = clientY - rect.top;
 
-    const plotW = dims.w - LC_MARGIN.left - LC_MARGIN.right - Y_AXIS_W;
-    const plotH = dims.h - LC_MARGIN.top  - LC_MARGIN.bottom - X_AXIS_H;
+    const plotW = dims.w - LC_MARGIN.left - LC_MARGIN.right - yAxisW;
+    const plotH = dims.h - LC_MARGIN.top - LC_MARGIN.bottom - X_AXIS_H;
     const [dMin, dMax] = yDomain;
     const yRange = dMax - dMin || 1;
     const n = chartData.length;
@@ -203,11 +342,11 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
     let bestDist = Infinity;
 
     chartData.forEach((point, i) => {
-      const px = LC_MARGIN.left + Y_AXIS_W + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
+      const px = LC_MARGIN.left + yAxisW + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
       Object.entries(point).forEach(([key, val]) => {
         if (key === 'year' || key.startsWith('__txn_') || val == null) return;
         const v = Number(val);
-        if (!v) return;
+        if (isNaN(v)) return;
         const py = LC_MARGIN.top + ((dMax - v) / yRange) * plotH;
         const dist = Math.hypot(px - cx, py - cy);
         if (dist < bestDist) { bestDist = dist; best = key; }
@@ -217,63 +356,117 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
     if (best !== activeKey) setActiveKey(best);
   };
 
-  const localTypes  = Object.keys(data.by_type).filter((t) => Object.keys(TYPE_COLOURS).includes(t));
-  const parentTypes = data.parent_by_type
-    ? Object.keys(data.parent_by_type).filter((t) => Object.keys(TYPE_COLOURS).includes(t))
-    : [];
-  const bedroomNums = byBedrooms
-    ? [...new Set(byBedrooms.map(p => p.bedrooms))].sort((a, b) => a - b)
-    : [];
-
-  if (chartData.length < 2) return null;
+  if (priceData.length < 2) return null;
 
   const fmtGBP = priceField === 'avg_ppsf'
     ? (v: number) => '£' + Math.round(v).toLocaleString('en-GB') + '/sqft'
     : (v: number) => '£' + v.toLocaleString('en-GB', { maximumFractionDigits: 0 });
 
-  const hasParentByType = parentTypes.length > 0;
-  const hasParentAvg    = !!overallRegional && overallRegional.length > 0;
-  const hasLocalAvg     = !!overallLocal    && overallLocal.length    > 0;
-  const hasBedrooms     = bedroomNums.length > 0;
-  const hasParent       = hasParentByType || hasParentAvg;
-
   const metricLabel = priceField === 'median_price' ? 'Median' : priceField === 'avg_ppsf' ? 'Avg Price/Sqft' : 'Average';
-  const pills = [
-    { label: `${localLabel}, Combined ${metricLabel}`,  active: showLocalAvg,     toggle: () => setShowLocalAvg(p => !p) },
-    { label: `${localLabel}, ${metricLabel} by Type`,   active: showLocalByType,  toggle: () => setShowLocalByType(p => !p) },
-    ...(hasBedrooms     ? [{ label: `${localLabel}, By Bedrooms (est.)`,    active: showBedrooms,     toggle: () => setShowBedrooms(p => !p) }] : []),
-    ...(hasParentAvg    ? [{ label: `${parentLabel}, Combined ${metricLabel}`, active: showParentAvg,    toggle: () => setShowParentAvg(p => !p) }] : []),
-    ...(hasParentByType ? [{ label: `${parentLabel}, ${metricLabel} by Type`,  active: showParentByType, toggle: () => setShowParentByType(p => !p) }] : []),
-  ];
 
-  const TYPE_ORDER = ['Detached', 'Semi-Detached', 'Terraced', 'Flat'];
+  // Build lines for chart — local always, parent when toggled on
+  const lines: Array<{ dataKey: string; name: string; colour: string; dashed?: boolean }> = [];
+  for (const typeKey of activeTypes) {
+    // Local lines (always shown)
+    if (typeKey === '__all') {
+      lines.push({ dataKey: '__all', name: `${localLabel}: All Types`, colour: '#374151' });
+    } else if (localTypes.includes(typeKey)) {
+      lines.push({ dataKey: typeKey, name: `${localLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280' });
+    }
+    // Parent lines (when showParent)
+    if (showParent) {
+      if (typeKey === '__all' && hasParentAvg) {
+        lines.push({ dataKey: '__p___all', name: `${parentLabel}: All Types`, colour: '#374151', dashed: true });
+      } else if (typeKey !== '__all' && parentTypes.includes(typeKey)) {
+        lines.push({ dataKey: `__p_${typeKey}`, name: `${parentLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280', dashed: true });
+      }
+    }
+  }
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3">
       <h4 className="text-sm font-semibold text-ink">
         {priceField === 'avg_ppsf' ? 'Price per Sqft History' : `${metricLabel} Sale Price History`}
-        {chartData.length > 0 && (
-          <span className="text-[11px] font-normal text-ink-faint"> (since {chartData[0].year})</span>
+        {priceData.length > 0 && (
+          <span className="text-[11px] font-normal text-ink-faint"> (since {priceData[0].year})</span>
         )}
       </h4>
 
-      <div className="flex flex-wrap gap-1.5">
-        {pills.map(({ label, active, toggle }) => (
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Geography toggle (multi-select) */}
+        {hasParent && (
+          <div className="flex rounded-lg border border-divider overflow-hidden">
+            <span className="px-2.5 py-1 text-[11px] font-medium bg-brand-600 text-white">
+              {localLabel}
+            </span>
+            <button
+              onClick={() => setShowParent((p) => !p)}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+                showParent
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-surface text-ink-muted hover:bg-surface-warm'
+              }`}
+            >
+              {parentLabel}
+            </button>
+          </div>
+        )}
+
+        {/* View mode toggle */}
+        <div className="flex rounded-lg border border-divider overflow-hidden">
           <button
-            key={label}
-            onClick={toggle}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border ${
-              active
-                ? 'bg-brand-50 text-brand-700 border-brand-200'
-                : 'bg-white text-ink-faint border-divider opacity-50'
+            onClick={() => setMode('price')}
+            className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              mode === 'price'
+                ? 'bg-brand-600 text-white'
+                : 'bg-surface text-ink-muted hover:bg-surface-warm'
             }`}
           >
-            {label}
+            Price
           </button>
-        ))}
+          <button
+            onClick={() => setMode('yoy')}
+            className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+              mode === 'yoy'
+                ? 'bg-brand-600 text-white'
+                : 'bg-surface text-ink-muted hover:bg-surface-warm'
+            }`}
+          >
+            YoY %
+          </button>
+        </div>
+
+        {/* Type filter toggle (multi-select) */}
+        <div className="flex rounded-lg border border-divider overflow-hidden">
+          <button
+            onClick={() => toggleType('__all')}
+            className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              activeTypes.has('__all')
+                ? 'bg-brand-600 text-white'
+                : 'bg-surface text-ink-muted hover:bg-surface-warm'
+            }`}
+          >
+            All Types
+          </button>
+          {TYPE_LINES.map(({ key, label, colour }) => (
+            <button
+              key={key}
+              onClick={() => toggleType(key)}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+                activeTypes.has(key)
+                  ? 'text-white'
+                  : 'bg-surface text-ink-muted hover:bg-surface-warm'
+              }`}
+              style={activeTypes.has(key) ? { backgroundColor: colour } : undefined}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ref on the wrapper lets ResizeObserver give us real pixel dimensions */}
+      {/* Chart */}
       <div ref={containerRef} className="h-[260px]">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart
@@ -292,144 +485,41 @@ export default function DistrictPriceHistoryChart({ data, overallLocal, overallR
             />
             <YAxis
               domain={yDomain}
-              width={Y_AXIS_W}
+              ticks={stableScale.ticks}
+              width={yAxisW}
               tick={{ fontSize: 11, fill: '#9ca3af' }}
-              tickFormatter={fmtAxis}
+              tickFormatter={mode === 'price' ? fmtPrice : fmtAxisPct}
               tickLine={false}
               axisLine={false}
+              allowDataOverflow
             />
             <Tooltip
-              content={<CustomTooltip activeKey={activeKey} fmtGBP={fmtGBP} />}
+              content={<CustomTooltip activeKey={activeKey} mode={mode} fmtGBP={fmtGBP} />}
               cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }}
               allowEscapeViewBox={{ x: false, y: false }}
               isAnimationActive={false}
               offset={16}
             />
-
-            {showLocalByType && localTypes.filter(t => !hiddenSeries.has(t)).map((typeName) => (
-              <Line
-                key={`l_${typeName}`}
-                type="monotone"
-                dataKey={typeName}
-                name={`${localLabel}: ${typeName}`}
-                stroke={TYPE_COLOURS[typeName] ?? '#6b7280'}
-                strokeWidth={2}
-                dot={{ r: 2.5 }}
-                activeDot={{ r: 4.5 }}
-                connectNulls
-              />
-            ))}
-
-            {showLocalAvg && hasLocalAvg && !hiddenSeries.has('__local_avg') && (
-              <Line
-                type="monotone"
-                dataKey="__local_avg"
-                name={`${localLabel}: All types`}
-                stroke="#1e293b"
-                strokeWidth={2}
-                strokeDasharray="6 3"
-                dot={{ r: 2 }}
-                activeDot={{ r: 4 }}
-                connectNulls
-              />
+            {mode === 'yoy' && stableScale.min < 0 && stableScale.max > 0 && (
+              <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
-
-            {showParentByType && parentTypes.filter(t => !hiddenSeries.has(`__p_${t}`)).map((typeName) => (
+            {lines.map(({ dataKey, name, colour, dashed }) => (
               <Line
-                key={`p_${typeName}`}
+                key={dataKey}
                 type="monotone"
-                dataKey={`__p_${typeName}`}
-                name={`${parentLabel}: ${typeName}`}
-                stroke={TYPE_COLOURS[typeName] ?? '#6b7280'}
-                strokeWidth={1.5}
-                strokeDasharray="8 4"
-                strokeOpacity={0.5}
-                dot={false}
-                activeDot={{ r: 3 }}
-                connectNulls
-              />
-            ))}
-
-            {showParentAvg && hasParentAvg && !hiddenSeries.has('__parent_avg') && (
-              <Line
-                type="monotone"
-                dataKey="__parent_avg"
-                name={`${parentLabel}: All types`}
-                stroke="#9ca3af"
-                strokeWidth={1.5}
-                strokeDasharray="4 4"
-                strokeOpacity={0.7}
-                dot={false}
-                activeDot={{ r: 3 }}
-                connectNulls
-              />
-            )}
-
-            {showBedrooms && bedroomNums.filter(n => !hiddenSeries.has(`__bed_${n}`)).map((n) => (
-              <Line
-                key={`__bed_${n}`}
-                type="monotone"
-                dataKey={`__bed_${n}`}
-                name={`${n} bed (est.)`}
-                stroke={BEDROOM_COLOURS[n] ?? '#6b7280'}
-                strokeWidth={2}
-                strokeDasharray="4 2"
-                dot={{ r: 2 }}
+                dataKey={dataKey}
+                name={name}
+                stroke={colour}
+                strokeWidth={dataKey.includes('__all') ? 2.5 : 2}
+                strokeDasharray={dashed ? '6 3' : undefined}
+                strokeOpacity={dashed ? 0.7 : 1}
+                dot={{ r: dataKey.includes('__all') ? 2.5 : 2 }}
                 activeDot={{ r: 4 }}
                 connectNulls
               />
             ))}
           </LineChart>
         </ResponsiveContainer>
-      </div>
-
-      {/* Compact 2-row legend */}
-      <div className="border-t border-divider/50 pt-2 space-y-1.5 text-[11px]">
-        <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-          <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">{localLabel}</span>
-          {TYPE_ORDER.filter(t => localTypes.includes(t)).map(t => (
-            <button key={t} type="button" onClick={() => toggleSeries(t)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(t) ? 'opacity-30' : ''}`}>
-              <LineSwatch color={TYPE_COLOURS[t]} />
-              <span className="text-ink-muted">{t}</span>
-            </button>
-          ))}
-          {hasLocalAvg && (
-            <button type="button" onClick={() => toggleSeries('__local_avg')} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has('__local_avg') ? 'opacity-30' : ''}`}>
-              <LineSwatch color="#1e293b" dash="6 3" />
-              <span className="text-ink-muted">All types</span>
-            </button>
-          )}
-        </div>
-
-        {hasBedrooms && showBedrooms && (
-          <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-            <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">Bedrooms (est.)</span>
-            {bedroomNums.map(n => (
-              <button key={n} type="button" onClick={() => toggleSeries(`__bed_${n}`)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(`__bed_${n}`) ? 'opacity-30' : ''}`}>
-                <LineSwatch color={BEDROOM_COLOURS[n] ?? '#6b7280'} dash="4 2" />
-                <span className="text-ink-muted">{n} bed</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {hasParent && (
-          <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-            <span className="text-[10px] font-semibold text-ink-faint uppercase tracking-wide whitespace-nowrap shrink-0">{parentLabel}</span>
-            {TYPE_ORDER.filter(t => parentTypes.includes(t)).map(t => (
-              <button key={t} type="button" onClick={() => toggleSeries(`__p_${t}`)} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has(`__p_${t}`) ? 'opacity-30' : ''}`}>
-                <LineSwatch color={TYPE_COLOURS[t]} dash="8 4" opacity={0.5} width={1.5} />
-                <span className="text-ink-faint">{t}</span>
-              </button>
-            ))}
-            {hasParentAvg && (
-              <button type="button" onClick={() => toggleSeries('__parent_avg')} className={`flex items-center gap-1 whitespace-nowrap cursor-pointer transition-opacity ${hiddenSeries.has('__parent_avg') ? 'opacity-30' : ''}`}>
-                <LineSwatch color="#9ca3af" dash="4 4" opacity={0.7} width={1.5} />
-                <span className="text-ink-faint">All types</span>
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

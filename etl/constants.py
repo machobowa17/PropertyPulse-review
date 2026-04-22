@@ -436,6 +436,7 @@ TABLE_NAMES = {
     "nhs_lsoa":                 "core_nhs_lsoa",
     "osm_amenities":            "core_osm_amenities",
     "transport_stops":          "core_transport_stops",
+    "station_destinations":     "core_station_destinations",
     "ev_chargers":              "core_ev_chargers",
     "broadband_postcode":       "core_broadband_postcode",
     "broadband_lad":            "core_broadband_lad",

@@ -26,6 +26,8 @@ const ImdDeprivationBlock     = lazy(() => import('./ImdDeprivationBlock'));
 const CouncilTaxBandGrid      = lazy(() => import('./CouncilTaxBandGrid'));
 const RentByBedroomChart      = lazy(() => import('./RentByBedroomChart'));
 const BroadbandPanel          = lazy(() => import('./BroadbandPanel'));
+const HpiTrendChart           = lazy(() => import('./HpiTrendChart'));
+const StationTable            = lazy(() => import('./StationTable'));
 
 // Runtime-safe accessors for details: Record<string, unknown>
 // Replaces 40+ unsafe `as` casts with type-checked reads.
@@ -40,6 +42,14 @@ const arr = (d: D, k: string): D[] =>
   Array.isArray(d[k]) ? (d[k] as D[]) : [];
 const rec = <T,>(d: D, k: string): T | null =>
   d[k] != null && typeof d[k] === 'object' && !Array.isArray(d[k]) ? (d[k] as T) : null;
+
+/** Format transaction_volume: "XX sales (YY/LSOA)" — absolute count + per-LSOA rate */
+function fmtTxnVol(absolute: number | null, perLsoa: number | null): string {
+  if (absolute == null && perLsoa == null) return '—';
+  const abs = absolute != null ? absolute.toLocaleString('en-GB') : '—';
+  const rate = perLsoa != null ? perLsoa.toLocaleString('en-GB', { maximumFractionDigits: 1 }) : '—';
+  return `${abs} sales (${rate}/LSOA)`;
+}
 
 const ICON_MAP: Record<string, React.ElementType> = {
   PoundSterling, BarChart3, Activity, Scale, Building2, Home,
@@ -248,7 +258,9 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         {/* Local */}
         <div className="flex flex-col gap-0.5">
           <span className="text-lg font-bold font-mono text-ink tracking-tight">
-            {formatValue(metric.local_value, metric.unit)}
+            {metric.id === 'transaction_volume' && metric.details
+              ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
+              : formatValue(metric.local_value, metric.unit)}
           </span>
           {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
         </div>
@@ -263,7 +275,9 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 : undefined}
             >
               <ComparisonIcon className="w-3.5 h-3.5 shrink-0" />
-              {formatValue(metric.parent_value, metric.unit)}
+              {metric.id === 'transaction_volume' && metric.details
+                ? fmtTxnVol(num(metric.details, 'parent_absolute'), metric.parent_value as number | null)
+                : formatValue(metric.parent_value, metric.unit)}
             </span>
           ) : metric.comparison_status === 'not_modelled_yet' ? (
             <span className="text-[11px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
@@ -320,13 +334,17 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           )}
           <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
             <span className="text-xl font-bold font-mono text-ink tracking-tight">
-              {formatValue(metric.local_value, metric.unit)}
+              {metric.id === 'transaction_volume' && metric.details
+                ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
+                : formatValue(metric.local_value, metric.unit)}
             </span>
             {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
             {metric.parent_value !== null ? (
               <span className={`flex items-center gap-1 text-xs ${compColourClass}`}>
                 <ComparisonIcon className="w-3 h-3" />
-                {formatValue(metric.parent_value, metric.unit)}
+                {metric.id === 'transaction_volume' && metric.details
+                  ? fmtTxnVol(num(metric.details, 'parent_absolute'), metric.parent_value as number | null)
+                  : formatValue(metric.parent_value, metric.unit)}
                 <span className="hidden sm:inline opacity-60">({parentName})</span>
               </span>
             ) : metric.comparison_status === 'not_modelled_yet' ? (
@@ -371,7 +389,6 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   overallLocal={priceHistoryData?.local}
                   overallRegional={priceHistoryData?.regional}
                   regionalName={priceHistoryData?.regional_name}
-                  byBedrooms={metric.id === 'median_price' || metric.id === 'price_per_sqft' ? undefined : priceHistoryData?.by_bedrooms}
                   areaName={areaName}
                   priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
                 />
@@ -383,7 +400,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   parentName={parentName}
                 />
               )}
-              {metric.id === 'transaction_volume' && sessionKey && (
+              {metric.id === 'transaction_volume' && sessionKey && expanded && (
                 <TransactionTable sessionKey={sessionKey} />
               )}
               {/* Quality flags (deduplicated against data notes) */}
@@ -559,6 +576,24 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
   }
 
   if (Array.isArray(details.stations)) {
+    // Use enriched all_stations when available (includes bus/tram/metro/ferry + NaPTAN columns)
+    const allStations = arr(details, 'all_stations');
+    const modeCounts = rec<Record<string, number>>(details, 'mode_counts') ?? rec<Record<string, number>>(details, 'mode_counts_1km');
+    const isAreaMode = details.bus_stops != null; // area mode sends bus_stops, postcode sends bus_stops_500m
+
+    if (allStations.length > 0) {
+      return (
+        <Suspense fallback={null}>
+          <StationTable
+            stations={allStations as unknown as { name: string; type: string; category: string; atco_code: string; street?: string; indicator?: string; locality?: string; parent_locality?: string; suburb?: string; status?: string; distance_m?: number }[]}
+            modeCounts={modeCounts}
+            isArea={isAreaMode}
+          />
+        </Suspense>
+      );
+    }
+
+    // Fallback: old-style station list (before enrichment columns are populated)
     const stations = arr(details, 'stations');
     return (
       <div className="space-y-2 mt-2">
@@ -719,6 +754,11 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
     );
   }
 
+  // HPI trend chart (price_trend_yoy)
+  if (Array.isArray(details.hpi_series) && details.hpi_series.length > 0) {
+    return <HpiTrendChart series={details.hpi_series as Array<{ year: number; avg_price: number | null; yoy_pct: number | null; detached: number | null; semi: number | null; terraced: number | null; flat: number | null }>} />;
+  }
+
   // Price by property type chart
   if (details.detached != null || details.semi != null || details.terraced != null || details.flat != null) {
     return (
@@ -849,13 +889,9 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
 
   // Breakdown table: freehold/leasehold, housing tenure, housing stock
   if (str(details, 'breakdown_type') === 'tenure_table' && Array.isArray(details.breakdown)) {
-    const rows = details.breakdown as { label: string; count: number | null; pct: number | null; parent_pct: number | null }[];
+    const rows = details.breakdown as { label: string; count: number | null; pct: number | null; parent_pct: number | null; avg_price?: number | null }[];
     const countLabel = str(details, 'count_label') || '#';
-    // Extra fields beyond the breakdown (e.g. avg prices for freehold)
-    const extraKeys = new Set(['breakdown', 'breakdown_type', 'count_label', 'total_households']);
-    const extras = Object.entries(details).filter(
-      ([k, v]) => v !== null && v !== undefined && !extraKeys.has(k) && !k.endsWith('_note') && k !== 'trend' && k !== 'detail_unit',
-    );
+    const hasAvgPrice = rows.some((r) => r.avg_price != null);
     return (
       <div className="space-y-3 mt-2">
         <div className="overflow-x-auto rounded-xl border border-divider">
@@ -865,6 +901,9 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
                 <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Type</th>
                 <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{countLabel}</th>
                 <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">%</th>
+                {hasAvgPrice && (
+                  <th className="text-right px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Avg Price</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-divider/50">
@@ -884,29 +923,16 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
                       </div>
                     ) : '—'}
                   </td>
+                  {hasAvgPrice && (
+                    <td className="px-3 py-2 text-right text-ink tabular-nums font-semibold">
+                      {row.avg_price != null ? '£' + row.avg_price.toLocaleString('en-GB', { maximumFractionDigits: 0 }) : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {extras.length > 0 && (
-          <div className="grid grid-cols-2 gap-2">
-            {extras.map(([key, value]) => {
-              if (typeof value === 'object') return null;
-              const label = key.replace(/_/g, ' ').replace(/^(.)/, (c) => c.toUpperCase());
-              const isGbp = unit === 'GBP' || key.toLowerCase().includes('price');
-              const display = typeof value === 'number'
-                ? isGbp ? '£' + value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) : value.toLocaleString('en-GB', { maximumFractionDigits: 1 })
-                : String(value);
-              return (
-                <div key={key} className="p-2.5 rounded-xl bg-surface">
-                  <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">{label}</div>
-                  <div className="text-sm font-semibold text-ink mt-0.5">{display}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
     );
   }

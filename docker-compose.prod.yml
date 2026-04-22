@@ -44,7 +44,12 @@ services:
 
   api:
     ports: []  # Nginx handles external traffic
-    volumes: []  # No bind-mount in production (code baked into image)
+    volumes:
+      - ./backend:/app
+      - ./etl/lib:/app/etl_lib
+      - ./etl/data:/app/etl_data
+    environment:
+      MOTIS_BASE_URL: ${MOTIS_BASE_URL:-http://128.140.103.160:8080}
     deploy:
       resources:
         limits:

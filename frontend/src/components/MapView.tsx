@@ -22,6 +22,8 @@ interface Props {
   onViewportChange?: (vp: Viewport) => void;
   choroplethData?: ChoroplethResponse | null;
   choroplethUrl?: string | null;
+  onMapReady?: (flyTo: ((lng: number, lat: number, zoom?: number) => void) | null) => void;
+  onHighlightReady?: (cb: ((lng: number, lat: number, props?: Record<string, unknown>) => void) | null) => void;
 }
 
 const POI_COLOURS: Record<string, string> = {
@@ -182,31 +184,42 @@ function genericPoiPopupHtml(props: Record<string, unknown>): string {
 }
 
 function soldPricePopupHtml(props: Record<string, unknown>): string {
-  const typeColour = (props.property_type && PROPERTY_TYPE_COLOURS[String(props.property_type)]) || '#0891b2';
-  const bedStr = props.bedrooms != null ? ` · ${props.bedrooms} bed (est.)` : '';
-  const floorStr = props.floor_area_sqm != null ? ` · ${Math.round(Number(props.floor_area_sqm))} m²` : '';
+  const bedStr = props.bedrooms != null ? `${props.bedrooms} bed (est.)` : '';
+  const floorStr = props.floor_area_sqm != null ? `${Math.round(Number(props.floor_area_sqm))} m²` : '';
+  const typeStr = props.property_type ? esc(String(props.property_type)) : '';
+  const tenureStr = props.tenure ? esc(String(props.tenure)) : '';
+  const detailParts = [typeStr, tenureStr, bedStr, floorStr].filter(Boolean);
+
+  const dateStr = props.date
+    ? new Date(String(props.date)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+    : '';
+  const priceStr = formatPrice(props.price as number);
+
   const epcRating = props.epc_rating ? String(props.epc_rating) : null;
   const epcColour = epcRating ? (EPC_COLOURS[epcRating] || '#888') : null;
   const hasEstimate = props.bedrooms != null;
+
   return `<div style="font-size:12px">
     <strong>${esc(String(props.name || ''))}</strong>
-    <br><span style="font-size:14px;font-weight:700;color:${typeColour}">${formatPrice(props.price as number)}</span>
-    ${props.property_type ? `<br>${esc(String(props.property_type))}` : ''}${props.tenure ? ` · ${esc(String(props.tenure))}` : ''}${bedStr}${floorStr}
+    ${detailParts.length ? `<br>${detailParts.join(' · ')}` : ''}
+    ${dateStr || priceStr ? `<br>Last sold: ${dateStr}${dateStr && priceStr ? ', ' : ''}${priceStr ? `<span style="font-weight:700">${priceStr}</span>` : ''}` : ''}
     ${epcRating ? `<br><span style="display:inline-block;background:${epcColour};color:${epcRating === 'D' ? '#333' : '#fff'};font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;vertical-align:middle">EPC ${epcRating}</span>` : ''}
-    ${props.date ? `<br>${new Date(String(props.date)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}` : ''}
     ${props.actual_psf ? `<br>£${Number(props.actual_psf).toLocaleString('en-GB')}/sqft` : ''}
     ${props.dist_m ? `<br><span style="color:#888">${esc(String(props.dist_m))}m away</span>` : ''}
     ${hasEstimate ? `<br><span style="color:#aaa;font-size:10px">* Bedroom count estimated from total habitable rooms (EPC data)</span>` : ''}
   </div>`;
 }
 
-export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData, choroplethUrl }: Props) {
+export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData, choroplethUrl, onMapReady, onHighlightReady }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
   // Separate marker refs: sold prices (clustered, re-rendered on zoom) vs other POIs (static)
   const soldMarkersRef = useRef<maplibregl.Marker[]>([]);
   const poiMarkersRef = useRef<maplibregl.Marker[]>([]);
+
+  // Temporary highlight marker for transactions not in the current map POI set
+  const highlightMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   // Supercluster index and filtered features
   const clusterIndexRef = useRef<Supercluster | null>(null);
@@ -221,6 +234,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   }>({
     markers: [], layerId: null, center: null, leaves: null,
   });
+
+  // Store onMapReady callback in a ref so it's available inside the load handler
+  const onMapReadyRef = useRef(onMapReady);
+  onMapReadyRef.current = onMapReady;
+  const onHighlightReadyRef = useRef(onHighlightReady);
+  onHighlightReadyRef.current = onHighlightReady;
 
   // Track previous tab to detect tab changes (for stale marker cleanup)
   const prevTabRef = useRef(activeTab);
@@ -1077,6 +1096,51 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
       // Render any POIs that arrived before or during map creation
       renderPoisOnMap(map, poisRef.current, visibleLayersRef.current, searchLsoaRef.current);
+
+      // Expose flyTo callback to parent
+      onMapReadyRef.current?.((lng, lat, zoom) => {
+        map.flyTo({ center: [lng, lat], zoom: zoom ?? 17, duration: 1000 });
+      });
+
+      // Expose highlight marker callback — shows a temporary pulsing marker
+      // Call with (0,0) or any invalid coords to clear
+      onHighlightReadyRef.current?.((lng, lat, props) => {
+        // Remove previous highlight
+        highlightMarkerRef.current?.remove();
+        highlightMarkerRef.current = null;
+        if (!lng && !lat) return; // clear-only call
+
+        const el = document.createElement('div');
+        el.className = 'map-highlight-marker';
+        el.style.cssText = `
+          width: 18px; height: 18px; border-radius: 50%;
+          background: #0891b2; border: 3px solid white;
+          box-shadow: 0 0 0 4px rgba(8,145,178,0.35), 0 2px 8px rgba(0,0,0,0.3);
+          animation: highlight-pulse 1.5s ease-in-out 3;
+          pointer-events: none;
+        `;
+        // Inject keyframes if not already present
+        if (!document.getElementById('highlight-pulse-style')) {
+          const style = document.createElement('style');
+          style.id = 'highlight-pulse-style';
+          style.textContent = `@keyframes highlight-pulse {
+            0%, 100% { box-shadow: 0 0 0 4px rgba(8,145,178,0.35), 0 2px 8px rgba(0,0,0,0.3); }
+            50% { box-shadow: 0 0 0 10px rgba(8,145,178,0.15), 0 2px 8px rgba(0,0,0,0.3); }
+          }`;
+          document.head.appendChild(style);
+        }
+
+        const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]);
+        if (props) {
+          marker.setPopup(
+            new maplibregl.Popup({ offset: 14, maxWidth: '220px', closeButton: false })
+              .setHTML(soldPricePopupHtml(props))
+          );
+        }
+        marker.addTo(map);
+        if (props) marker.togglePopup();
+        highlightMarkerRef.current = marker;
+      });
     });
 
     // R11: resize map whenever the container changes size (e.g. CSS Grid mobile animation)
@@ -1084,7 +1148,11 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     ro.observe(containerRef.current!);
 
     mapRef.current = map;
-    return () => { ro.disconnect(); map.remove(); mapRef.current = null; };
+    return () => {
+      highlightMarkerRef.current?.remove();
+      ro.disconnect(); map.remove(); mapRef.current = null;
+      onMapReadyRef.current?.(null); onHighlightReadyRef.current?.(null);
+    };
   // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
   }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 
