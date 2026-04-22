@@ -211,6 +211,24 @@ def main():
     conn = psycopg2.connect(db_url)
     cur = conn.cursor()
 
+    # Build zone lookup: merge DB zones with hardcoded CRS_TO_ZONE (DB wins)
+    cur.execute(
+        "SELECT DISTINCT crs_code, zone FROM core_transport_stops "
+        "WHERE crs_code IS NOT NULL AND zone IS NOT NULL"
+    )
+    db_zones = {}
+    for crs, zone in cur.fetchall():
+        try:
+            db_zones[crs] = int(zone)
+        except (ValueError, TypeError):
+            pass  # Skip non-integer zones like "NA"
+
+    # Merge: DB zones override hardcoded, hardcoded fills gaps
+    zone_lookup = dict(CRS_TO_ZONE)
+    zone_lookup.update(db_zones)
+    print(f"Zone lookup: {len(zone_lookup):,} stations "
+          f"({len(db_zones):,} from DB, {len(CRS_TO_ZONE):,} hardcoded)")
+
     # Get all pairs that need prices
     cur.execute(
         "SELECT origin_crs, dest_crs FROM core_station_destinations "
@@ -221,8 +239,8 @@ def main():
 
     updated = 0
     for origin_crs, dest_crs in pairs:
-        o_zone = CRS_TO_ZONE.get(origin_crs)
-        d_zone = CRS_TO_ZONE.get(dest_crs)
+        o_zone = zone_lookup.get(origin_crs)
+        d_zone = zone_lookup.get(dest_crs)
         if o_zone is None or d_zone is None:
             continue
         if o_zone == d_zone and origin_crs == dest_crs:
@@ -247,10 +265,10 @@ def main():
     remaining = len(pairs) - updated
     print(f"Remaining without price: {remaining:,}")
 
-    # Backfill zone column on core_transport_stops for rail stations
-    print("\nBackfilling zone on core_transport_stops...")
+    # Sync zone column on core_transport_stops for all mapped stations
+    print("\nSyncing zones to core_transport_stops...")
     zone_updated = 0
-    for crs_code, zone in CRS_TO_ZONE.items():
+    for crs_code, zone in zone_lookup.items():
         cur.execute(
             "UPDATE core_transport_stops SET zone = %s "
             "WHERE crs_code = %s AND (zone IS NULL OR zone != %s)",

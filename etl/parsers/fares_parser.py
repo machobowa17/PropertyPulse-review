@@ -13,6 +13,12 @@ Resolves NLC codes through three layers:
 
 Takes the LOWEST fare when multiple flows resolve to the same CRS pair.
 
+Direction handling: F records have a direction flag at position 19:
+  'R' = reversible (fare applies in both directions)
+  'S' = single direction only
+For 'R' flows, fares are mapped to both (origin→dest) and (dest→origin).
+Forward-specific fares always take priority over reverse-inferred fares.
+
 Season tickets: 7DS/7TS = weekly season ticket price in pence. Annual = weekly × 40.
 Single fares: SDS = peak single, SOS/SVS/CDS = off-peak single (cheapest kept).
 """
@@ -207,11 +213,16 @@ def parse_fares(zip_path):
     # Collect all flow_ids that have ANY fare type
     all_fare_flows = set(season_fares) | set(peak_single_fares) | set(offpeak_single_fares)
 
-    print("  Fares: resolving flows to CRS pairs...")
+    print("  Fares: resolving flows to CRS pairs (with reverse-direction support)...")
     pair_prices = {}   # (origin_crs, dest_crs) → annual_gbp (lowest season)
     pair_singles = {}  # (origin_crs, dest_crs) → {"peak_pence": int, "offpeak_pence": int}
+    # Track which pairs were set by a forward (direct) flow so reverse never overwrites
+    forward_season = set()   # set of (o_crs, d_crs) set by a direct F record
+    forward_peak = set()
+    forward_offpeak = set()
     resolved = 0
     unresolved = 0
+    reverse_added = 0
 
     with z.open(ffl_name) as f:
         for raw_line in f:
@@ -224,6 +235,8 @@ def parse_fares(zip_path):
 
             origin_nlc = line[2:6]
             dest_nlc = line[6:10]
+            # Direction flag: 'R' = reversible, 'S' = single direction
+            direction = line[19] if len(line) > 19 else "S"
 
             origin_crs_set = _resolve_nlc(origin_nlc, nlc_to_crs, fsc_clusters, loc_groups)
             dest_crs_set = _resolve_nlc(dest_nlc, nlc_to_crs, fsc_clusters, loc_groups)
@@ -232,36 +245,62 @@ def parse_fares(zip_path):
                 unresolved += 1
                 continue
 
-            # Expand all combinations (cluster × cluster can produce many pairs)
+            # Build list of direction pairs to process
+            # Forward direction always included; reverse only for 'R' flows
+            dir_pairs = []
             for o_crs in origin_crs_set:
                 for d_crs in dest_crs_set:
                     if o_crs == d_crs:
                         continue
-                    key = (o_crs, d_crs)
+                    dir_pairs.append(((o_crs, d_crs), False))  # (key, is_reverse)
+                    if direction == "R":
+                        dir_pairs.append(((d_crs, o_crs), True))
 
-                    # Season ticket: annual = weekly pence / 100 * 40
-                    if flow_id in season_fares:
-                        annual_gbp = round(season_fares[flow_id] / 100.0 * 40, 2)
-                        if key not in pair_prices or annual_gbp < pair_prices[key]:
-                            pair_prices[key] = annual_gbp
-                            resolved += 1
+            for key, is_reverse in dir_pairs:
+                # Season ticket: annual = weekly pence / 100 * 40
+                if flow_id in season_fares:
+                    annual_gbp = round(season_fares[flow_id] / 100.0 * 40, 2)
+                    # Forward always wins; reverse only fills gaps or beats existing reverse
+                    if is_reverse and key in forward_season:
+                        pass  # don't overwrite a forward-specific fare
+                    elif key not in pair_prices or annual_gbp < pair_prices[key]:
+                        pair_prices[key] = annual_gbp
+                        if not is_reverse:
+                            forward_season.add(key)
+                        resolved += 1
 
-                    # Single fares (keep lowest per pair)
-                    if flow_id in peak_single_fares or flow_id in offpeak_single_fares:
-                        if key not in pair_singles:
-                            pair_singles[key] = {}
-                        if flow_id in peak_single_fares:
-                            peak = peak_single_fares[flow_id]
-                            if "peak_pence" not in pair_singles[key] or peak < pair_singles[key]["peak_pence"]:
-                                pair_singles[key]["peak_pence"] = peak
-                        if flow_id in offpeak_single_fares:
-                            offpeak = offpeak_single_fares[flow_id]
-                            if "offpeak_pence" not in pair_singles[key] or offpeak < pair_singles[key]["offpeak_pence"]:
-                                pair_singles[key]["offpeak_pence"] = offpeak
+                # Single fares (keep lowest per pair; forward wins over reverse)
+                if flow_id in peak_single_fares or flow_id in offpeak_single_fares:
+                    if key not in pair_singles:
+                        pair_singles[key] = {}
 
-    print(f"  Fares: {len(pair_prices):,} CRS pairs with season tickets, "
+                    if flow_id in peak_single_fares:
+                        peak = peak_single_fares[flow_id]
+                        if is_reverse and key in forward_peak:
+                            pass
+                        elif "peak_pence" not in pair_singles[key] or peak < pair_singles[key]["peak_pence"]:
+                            pair_singles[key]["peak_pence"] = peak
+                            if not is_reverse:
+                                forward_peak.add(key)
+
+                    if flow_id in offpeak_single_fares:
+                        offpeak = offpeak_single_fares[flow_id]
+                        if is_reverse and key in forward_offpeak:
+                            pass
+                        elif "offpeak_pence" not in pair_singles[key] or offpeak < pair_singles[key]["offpeak_pence"]:
+                            pair_singles[key]["offpeak_pence"] = offpeak
+                            if not is_reverse:
+                                forward_offpeak.add(key)
+
+    # Count how many pairs were added purely from reverse flows
+    reverse_season = len(pair_prices) - len(forward_season)
+    reverse_singles = len(pair_singles) - len(forward_peak | forward_offpeak)
+
+    print(f"  Fares: {len(pair_prices):,} CRS pairs with season tickets "
+          f"({reverse_season:,} from reverse flows), "
           f"{len(pair_singles):,} with single fares "
-          f"({unresolved:,} unresolvable flows skipped)")
+          f"({reverse_singles:,} from reverse flows), "
+          f"{unresolved:,} unresolvable flows skipped")
 
     z.close()
     return pair_prices, pair_singles
