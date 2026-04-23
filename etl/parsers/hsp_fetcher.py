@@ -125,13 +125,21 @@ def fetch_all_punctuality(db_url, rate_limit=0.5):
         print(f"  HSP: resuming from checkpoint ({len(completed):,} already done)")
 
     updated = 0
+    no_data = 0
     errors = 0
 
     for i, (orig, dest) in enumerate(pairs):
         if (orig, dest) in completed:
             continue
 
-        pct = _hsp_request(orig, dest, creds_b64)
+        try:
+            pct = _hsp_request(orig, dest, creds_b64)
+        except Exception as e:
+            logger.error("HSP unexpected error for %s→%s: %s", orig, dest, e)
+            errors += 1
+            completed.add((orig, dest))
+            time.sleep(rate_limit)
+            continue
 
         if pct is not None:
             cur.execute(
@@ -141,7 +149,7 @@ def fetch_all_punctuality(db_url, rate_limit=0.5):
             )
             updated += 1
         else:
-            errors += 1
+            no_data += 1
 
         completed.add((orig, dest))
 
@@ -152,7 +160,7 @@ def fetch_all_punctuality(db_url, rate_limit=0.5):
                 json.dump(list(completed), f)
             elapsed_pct = len(completed) / total * 100
             print(f"  HSP: {len(completed):,}/{total:,} ({elapsed_pct:.1f}%) — "
-                  f"{updated} updated, {errors} errors")
+                  f"{updated} updated, {no_data} no-data, {errors} errors")
 
         time.sleep(rate_limit)
 
@@ -164,5 +172,7 @@ def fetch_all_punctuality(db_url, rate_limit=0.5):
     if os.path.exists(_CHECKPOINT_PATH):
         os.remove(_CHECKPOINT_PATH)
 
-    print(f"  HSP: done — {updated:,} pairs updated, {errors:,} no data")
-    return updated
+    logger.info("HSP complete: %d updated, %d no-data, %d errors out of %d pairs",
+                updated, no_data, errors, total)
+    print(f"  HSP: done — {updated:,} updated, {no_data:,} no-data, {errors:,} errors")
+    return {"updated": updated, "no_data": no_data, "errors": errors, "total": total}

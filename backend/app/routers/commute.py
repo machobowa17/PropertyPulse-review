@@ -195,7 +195,16 @@ async def live_journey(
             "origin_crs": origin_crs.upper(),
         }
 
-    result = motis_journey(from_lat, from_lon, to_lat, to_lon, depart_time=time, timeout=15)
+    try:
+        result = motis_journey(from_lat, from_lon, to_lat, to_lon, depart_time=time, timeout=15)
+    except Exception:
+        logger.exception("MOTIS unexpected error: %s → %s at %s",
+                         origin_crs.upper(), dest_crs or f"{dest_lat},{dest_lon}", time)
+        return {
+            "error": "Journey lookup failed",
+            "origin_crs": origin_crs.upper(),
+        }
+
     if not result:
         logger.info("No MOTIS route: %s → %s at %s", origin_crs.upper(),
                      dest_crs or f"{dest_lat},{dest_lon}", time)

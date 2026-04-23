@@ -84,7 +84,7 @@ def main():
                     SELECT certificate_number, postcode, lodgement_date, total_floor_area,
                            habitable_rooms, current_energy_rating,
                            TRANSLATE(
-                               UPPER(COALESCE(address1,'')||COALESCE(address2,'')||COALESCE(address3,'')),
+                               UPPER(COALESCE(address1,'')),
                                %s, ''
                            ) AS norm
                     FROM core_epc_domestic
@@ -121,7 +121,7 @@ def main():
                     SELECT certificate_number, postcode, lodgement_date, total_floor_area,
                            habitable_rooms, current_energy_rating,
                            TRANSLATE(
-                               UPPER(COALESCE(address1,'')||COALESCE(address2,'')||COALESCE(address3,'')),
+                               UPPER(COALESCE(address1,'')),
                                %s, ''
                            ) AS norm
                     FROM core_epc_domestic

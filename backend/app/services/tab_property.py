@@ -454,10 +454,16 @@ async def fetch_property_market(
         fl_headline_parent = parent_leasehold_pct
         fl_headline_unit = "% leasehold"
 
+    # D10: Freehold premium ratio
+    freehold_premium = None
+    if local_fh_price and local_lh_price and local_lh_price > 0:
+        freehold_premium = round(local_fh_price / local_lh_price, 2)
+
     freehold_details = {
         "breakdown": fl_breakdown,
         "breakdown_type": "tenure_table",
         "count_label": "Transactions",
+        "freehold_premium": freehold_premium,
     }
 
     metrics.append(
@@ -860,6 +866,131 @@ async def fetch_property_market(
                     },
                 )
             )
+
+    # ------------------------------------------------------------------
+    # D14+D15: Official ONS House Price Index
+    # ------------------------------------------------------------------
+    hpi_result = await db.execute(
+        text(
+            """
+            SELECT date, average_price, yearly_change_pct,
+                   detached_price, semi_detached_price, terraced_price, flat_price
+            FROM core_hpi_lad
+            WHERE lad_code = ANY(:lads)
+            ORDER BY date
+            """
+        ),
+        {"lads": local_lads},
+    )
+    hpi_rows = hpi_result.mappings().all()
+
+    if hpi_rows:
+        latest_hpi = hpi_rows[-1]
+        latest_yoy_official = float(latest_hpi["yearly_change_pct"]) if latest_hpi["yearly_change_pct"] is not None else None
+
+        # Parent HPI: average across parent LADs
+        parent_hpi_yoy = None
+        if parent_lads:
+            parent_hpi_result = await db.execute(
+                text(
+                    """
+                    SELECT AVG(yearly_change_pct) AS avg_yoy
+                    FROM core_hpi_lad
+                    WHERE lad_code = ANY(:lads)
+                      AND date = (SELECT MAX(date) FROM core_hpi_lad WHERE lad_code = ANY(:lads))
+                    """
+                ),
+                {"lads": parent_lads},
+            )
+            parent_hpi_row = parent_hpi_result.mappings().first()
+            if parent_hpi_row and parent_hpi_row["avg_yoy"] is not None:
+                parent_hpi_yoy = round(float(parent_hpi_row["avg_yoy"]), 1)
+
+        # Build annual series (one entry per January) for the chart
+        hpi_series = []
+        for row in hpi_rows:
+            d = row["date"]
+            # Extract month from the date — HPI uses YYYY-01-MM format where MM is month
+            # But actually the dates appear as proper dates, so filter to January only for annual view
+            if d.month == 1 and d.day == 1 and d.year >= 2010:
+                hpi_series.append({
+                    "year": d.year,
+                    "avg_price": int(float(row["average_price"])) if row["average_price"] else None,
+                    "yoy_pct": float(row["yearly_change_pct"]) if row["yearly_change_pct"] is not None else None,
+                    "detached": int(float(row["detached_price"])) if row["detached_price"] else None,
+                    "semi": int(float(row["semi_detached_price"])) if row["semi_detached_price"] else None,
+                    "terraced": int(float(row["terraced_price"])) if row["terraced_price"] else None,
+                    "flat": int(float(row["flat_price"])) if row["flat_price"] else None,
+                })
+
+        hpi_details = {
+            "hpi_series": hpi_series,
+            "latest_avg_price": int(float(latest_hpi["average_price"])) if latest_hpi["average_price"] else None,
+            "latest_date": latest_hpi["date"].strftime("%Y-%m") if latest_hpi["date"] else None,
+            "data_note": "Source: ONS UK House Price Index. Official government statistic based on mortgage completions and cash sales. Published at local-authority level.",
+        }
+        if latest_yoy_official is not None:
+            hpi_details["trend"] = {
+                "pct": latest_yoy_official,
+                "direction": "up" if latest_yoy_official > 0 else ("down" if latest_yoy_official < 0 else "flat"),
+            }
+
+        metrics.append(
+            metric(
+                "official_hpi",
+                "ONS House Price Index",
+                latest_yoy_official,
+                parent_hpi_yoy,
+                "% YoY",
+                details=hpi_details,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # D11: Price Spread (min/max range)
+    # ------------------------------------------------------------------
+    spread_result = await db.execute(
+        text(
+            f"""
+            SELECT MIN(price) AS min_price,
+                   MAX(price) AS max_price,
+                   PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY price) AS p10,
+                   PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY price) AS p90,
+                   COUNT(*) AS txn_count
+            FROM core_property_transactions
+            WHERE {local_txn_filter_plain}
+              AND property_type = ANY(:price_types)
+              AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+            """
+        ),
+        local_txn_params,
+    )
+    spread_row = spread_result.mappings().first()
+
+    if spread_row and spread_row["min_price"] is not None and spread_row["max_price"] is not None:
+        min_p = int(spread_row["min_price"])
+        max_p = int(spread_row["max_price"])
+        p10 = int(float(spread_row["p10"])) if spread_row["p10"] else None
+        p90 = int(float(spread_row["p90"])) if spread_row["p90"] else None
+        spread_ratio = round(max_p / min_p, 1) if min_p > 0 else None
+
+        metrics.append(
+            metric(
+                "price_spread",
+                "Price Spread (last 12m)",
+                max_p - min_p,
+                None,
+                "GBP",
+                details={
+                    "min_price": min_p,
+                    "max_price": max_p,
+                    "p10": p10,
+                    "p90": p90,
+                    "spread_ratio": spread_ratio,
+                    "transaction_count": int(spread_row["txn_count"]),
+                },
+            )
+        )
 
     # ------------------------------------------------------------------
     # EPC housing-stock efficiency

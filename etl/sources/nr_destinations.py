@@ -20,9 +20,7 @@ Run AFTER station_enrichment (needs CRS codes populated).
 
 import json
 import os
-import ssl
 import time
-import urllib.request
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -53,51 +51,18 @@ METADATA = {
     "expected_row_range": (5_000, 30_000),
 }
 
-_NR_EMAIL = os.environ.get("NR_EMAIL", "")
-_NR_PASSWORD = os.environ.get("NR_PASSWORD", "")
 _ETL_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 _TIMETABLE_ZIP = "/tmp/nr_timetable.zip"
 _FARES_ZIP = "/tmp/nr_fares.zip"
 _ROUTING_CHECKPOINT_PATH = "/tmp/motis_journey_checkpoint.json"
 _CRS_NAPTAN_PATH = os.path.join(_ETL_DATA_DIR, "crs_naptan_mapping.json")
 
-
-# ── NR feed download helpers ──��──────────────────────────────────────────────
-
-def _nr_authenticate():
-    """Authenticate with NR Open Data portal, return token."""
-    if not _NR_EMAIL or not _NR_PASSWORD:
-        raise RuntimeError("NR_EMAIL and NR_PASSWORD env vars must be set for NR API access")
-    ctx = ssl._create_unverified_context()
-    payload = json.dumps({"username": _NR_EMAIL, "password": _NR_PASSWORD}).encode()
-    req = urllib.request.Request(
-        "https://opendata.nationalrail.co.uk/authenticate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-        return json.loads(resp.read())["token"]
-
-
-def _download_feed(url, dest_path, label):
-    """Download a static feed from NR Open Data portal."""
-    ctx = ssl._create_unverified_context()
-    token = _nr_authenticate()
-    print(f"  Downloading {label}...")
-    req = urllib.request.Request(url, headers={"X-Auth-Token": token})
-    with urllib.request.urlopen(req, timeout=300, context=ctx) as resp:
-        with open(dest_path, "wb") as f:
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                f.write(chunk)
-    print(f"  {label} saved to {dest_path}")
+# Shared NR auth (credentials via NR_EMAIL / NR_PASSWORD env vars)
+from lib.nr_auth import download_feed as _nr_download_feed, download_fares as _nr_download_fares
 
 
 def _download_timetable():
-    _download_feed(
+    _nr_download_feed(
         "https://opendata.nationalrail.co.uk/api/staticfeeds/3.0/timetable",
         _TIMETABLE_ZIP,
         "timetable (~70 MB)",
@@ -105,11 +70,7 @@ def _download_timetable():
 
 
 def _download_fares():
-    _download_feed(
-        "https://opendata.nationalrail.co.uk/api/staticfeeds/2.0/fares",
-        _FARES_ZIP,
-        "fares (~46 MB)",
-    )
+    _nr_download_fares(_FARES_ZIP)
 
 
 # ── Phase A: Candidate selection with data-driven scoring ─────────────────

@@ -116,4 +116,6 @@ export const METRIC_ICONS: Record<string, string> = {
   no_car: 'Car',
   born_abroad: 'Globe',
   epc_energy_score: 'Flame',
+  official_hpi: 'TrendingUp',
+  price_spread: 'ArrowUpDown',
 };

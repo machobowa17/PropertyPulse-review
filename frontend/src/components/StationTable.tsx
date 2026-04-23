@@ -161,9 +161,12 @@ function JourneyCard({ d, expanded, onToggle }: {
               {d.season_ticket_gbp != null && (
                 <span className="font-medium text-ink">
                   ~£{d.season_ticket_gbp.toLocaleString()}/yr
+                  {d.is_travelcard && (
+                    <span className="text-brand-600 ml-1 text-[10px] font-medium">Travelcard</span>
+                  )}
                   {d.travelcard_zones && (
                     <span className="text-ink-faint ml-0.5 text-[10px]">
-                      Zones {d.travelcard_zones}
+                      Z{d.travelcard_zones}
                     </span>
                   )}
                 </span>
@@ -173,7 +176,7 @@ function JourneyCard({ d, expanded, onToggle }: {
               )}
             </div>
           </div>
-          {/* Right side: duration + changes */}
+          {/* Right side: duration + changes + punctuality */}
           <div className="flex-shrink-0 text-right">
             <div className="text-sm font-semibold text-ink tabular-nums">
               {d.journey_min != null ? `${d.journey_min} min` : '—'}
@@ -187,6 +190,9 @@ function JourneyCard({ d, expanded, onToggle }: {
                 {d.trains_per_hour.toFixed(1)}/hr
               </div>
             ) : null}
+            {d.pct_on_time != null && (
+              <div className="mt-0.5"><PunctualityBadge pct={d.pct_on_time} /></div>
+            )}
             {isMultiModal && (
               <div className="mt-1">
                 {expanded
@@ -253,10 +259,10 @@ function JourneyCard({ d, expanded, onToggle }: {
 }
 
 /* ── Direct route row (flat, for non-TfL-enriched destinations) ────────── */
-function DirectRow({ d, hasOnTime, hasPrice }: {
+function DirectRow({ d, hasOnTime, hasFare }: {
   d: Destination;
   hasOnTime: boolean;
-  hasPrice: boolean;
+  hasFare: boolean;
 }) {
   return (
     <tr className="hover:bg-white/50">
@@ -272,10 +278,16 @@ function DirectRow({ d, hasOnTime, hasPrice }: {
           <PunctualityBadge pct={d.pct_on_time} />
         </td>
       )}
-      {hasPrice && (
-        <td className="py-1.5 pl-2 text-right text-ink-muted tabular-nums">
-          {d.season_ticket_gbp != null ? (
-            <>{`£${d.season_ticket_gbp.toLocaleString()}/yr`}{d.travelcard_zones && <span className="text-ink-faint ml-1 text-[9px]">Zones {d.travelcard_zones}</span>}</>
+      {hasFare && (
+        <td className="py-1.5 pl-2 text-right text-ink-muted tabular-nums whitespace-nowrap">
+          {d.peak_fare_pence != null ? (
+            <span>{formatPence(d.peak_fare_pence)}</span>
+          ) : d.season_ticket_gbp != null ? (
+            <span>
+              £{d.season_ticket_gbp.toLocaleString()}/yr
+              {d.is_travelcard && <span className="text-brand-600 ml-1 text-[9px] font-medium">TC</span>}
+              {d.travelcard_zones && <span className="text-ink-faint ml-0.5 text-[9px]">Z{d.travelcard_zones}</span>}
+            </span>
           ) : '—'}
         </td>
       )}
@@ -382,7 +394,7 @@ function DestinationSubTable({ station }: { station: StationRow }) {
   const hasMultiModal = destinations.some(d => d.journey_type === 'multi_modal');
   const directOnly = destinations.filter(d => d.journey_type !== 'multi_modal');
   const hasOnTime = directOnly.some(d => d.pct_on_time != null);
-  const hasPrice = directOnly.some(d => d.season_ticket_gbp != null);
+  const hasFare = directOnly.some(d => d.peak_fare_pence != null || d.season_ticket_gbp != null);
 
   const toggleLeg = (crs: string) => {
     setExpandedLegs(prev => {
@@ -449,12 +461,12 @@ function DestinationSubTable({ station }: { station: StationRow }) {
               <th className="text-right py-1 px-2">Journey</th>
               <th className="text-right py-1 px-2">Trains/hr</th>
               {hasOnTime && <th className="text-center py-1 px-2">On time</th>}
-              {hasPrice && <th className="text-right py-1 pl-2">Season ticket</th>}
+              {hasFare && <th className="text-right py-1 pl-2">Fare</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-divider/30">
             {directOnly.map(d => (
-              <DirectRow key={d.dest_crs} d={d} hasOnTime={hasOnTime} hasPrice={hasPrice} />
+              <DirectRow key={d.dest_crs} d={d} hasOnTime={hasOnTime} hasFare={hasFare} />
             ))}
           </tbody>
         </table>
@@ -475,10 +487,23 @@ function DestinationSubTable({ station }: { station: StationRow }) {
           <span className="ml-3 text-ink-muted tabular-nums">
             {customDest.journey_min != null ? `${customDest.journey_min} min` : '—'}
           </span>
+          {customDest.peak_fare_pence != null && (
+            <span className="ml-3 text-ink-muted tabular-nums">
+              Peak {formatPence(customDest.peak_fare_pence)}
+            </span>
+          )}
+          {customDest.offpeak_fare_pence != null && (
+            <span className="ml-2 text-ink-muted tabular-nums">
+              Off-peak {formatPence(customDest.offpeak_fare_pence)}
+            </span>
+          )}
           {customDest.season_ticket_gbp != null && (
             <span className="ml-3 text-ink-muted tabular-nums">
               ~£{customDest.season_ticket_gbp.toLocaleString()}/yr
             </span>
+          )}
+          {customDest.pct_on_time != null && (
+            <span className="ml-2"><PunctualityBadge pct={customDest.pct_on_time} /></span>
           )}
         </div>
       )}

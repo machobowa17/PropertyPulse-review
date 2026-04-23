@@ -174,8 +174,8 @@ def _fetch_tfl_line_stops():
 # NR KnowledgeBase helpers
 # ---------------------------------------------------------------------------
 
-_NR_EMAIL = "machobowa17@gmail.com"
-_NR_PASSWORD = "!rpKQc6uRQLVgvt"
+# Shared NR auth (credentials via NR_EMAIL / NR_PASSWORD env vars)
+from lib.nr_auth import nr_authenticate as _nr_authenticate
 
 # TOC code → human-readable operator name
 _TOC_NAMES = {
@@ -192,21 +192,6 @@ _TOC_NAMES = {
     "WM": "West Midlands Trains", "XP": "CrossCountry", "XR": "Elizabeth line",
     "XS": "CrossCountry",
 }
-
-
-def _nr_authenticate():
-    """Authenticate with NR Open Data portal, return X-Auth-Token."""
-    import xml.etree.ElementTree  # noqa: lazy import check
-    ctx = ssl._create_unverified_context()
-    payload = json.dumps({"username": _NR_EMAIL, "password": _NR_PASSWORD}).encode()
-    req = urllib.request.Request(
-        "https://opendata.nationalrail.co.uk/authenticate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-        return json.loads(resp.read())["token"]
 
 
 def _nr_fetch_stations(token):

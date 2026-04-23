@@ -26,7 +26,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v13"  # bumped: travelcard zones, single fares, shared MOTIS
+AREA_CACHE_VERSION = "v14"  # bumped: D10-D15 phase 8 metrics (official HPI, price spread, freehold premium)
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

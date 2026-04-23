@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-20 (session 48)
+Last updated: 2026-04-22 (session 50)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -212,8 +212,8 @@ Source: Session 41. Gemini AI Studio full audit (15-section report in `Gemini_Re
 | R15 | Isochrone school catchments — Outstanding schools within 15-min walk | Pending | Family persona "holy grail". 90% infra exists. |
 | M1 | Choropleth: widen scope to full LAD (not just ward) | Pending | ~10-line backend change in `area_map.py`. Postcode search currently scopes to ward (~30-80 LSOAs). Widen to `lad_code` (~300-500 LSOAs). Geometry simplification already handles >200 LSOAs. GeoJSON grows from ~100KB to ~500KB-1MB, Redis 24hr TTL cache absorbs it. Zero frontend changes. Covers 95% use case (whole borough fills in). |
 | M2 | Choropleth: national coverage via PMTiles (vector tiles) | Pending | Pre-generate PMTiles per choropleth layer using `tippecanoe` from `core_lsoa_boundaries` + pre-joined metric values. ~35k polygons/layer → ~10-50MB per file. Host on S3/CloudFront (free tier). Frontend: swap `type: 'geojson'` for `type: 'vector'` + PMTiles protocol. Quantiles baked at generation time (no flicker). ~30 layers × ~20MB = ~600MB on S3. Best UX: instant pan/zoom, full national coverage, no API calls. Requires ETL pipeline addition. Do after M1 proves demand. |
-| M3 | EC2: Ingest `core_epc_domestic` + re-run EPC backfill | **HIGH PRIORITY** | `core_epc_domestic` table is MISSING on EC2 entirely — only `_epc_staging` and `core_epc_lsoa` exist. This means transaction table beds/size/EPC columns are blank for ~80% of rows, and map sold-price marker tooltips lack floor area. Need to: (1) restore `core_epc_domestic` from `gdrive:PropertyPulse/core_epc_domestic.dump` (1.2 GB), (2) run `backfill_epc_matching.py` to populate `bedrooms_estimated`, `floor_area_sqm`, `epc_rating` on `core_property_transactions`. Currently ~20% match rate (from pg_dump migration bake-in only). |
-| M4 | EC2: Full data integrity audit | Pending | Compare all local tables vs EC2 tables — row counts, column coverage, missing tables. Identify any other data gaps that shipped with the pg_dump migration. Triggered by discovery that `core_epc_domestic` was missing without anyone noticing. |
+| M3 | EC2: Ingest `core_epc_domestic` + re-run EPC backfill | **DONE** | Session 50. (1) Restored `core_epc_domestic` (29,214,082 rows) from `gdrive:PropertyPulse/core_epc_domestic.dump` via rclone + pg_restore. (2) Ran `backfill_epc_matching.py` to populate `bedrooms_estimated`, `floor_area_sqm`, `epc_rating` on `core_property_transactions`. Coverage went from ~17% to ~80%+. Also dropped `tmp_postcode_bng` (252 MB) and `_epc_staging` (empty). |
+| M4 | EC2: Full data integrity audit | **DONE** | Session 50. Comprehensive audit: all tables verified. Key findings: `core_epc_domestic` restored (was 0), `core_connectivity_lsoa` empty (planned data never loaded — not blocking), EPC population now ~80%+ after backfill. Disk at ~79% usage. All materialized views populated. All indexes present. |
 | M5 | Fix duplicate data notes globally | **DONE** | Frontend MetricCard.tsx now collects all `_note` texts from details into a Set, then filters quality_flags to exclude any matching text. Prevents duplicate display across DataNotes + quality_flags. |
 
 ---
@@ -319,7 +319,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 ---
 
-### Phase 8: Idle Data — Audit & Proposals (session 47)
+### Phase 8: Idle Data — Audit & Proposals (session 47, quick wins DONE session 50)
 
 Source: Full DB schema audit — every table, every column checked against backend query usage. Identifies data already sitting in the database that we're not surfacing.
 
@@ -374,14 +374,13 @@ ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`,
 
 #### Proposals — Quick Wins (zero ETL, just query existing data)
 
-| # | Proposal | Effort | Impact | Notes |
-|---|----------|--------|--------|-------|
-| D10 | Surface `lsoa_month_*` freehold vs leasehold pricing | Low | Medium | Freehold premium metric: `avg_freehold_price / avg_leasehold_price`. Already computed. Answers "how much more do freeholds cost here?" |
-| D11 | Surface `lsoa_month_*` price range (min/max) | Low | Medium | Price spread metric showing min–max range and volatility. Already computed. |
-| D12 | Surface `lsoa_month_*` new build counts | Low | Medium | New build activity metric at LSOA granularity (more granular than current LAD-level new_build_proportion). Already computed. |
-| D13 | Surface `core_price_sqm_lad` / `core_price_sqm_lsoa` | Low | Medium | Price per sqm by property type — separate table, never queried. Could complement existing price_per_sqft with metric comparison. |
-| D14 | Display `core_hpi_lad` as official HPI trend chart | Medium | High | ONS official HPI monthly time series with prices by type. Would be a rich chart component. Only used by comparable-areas internally today. |
-| D15 | Display `core_hpi_lad` official YoY change % | Low | High | `yearly_change_pct` column — ready-made official price growth rate, not our derived one. |
+| # | Proposal | Effort | Impact | Status | Notes |
+|---|----------|--------|--------|--------|-------|
+| D10 | Surface freehold premium ratio | Low | Medium | **DONE** | Session 50. Added `freehold_premium` ratio to existing `freehold_leasehold` metric details (freehold avg / leasehold avg). |
+| D11 | Surface price spread (min/max/p10/p90) | Low | Medium | **DONE** | Session 50. New `price_spread` metric on Property tab. Shows min-max range + 10th/90th percentiles + spread ratio. Registry entry + persona weights added. |
+| D12 | Surface `lsoa_month_*` new build counts | Low | Medium | SKIP | Redundant — existing `new_build_proportion` already computes from raw transactions at runtime. |
+| D13 | Surface `core_price_sqm_lad` / `core_price_sqm_lsoa` | Low | Medium | SKIP | Redundant — `tab_property.py` already computes price/sqft from transactions. Separate pre-computed table adds no value. |
+| D14+D15 | Official ONS HPI trend + YoY change | Medium | High | **DONE** | Session 50. New `official_hpi` metric on Property tab. Queries `core_hpi_lad` for annual time series (2010+) with type breakdown + parent comparison. YoY change as headline. Registry entry (supports_trend=True) + persona weights. |
 
 #### Proposals — Medium Effort (re-run EPC ETL with additional columns)
 
@@ -395,18 +394,18 @@ ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`,
 | D21 | Glazing + insulation quality | Medium | Low | Requires `WINDOWS_DESCRIPTION` + `FLOOR_DESCRIPTION`. Niche but relevant to energy bills. |
 | D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | Requires `BUILT_FORM`. More granular than D/S/T/F. Shows "is this a bungalow area?" |
 
-All D16–D22 are **blocked by M3** (EPC re-ingestion on EC2). Could be done locally first, then deployed.
+All D16–D22 require re-running EPC ETL with additional columns. M3 (EPC table restore) is now DONE — these need new column extraction from raw CSV, not just the table restore.
 
 #### Proposals — Zero ETL, Census Data Already in `core_census_lsoa`
 
-| # | Proposal | Tab | Census Columns | Notes |
-|---|----------|-----|----------------|-------|
-| D23 | Age distribution metric | Community & Education | `pct_age_0_15`, `pct_age_16_64`, `pct_age_65_plus` | Breakdown of population by age band. Useful for families (young area?), retirees (aging area?). Currently shown in demographics overview but NOT as a standalone metric with parent comparison + persona takeaway. |
-| D24 | Household size distribution metric | Community & Education | `pct_1person`, `pct_2person`, `pct_3_4person`, `pct_5plus` | Shows whether area skews towards singles, couples, or large families. Complements existing household composition (families/singles/sharers). |
-| D25 | Born abroad / national identity metric | Community & Education | `pct_born_abroad`, `pct_uk_identity` | Cultural diversity indicator. "X% of residents were born outside the UK." Sensitive — present factually without value judgement. |
-| D26 | Commute distance distribution metric | Lifestyle & Connectivity | `pct_lt2km`, `pct_2_10km`, `pct_10_30km`, `pct_30plus` | Shows how far residents commute. Complements existing WFH and cycling metrics. Useful for people evaluating commute patterns of an area. Already have human-readable labels from P42. |
+| # | Proposal | Tab | Status | Notes |
+|---|----------|-----|--------|-------|
+| D23 | Age distribution metric (median_age with age bands) | Community & Education | **DONE** | Already implemented in earlier sessions. `median_age` metric with age band breakdowns in `tab_community.py`. |
+| D24 | Household size distribution metric | Community & Education | **DONE** | Already implemented. `household_composition` metric with 1/2/3-4/5+ person breakdowns in `tab_community.py`. |
+| D25 | Born abroad / national identity metric | Community & Education | **DONE** | Already implemented. `born_abroad` metric in `tab_community.py`. |
+| D26 | Commute distance distribution metric | Lifestyle & Connectivity | **DONE** | Already implemented. `commute_distance` metric with WFH + distance bands in `tab_lifestyle.py`. |
 
-All D23–D26 are **zero ETL** — data already exists in `core_census_lsoa`, just needs backend metric emission + metric registry entry + persona weights.
+All D23–D26 were found to be **already implemented** in sessions prior to the audit (session 50 verification).
 
 #### D29 — Surface INSPIRE + LLC at Area Level (current portal)
 

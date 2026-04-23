@@ -229,16 +229,19 @@ def main():
     print(f"Zone lookup: {len(zone_lookup):,} stations "
           f"({len(db_zones):,} from DB, {len(CRS_TO_ZONE):,} hardcoded)")
 
-    # Get all pairs that need prices
+    # Get ALL pairs where both stations have zone data — not just season_ticket IS NULL.
+    # If NR season price exists but travelcard is cheaper, use travelcard.
+    # If NR season price exists and is cheaper, keep NR but still mark travelcard info.
     cur.execute(
-        "SELECT origin_crs, dest_crs FROM core_station_destinations "
-        "WHERE season_ticket_gbp IS NULL"
+        "SELECT origin_crs, dest_crs, season_ticket_gbp "
+        "FROM core_station_destinations"
     )
     pairs = cur.fetchall()
-    print(f"{len(pairs):,} rows need season ticket prices")
+    print(f"{len(pairs):,} total destination rows")
 
-    updated = 0
-    for origin_crs, dest_crs in pairs:
+    updated_price = 0
+    marked_travelcard = 0
+    for origin_crs, dest_crs, existing_season in pairs:
         o_zone = zone_lookup.get(origin_crs)
         d_zone = zone_lookup.get(dest_crs)
         if o_zone is None or d_zone is None:
@@ -247,9 +250,14 @@ def main():
             continue  # Same station
 
         price = travelcard_price(o_zone, d_zone)
-        if price is not None:
-            min_z, max_z = min(o_zone, d_zone), max(o_zone, d_zone)
-            zones_label = f"{min_z}-{max_z}" if min_z != max_z else str(min_z)
+        if price is None:
+            continue
+
+        min_z, max_z = min(o_zone, d_zone), max(o_zone, d_zone)
+        zones_label = f"{min_z}-{max_z}" if min_z != max_z else str(min_z)
+
+        if existing_season is None or price < existing_season:
+            # Travelcard is cheaper (or no existing price) — use travelcard price
             cur.execute(
                 "UPDATE core_station_destinations "
                 "SET season_ticket_gbp = %s, is_travelcard = TRUE, "
@@ -257,13 +265,29 @@ def main():
                 "WHERE origin_crs = %s AND dest_crs = %s",
                 (price, zones_label, origin_crs, dest_crs),
             )
-            updated += 1
+            updated_price += 1
+        else:
+            # NR price is cheaper — keep it but still mark travelcard as an option
+            cur.execute(
+                "UPDATE core_station_destinations "
+                "SET is_travelcard = TRUE, travelcard_zones = %s, "
+                "    updated_at = now() "
+                "WHERE origin_crs = %s AND dest_crs = %s "
+                "AND (is_travelcard IS NULL OR is_travelcard = FALSE)",
+                (zones_label, origin_crs, dest_crs),
+            )
+            if cur.rowcount > 0:
+                marked_travelcard += 1
 
     conn.commit()
 
-    print(f"Updated {updated:,} rows with Travelcard prices")
-    remaining = len(pairs) - updated
-    print(f"Remaining without price: {remaining:,}")
+    print(f"Updated {updated_price:,} rows with Travelcard prices (cheaper than NR)")
+    print(f"Marked {marked_travelcard:,} additional rows as travelcard-eligible")
+    cur.execute(
+        "SELECT COUNT(*) FROM core_station_destinations WHERE season_ticket_gbp IS NULL"
+    )
+    remaining = cur.fetchone()[0]
+    print(f"Remaining without any season price: {remaining:,}")
 
     # Sync zone column on core_transport_stops for all mapped stations
     print("\nSyncing zones to core_transport_stops...")
