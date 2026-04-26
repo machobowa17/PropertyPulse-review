@@ -31,3 +31,6 @@ test-results/
 property/
 property-api/
 .github/
+.DS_Store
+sessions/
+ux_audit/
