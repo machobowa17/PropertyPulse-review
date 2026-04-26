@@ -1,0 +1,22 @@
+services:
+  school-api:
+    build: .
+    container_name: school_api
+    environment:
+      DATABASE_URL: postgresql://property:${PROPERTY_DB_PASSWORD}@property_db:5432/property
+    ports:
+      - "8083:8083"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - property-net
+
+networks:
+  property-net:
+    external: true
+    name: property_default

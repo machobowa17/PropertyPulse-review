@@ -208,6 +208,29 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
                 )}
               </section>
             ))}
+
+            {activeTab === 'Lifestyle & Connectivity' && (
+              <section>
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
+                  Walk rings
+                </div>
+                <div className="space-y-1">
+                  {[
+                    { colour: '#dc2626', label: '5 min walk (~420m)' },
+                    { colour: '#ca8a04', label: '10 min walk (~830m)' },
+                    { colour: '#16a34a', label: '15 min walk (~1.25km)' },
+                  ].map(({ colour, label }) => (
+                    <div key={label} className="flex items-center gap-2.5 px-2.5 py-1">
+                      <span
+                        className="h-0 w-5 shrink-0 border-t-2 border-dashed"
+                        style={{ borderColor: colour }}
+                      />
+                      <span className="text-xs text-ink-muted">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       )}

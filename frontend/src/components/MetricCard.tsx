@@ -7,7 +7,7 @@ import {
   LayoutGrid, GraduationCap, School, BarChart2, Stethoscope,
   Receipt, Landmark, Ruler, Wallet, Award, Sprout, Timer,
   TrainFront, Bike, Smartphone, Sparkles, Vote, Droplet,
-  ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe, Dumbbell,
+  ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe, Dumbbell, Baby,
 } from 'lucide-react';
 import type { Metric, PersonaId } from '../types';
 import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
@@ -28,6 +28,8 @@ const RentByBedroomChart      = lazy(() => import('./RentByBedroomChart'));
 const BroadbandPanel          = lazy(() => import('./BroadbandPanel'));
 const HpiTrendChart           = lazy(() => import('./HpiTrendChart'));
 const StationTable            = lazy(() => import('./StationTable'));
+const SchoolTable             = lazy(() => import('./SchoolTable'));
+const NurseryTable            = lazy(() => import('./NurseryTable'));
 
 // Runtime-safe accessors for details: Record<string, unknown>
 // Replaces 40+ unsafe `as` casts with type-checked reads.
@@ -59,7 +61,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Receipt, Landmark, TrendingUp, TrendingDown, Ruler, Wallet,
   Award, Sprout, Timer, TrainFront, Bike, Smartphone, Sparkles,
   Vote, Droplet, ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe,
-  Dumbbell,
+  Dumbbell, Baby,
 };
 
 /** Per-metric data source badge: label + licence */
@@ -117,6 +119,7 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   religion:               { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
   primary_schools:        { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
   secondary_schools:      { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
+  nurseries:              { label: 'Ofsted Childcare Provider Inspections', licence: 'OGL v3' },
   deprivation:            { label: 'MHCLG English Indices of Deprivation 2025', licence: 'OGL v3' },
   area_persona:           { label: 'Census 2021 / MHCLG IMD', licence: 'OGL v3' },
   nhs_facilities:         { label: 'NHS ODS / CQC', licence: 'OGL v3' },
@@ -534,6 +537,22 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
 
 function renderDetailsContent(details: Record<string, unknown>, unit: string, parentName: string): React.ReactNode {
   if (Array.isArray(details.schools)) {
+    // Use SchoolTable when all_schools array is available (from Hetzner School API)
+    const allSchools = arr(details, 'all_schools');
+    const summary = details.summary as Record<string, unknown> | undefined;
+    if (allSchools.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (
+        <Suspense fallback={null}>
+          <SchoolTable
+            schools={allSchools as any}
+            summary={summary as any}
+          />
+        </Suspense>
+      );
+    }
+
+    // Fallback: simple numbered list (if SchoolTable data unavailable)
     const qualityPct = num(details, 'quality_pct');
     const parentQualityPct = num(details, 'parent_quality_pct');
     const goodCount = num(details, 'good_count');
@@ -573,6 +592,21 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         </div>
       </div>
     );
+  }
+
+  if (Array.isArray(details.nurseries)) {
+    const allNurseries = arr(details, 'nurseries');
+    const nurserySummary = details.nursery_summary as Record<string, unknown> | undefined;
+    if (allNurseries.length > 0) {
+      return (
+        <Suspense fallback={null}>
+          <NurseryTable
+            nurseries={allNurseries as any}
+            summary={nurserySummary as any}
+          />
+        </Suspense>
+      );
+    }
   }
 
   if (Array.isArray(details.stations)) {

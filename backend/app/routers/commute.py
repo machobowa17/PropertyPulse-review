@@ -217,3 +217,43 @@ async def live_journey(
     if dest_crs:
         result["dest_crs"] = dest_crs.upper()
     return result
+
+
+@router.get("/school-walk")
+async def school_walk_time(
+    urn: int = Query(..., description="School URN"),
+    from_lat: float = Query(..., description="Origin latitude"),
+    from_lon: float = Query(..., description="Origin longitude"),
+):
+    """Proxy walk-time request to Hetzner School API (which calls MOTIS internally)."""
+    try:
+        from etl_lib import schools_api
+    except ImportError:
+        schools_api = None
+
+    if not schools_api:
+        return {"error": "School API not available"}
+
+    result = schools_api.walk_time(urn, from_lat, from_lon)
+    if not result:
+        return {"error": "Walk time lookup failed", "urn": urn}
+    return result
+
+
+@router.get("/school-detail")
+async def school_detail(
+    urn: int = Query(..., description="School URN"),
+):
+    """Proxy detail request to Hetzner School API — returns full multi-year data."""
+    try:
+        from etl_lib import schools_api
+    except ImportError:
+        schools_api = None
+
+    if not schools_api:
+        return {"error": "School API not available"}
+
+    result = schools_api.school_detail(urn)
+    if not result:
+        return {"error": "School detail lookup failed", "urn": urn}
+    return result

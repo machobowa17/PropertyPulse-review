@@ -26,7 +26,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v14"  # bumped: D10-D15 phase 8 metrics (official HPI, price spread, freehold premium)
+AREA_CACHE_VERSION = "v25"  # bumped: teacher turnover, parent view 2021-2026, Ofsted history + category + prev_rating
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

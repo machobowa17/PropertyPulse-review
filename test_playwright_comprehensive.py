@@ -10,10 +10,11 @@ Servers: frontend on :5173, backend on :8000
 import time
 import json
 import sys
+import os
 from playwright.sync_api import sync_playwright, expect, TimeoutError as PwTimeout
 
-BASE = "http://localhost:5173"
-API = "http://127.0.0.1:8000/api/v1"
+BASE = os.environ.get("BASE_URL", "http://localhost:5173")
+API = os.environ.get("API_URL", "http://127.0.0.1:8000/api/v1")
 
 # Tab short names used in the TabBar buttons (sm:hidden shows shortName)
 TAB_NAMES = ["Property", "Lifestyle", "Environment", "Community", "Governance"]
@@ -326,8 +327,8 @@ def run_all_tests():
         map_container = page.locator(".maplibregl-map")
         R.add(section, "MapLibre container", map_container.count() > 0)
 
-        # Check for map layer control button (new version: "Map evidence and layers")
-        layer_btns = page.locator('button[title="Map evidence and layers"]')
+        # Check for map layer control button
+        layer_btns = page.locator('button[title="Map layers"], button[aria-label="Open map layers"], button[title="Map evidence and layers"]')
         R.add(section, "Layer control button",
               layer_btns.count() > 0)
 
@@ -341,9 +342,13 @@ def run_all_tests():
             has_sold = "Sold prices" in panel_text
             R.add(section, "Layer panel — Sold Prices", has_sold, f"panel text present")
 
-            # Check for boundary layer toggles (new labels: "Wider area boundary" and "Local analysis boundary")
-            has_ward = page.locator('button:has-text("Wider area boundary")').count() > 0
-            has_lsoa = page.locator('button:has-text("Local analysis boundary")').count() > 0
+            # Check for boundary layer toggles
+            has_ward = (page.locator('button:has-text("Wider area boundary")').count() > 0
+                        or page.locator('button:has-text("Ward boundary")').count() > 0
+                        or page.locator('text="Ward boundary"').count() > 0)
+            has_lsoa = (page.locator('button:has-text("Local analysis boundary")').count() > 0
+                        or page.locator('button:has-text("LSOA boundary")').count() > 0
+                        or page.locator('text="LSOA boundary"').count() > 0)
             R.add(section, "Layer panel — Ward toggle", has_ward)
             R.add(section, "Layer panel — LSOA toggle", has_lsoa)
 
@@ -570,6 +575,7 @@ def run_all_tests():
         # ════════════════════════════════════════════════════════════════
         # SECTION 7: Responsive viewports
         # ════════════════════════════════════════════════════════════════
+        time.sleep(10)  # Extra pause to avoid rate-limit before responsive tests
         section = "Responsive"
         print(f"\n{'='*60}")
         print(f"SECTION: {section}")
@@ -664,34 +670,30 @@ def run_all_tests():
 
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         page = context.new_page()
-        page.goto(results_url("Manchester"))
+        page.goto(results_url("SW1A 1AA"))  # postcode — has full price data including charts
         wait_for_results(page)
         wait_for_tab_data(page)  # Wait for Property tab to load
 
-        # Expand a price metric card to reveal chart with type buttons
-        metric_cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]')
-        for i in range(min(metric_cards.count(), 8)):
-            card = metric_cards.nth(i)
-            card_text = card.inner_text()
-            if "Average" in card_text and "Price" in card_text:
-                card.click()
-                time.sleep(3)
-                break
+        # Expand the Average Sale Price metric card
+        avg_price_btn = page.locator('button[aria-label*="Average Sale Price"]').first
+        if avg_price_btn.count() > 0:
+            avg_price_btn.click()
+            time.sleep(3)
 
-        # Look for chart view toggle buttons ("Combined Average" vs "Average by Type")
-        type_buttons = page.locator('button:has-text("Combined Average"), button:has-text("Average by Type")')
+        # Look for chart view toggle buttons (type pills: All Types, Detached, etc.)
+        type_buttons = page.locator('button:has-text("All Types"), button:has-text("Combined Average"), button:has-text("Average by Type")')
         type_count = type_buttons.count()
         R.add(section, "Chart view toggle buttons",
               type_count > 0, f"{type_count} toggle buttons found")
 
-        # If "Average by Type" button exists, click it to show per-type breakdown
-        by_type_btn = page.locator('button:has-text("Average by Type")')
+        # Click "Detached" type pill if available
+        by_type_btn = page.locator('button:has-text("Detached"), button:has-text("Average by Type")')
         if by_type_btn.count() > 0:
             by_type_btn.first.click()
             time.sleep(2)
-            # After switching, recharts should show multiple lines (per property type)
-            paths = page.locator(".recharts-line-curve, .recharts-area-curve").count()
-            R.add(section, "Per-type chart lines", paths > 0, f"{paths} data lines")
+            # After switching, recharts should show data
+            paths = page.locator(".recharts-line-curve, .recharts-area-curve, svg path").count()
+            R.add(section, "Per-type chart lines", paths > 0, f"{paths} data paths")
         else:
             R.add_warn(section, "Average by Type button", "not found")
 

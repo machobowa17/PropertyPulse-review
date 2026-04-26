@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-22 (session 50)
+Last updated: 2026-04-25 (session 55)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -247,9 +247,9 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 |---|------|--------|-------|
 | P11 | Map scroll-follow logic — rethink UX | Pending | Buggy and confusing. Layers change as user scrolls/hovers but behaviour is unpredictable. Needs fundamental rethink. Audit across ALL 5 tabs. |
 | P12 | Distinct map icons per layer | Pending | All POI layers (schools, NHS, stations, etc.) use identical icons. Need unique icons for each layer type. |
-| P13 | Map layers showing nothing (parks, sports/rec) | Pending | Toggle activates but no markers appear. Investigate why and fix. |
-| P14 | Map concentric circles — add legend/explanation | Pending | Three concentric circles on map have no label or tooltip explaining what they represent. |
-| P15 | Metric vs map count mismatch | Pending | EV charger metric says 5, map shows 3. Universal audit: check consistency between metric values and map marker counts for ALL metrics across all tabs. |
+| P13 | Map layers showing nothing (parks, sports/rec) | **DONE** | Duplicate park/sports query block removed from Environment & Safety branch in area_map.py. Parks/sports correctly only served under Lifestyle tab. |
+| P14 | Map concentric circles — add legend/explanation | **DONE** | Walk rings legend added to MapLayerControl.tsx under Lifestyle & Connectivity tab — shows 5/10/15 min walk rings as dashed lines with distance labels. |
+| P15 | Metric vs map count mismatch | **DONE** | EV charger LIMIT raised from 20/30 → 200 in area_map.py for both postcode and area modes. |
 | P16 | Bus stops on map + in transport table | Partial (S48) | Bus stops now in station detail table with type toggle (rail/metro/tram/bus/ferry). Map layer icons still pending (P12). |
 | P17 | Median earnings choropleth on Governance tab | **DONE** | Moved choropleth_median_earnings to Property & Market. Also moved choropleth_housing_tenure, choropleth_housing_type. Removed dead choropleth layers (full_fibre, superfast_broadband, mobile_4g_indoor, mobile_5g_outdoor, wfh). |
 
@@ -257,7 +257,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| P18 | Price history chart tooltip position | Pending | When only "Combined average" filter selected, tooltip appears top-left of chart regardless of cursor position. Should follow cursor or appear near the data point. |
+| P18 | Price history chart tooltip position | **DONE** | Changed `allowEscapeViewBox={{ x: false, y: false }}` to `y: true` in DistrictPriceHistoryChart.tsx — tooltip can now escape chart bounds vertically. |
 | P19 | New build proportion — add "(last 12m)" to title | **DONE** | Title changed to "New Build Proportion (last 12m)" in tab_property.py. |
 | P20 | Hide blank metrics for inapplicable search types | **DONE** | Added `.filter((m) => m.local_value != null)` in ResultsMetricsPanel.tsx. Metrics with null local_value are now hidden. |
 | P21 | Remove EPC C+ metric (redundant) | **DONE** | Removed from tab_property.py, tab_environment.py, resultsConstants.ts, personalization.ts, personas.ts, tabs.ts, MetricCard.tsx METRIC_SOURCES. |
@@ -562,6 +562,81 @@ The address search would resolve to a specific UPRN (via D28-15), then fan out q
 5. **D28-11 Ground stability** — medium effort, high insurance/structural relevance
 6. **D28-13 Corporate ownership** — medium effort, investor/transparency interest
 7. **D28-12 Planning applications** — highest effort, highest long-term value
+
+---
+
+#### D31 — Add EPC coverage footnote to price_per_sqm metrics
+
+Metrics computed from EPC-matched data (price_per_sqm, price_per_sqft, floor area averages, LSOA avg ppsm/ppsft) currently report aggregates without disclosing what proportion of transactions contributed. E.g. if an LSOA has 100 transactions but only 60 have floor area, the "average price per sqm" is based on 60 — user has no idea.
+
+**Fix:** Add a quality_flag or footnote like "Based on N of M transactions with floor area data" to any metric derived from EPC-matched columns. Use the existing `quality_flags` system in `build_metric_contract()`.
+
+**Priority:** Medium. Coverage jumped from 42% → 81% with Hetzner matching (session 53), so the issue is less severe now, but still worth transparency.
+
+---
+
+#### D32 — P53 EPC Lookup: Show Current EPC + EPC at Time of Sale
+
+When a user searches by address (P53), they want to see **all** EPC data for that property — not just what the transaction-matching engine found. Two distinct use cases:
+
+1. **Current/most recent EPC certificate** — query `bronze.raw_epc_domestic` directly by address (or UPRN when available). This gives ~92% coverage since most properties have had at least one EPC, regardless of when they last sold. A property sold in 2005 (pre-EPC) almost certainly has a current EPC today.
+
+2. **EPC at time of each sale** — use the transaction-matching results from `silver.match_results` to show which EPC certificate was active when each sale occurred. This is what the matching engine already provides.
+
+**Key insight:** The matching engine (80.1% coverage, 12 rules) solves area-level aggregation (price_per_sqm averages across postcodes/LSOAs). But for address-level lookup, we bypass the matching engine entirely and query the EPC table directly — much simpler, much higher coverage.
+
+**Implementation approach:**
+- P53 address search resolves to a canonical address (or UPRN)
+- Query `bronze.raw_epc_domestic` for all certificates at that address, ordered by `lodgement_date DESC`
+- Show most recent certificate prominently (floor area, EPC rating, energy costs, recommendations)
+- Show historical certificates as timeline
+- Cross-reference with `silver.match_results` to link specific EPCs to specific sales
+
+**Priority:** Part of P53 (address-level search feature). Depends on D28 (per-property data sources).
+
+---
+
+#### D33 — NPD Workaround: Catchment Probability Model Without Pupil Data
+
+LocRating's most unique features (catchment heatmaps, feeder/destination school tracking, local school attendance) depend on the National Pupil Database (NPD) — restricted DfE data requiring a formal data sharing agreement. We can't access NPD (no formal entity yet).
+
+**Workaround — reconstruct ~80% of the insight from public signals:**
+
+Inputs we HAVE:
+- **LDO (Last Distance Offered)** — effective catchment radius (from LA websites)
+- **Admissions data** — applications, offers, oversubscription ratio (DfE EES, OGL)
+- **School capacity + pupil count** — from GIAS
+- **Geographic positions** — every school + every postcode/LSOA centroid
+- **School phase + type** — eligibility constraints (age, gender, faith)
+
+What we can DERIVE:
+1. **Catchment probability model**: For any postcode, compute probability of admission to each nearby school using distance/LDO ratio × oversubscription pressure × capacity utilisation. Pre-compute school→LSOA probability matrix (~500K rows).
+2. **Feeder school inference**: Find primary/secondary pairs whose LDO circles overlap. Weight by proximity and capacity ratio.
+3. **Neighbourhood school attendance estimate**: For each LSOA, identify overlapping school catchments and allocate proportionally by distance-decay.
+4. **Distribution of existing pupils**: Inverse — shade LSOAs within a school's catchment with intensity proportional to proximity.
+
+**Implementation**: `compute_catchment.py` on Hetzner. Pre-compute annually when LDO/admissions data refreshes. Store in `schools.catchment_model` table.
+
+**Priority:** Part of School Intelligence Module Phase 6. Depends on LDO data collection.
+
+---
+
+#### D34 — School Intelligence Module (Full Plan)
+
+Comprehensive school module matching/exceeding LocRating.com. Hosted on Hetzner, EC2 calls via API. Full plan at: `.claude/plans/mutable-nibbling-flurry.md`
+
+**13 database tables, 16 ETL scripts, FastAPI service on port 8082, SchoolTable + SchoolDetailPanel + SchoolComparison frontend components.**
+
+**7 implementation phases (~12-16 sessions total):**
+1. Data Foundation (GIAS, Ofsted history, KS2/KS4/KS5)
+2. School API + Rich SchoolTable
+3. Demographics, Workforce, Finances, Parent View
+4. Nurseries + Admissions + Independent Fees
+5. Shortlists + Comparison + League Tables
+6. Walking Routes + Catchment Model
+7. Polish + Academic Velocity + Heatmaps
+
+**Priority:** Major feature. Start after current Hetzner data platform work stabilises.
 
 ---
 

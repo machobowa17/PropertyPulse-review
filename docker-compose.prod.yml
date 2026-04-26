@@ -50,6 +50,8 @@ services:
       - ./etl/data:/app/etl_data
     environment:
       MOTIS_BASE_URL: ${MOTIS_BASE_URL:-http://128.140.103.160:8080}
+      PROPERTY_API_BASE_URL: ${PROPERTY_API_BASE_URL:-http://128.140.103.160:8082}
+      SCHOOLS_API_BASE_URL: ${SCHOOLS_API_BASE_URL:-http://128.140.103.160:8083}
     deploy:
       resources:
         limits:

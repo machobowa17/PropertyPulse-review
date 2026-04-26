@@ -586,6 +586,20 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
     return { soWhat: 'Limited secondaries', watchOut: 'Check coverage', colour: 'neutral' };
   }
 
+  // --- Nurseries ---
+  if (id === 'nurseries') {
+    if (val >= 10) {
+      if (persona === 'family') return { soWhat: 'Plenty of childcare', watchOut: 'Check availability', colour: 'green' };
+      return { soWhat: 'Good nursery provision', watchOut: 'None', colour: 'green' };
+    }
+    if (val >= 3) {
+      if (persona === 'family') return { soWhat: 'Some childcare options', watchOut: 'Book early', colour: 'amber' };
+      return { soWhat: 'Nurseries nearby', watchOut: 'Limited choice', colour: 'neutral' };
+    }
+    if (persona === 'family') return { soWhat: 'Few nurseries nearby', watchOut: 'Childcare shortage', colour: 'red' };
+    return { soWhat: 'Limited childcare', watchOut: 'Plan ahead', colour: 'neutral' };
+  }
+
   // --- IMD Deprivation ---
   if (id === 'deprivation') {
     if (isLower) {

@@ -1,6 +1,6 @@
 """Tab 4: Community & Education — Bible Part 4, Tab 4.
 Queries: core_census_lsoa (consolidated), core_census_ethnicity_ward, core_census_religion_ward,
-         core_schools, core_imd_lsoa, core_nhs_facilities.
+         Hetzner School API, core_imd_lsoa, core_nhs_facilities.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from sqlalchemy import text
 from app.services.helpers import metric
@@ -431,281 +431,88 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             },
         ))
 
-    # --- Schools (Bible: count Outstanding/Good within radius / in area) ---
-    if is_area:
-        # Area mode: schools within LSOA boundaries (containment-based)
-        primary = await db.execute(
-            text("""
-                SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
-                       COUNT(*) as total
-                FROM core_schools s
-                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
-                WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                  AND p.lsoa_code = ANY(:codes)
-            """),
-            {"codes": lsoa_codes},
-        )
-        prim_row = primary.mappings().first()
+    # --- Schools (from Hetzner School API) ---
+    try:
+        from etl_lib import schools_api
+    except ImportError:
+        schools_api = None
 
-        primary_list = await db.execute(
-            text("""
-                SELECT s.school_name, s.ofsted_rating, s.ks2_reading_pct, s.ks2_maths_pct
-                FROM core_schools s
-                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
-                WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                  AND p.lsoa_code = ANY(:codes)
-                ORDER BY s.school_name LIMIT 15
-            """),
-            {"codes": lsoa_codes},
-        )
-        prim_list = [
-            {
-                "name": r["school_name"],
-                "ofsted": r["ofsted_rating"],
-                "ks2_reading": _r(r["ks2_reading_pct"]),
-                "ks2_maths": _r(r["ks2_maths_pct"]),
-            }
-            for r in primary_list.mappings().all()
-        ]
+    if schools_api and lat is not None:
+        # Fetch all nearby schools from Hetzner API (all phases combined)
+        if is_area:
+            # For area mode, use lad_codes (more efficient than LSOA→postcode join)
+            area_lads = local_lads if local_lads else ([lad_code] if lad_code else [])
+            schools_data = schools_api.schools_by_lsoa(lad_codes=area_lads, lat=lat, lon=lon, limit=100)
+        else:
+            schools_data = schools_api.nearby_schools(lat, lon, radius_m=5000, limit=100)
 
-        primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
-        primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
+        # Also get quality summary
+        if is_area and lad_code:
+            summary_data = schools_api.quality_summary(lad_code=lad_code)
+        else:
+            summary_data = schools_api.quality_summary(lat=lat, lon=lon, radius_m=5000)
 
-        primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
-        primary_parent_quality = None
-        if primary_quality is not None:
-            primary_parent_quality_result = await db.execute(
-                text("""
-                    SELECT
-                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
-                        NULLIF(COUNT(*), 0) * 100 AS good_share
-                    FROM core_schools s
-                    WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                      AND s.lad_code = ANY(:parent_lads)
-                """),
-                {"parent_lads": parent_lads},
-            )
-            primary_parent_quality_row = primary_parent_quality_result.mappings().first()
-            primary_parent_quality = _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None
+        all_schools = (schools_data or {}).get("schools", [])
+        summary = summary_data or {}
 
-        metrics.append(metric(
-            "primary_schools", "Primary Schools",
-            primary_total,
-            None, "schools",
-            details={
-                "total_in_area": primary_total,
-                "good_count": primary_good_count,
-                "quality_pct": primary_quality,
-                "parent_quality_pct": primary_parent_quality,
-                "schools": prim_list,
-            },
-        ))
+        # Split by phase for metrics
+        for phase_key, phase_label, radius_label in [
+            ("Primary", "Primary Schools", "(1 mile)" if not is_area else ""),
+            ("Secondary", "Secondary Schools", "(3 miles)" if not is_area else ""),
+        ]:
+            phase_schools = [s for s in all_schools if s.get("phase") == phase_key]
+            phase_total = len(phase_schools)
+            phase_good = sum(1 for s in phase_schools if s.get("ofsted_rating") in (1, 2))
 
-        # Secondary: within LSOA boundaries
-        secondary = await db.execute(
-            text("""
-                SELECT COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good')) as good_count,
-                       COUNT(*) as total
-                FROM core_schools s
-                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
-                WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                  AND p.lsoa_code = ANY(:codes)
-            """),
-            {"codes": lsoa_codes},
-        )
-        sec_row = secondary.mappings().first()
+            phase_quality = _r(phase_good / phase_total * 100) if phase_total > 0 else None
 
-        secondary_list = await db.execute(
-            text("""
-                SELECT s.school_name, s.ofsted_rating, s.gcse_progress_8, s.gcse_attainment_8
-                FROM core_schools s
-                JOIN core_postcodes p ON p.postcode_compact = REPLACE(s.postcode, ' ', '')
-                WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                  AND p.lsoa_code = ANY(:codes)
-                ORDER BY s.school_name LIMIT 15
-            """),
-            {"codes": lsoa_codes},
-        )
-        sec_list = [
-            {
-                "name": r["school_name"],
-                "ofsted": r["ofsted_rating"],
-                "progress_8": _r(r["gcse_progress_8"]),
-                "attainment_8": _r(r["gcse_attainment_8"]),
-            }
-            for r in secondary_list.mappings().all()
-        ]
+            school_list = [
+                {
+                    "name": s.get("name", ""),
+                    "ofsted": {1: "Outstanding", 2: "Good", 3: "Requires Improvement", 4: "Inadequate"}.get(s.get("ofsted_rating"), "Not inspected"),
+                    "distance_m": s.get("distance_m"),
+                    "urn": s.get("urn"),
+                }
+                for s in phase_schools[:15]
+            ]
 
-        secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
-        secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
+            label = f"{phase_label} {radius_label}".strip()
+            metrics.append(metric(
+                f"{phase_key.lower()}_schools", label,
+                phase_total,
+                None, "schools",
+                details={
+                    "total_in_area": phase_total,
+                    "good_count": phase_good,
+                    "quality_pct": phase_quality,
+                    "schools": school_list,
+                    "all_schools": phase_schools,
+                    "summary": summary,
+                },
+            ))
 
-        secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
-        secondary_parent_quality = None
-        if secondary_quality is not None:
-            secondary_parent_quality_result = await db.execute(
-                text("""
-                    SELECT
-                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
-                        NULLIF(COUNT(*), 0) * 100 AS good_share
-                    FROM core_schools s
-                    WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                      AND s.lad_code = ANY(:parent_lads)
-                """),
-                {"parent_lads": parent_lads},
-            )
-            secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
-            secondary_parent_quality = _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None
+    # --- Nurseries & Childcare (from Hetzner School API) ---
+    if schools_api and lat is not None:
+        nurseries_data = schools_api.nearby_nurseries(lat, lon, radius_m=2000, limit=50)
+        nurs_summary = schools_api.nursery_summary(lat=lat, lon=lon, radius_m=2000)
 
-        metrics.append(metric(
-            "secondary_schools", "Secondary Schools",
-            secondary_total,
-            None, "schools",
-            details={
-                "total_in_area": secondary_total,
-                "good_count": secondary_good_count,
-                "quality_pct": secondary_quality,
-                "parent_quality_pct": secondary_parent_quality,
-                "schools": sec_list,
-            },
-        ))
+        all_nurseries = (nurseries_data or {}).get("nurseries", [])
+        nurs_total = len(all_nurseries)
+        nurs_good = sum(1 for n in all_nurseries if n.get("ofsted_rating") in ("Outstanding", "Good"))
 
-    elif lat is not None:
-        # Postcode mode: distance-based
-        # Primary: within 1 mile (1609m)
-        primary = await db.execute(
-            text("""
-                SELECT COUNT(*) FILTER (WHERE ofsted_rating IN ('Outstanding', 'Good')) as good_count,
-                       COUNT(*) as total
-                FROM core_schools
-                WHERE phase = 'Primary' AND is_open = TRUE
-                  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1609)
-            """),
-            {"lat": lat, "lon": lon},
-        )
-        prim_row = primary.mappings().first()
-
-        primary_list = await db.execute(
-            text("""
-                SELECT school_name, ofsted_rating, ks2_reading_pct, ks2_maths_pct,
-                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m
-                FROM core_schools
-                WHERE phase = 'Primary' AND is_open = TRUE
-                  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1609)
-                ORDER BY distance_m LIMIT 10
-            """),
-            {"lat": lat, "lon": lon},
-        )
-        prim_list = [
-            {
-                "name": r["school_name"],
-                "ofsted": r["ofsted_rating"],
-                "ks2_reading": _r(r["ks2_reading_pct"]),
-                "ks2_maths": _r(r["ks2_maths_pct"]),
-                "distance_m": round(float(r["distance_m"])),
-            }
-            for r in primary_list.mappings().all()
-        ]
-
-        primary_good_count = int(prim_row["good_count"]) if prim_row and prim_row["good_count"] is not None else 0
-        primary_total = int(prim_row["total"]) if prim_row and prim_row["total"] is not None else 0
-
-        primary_quality = _r(primary_good_count / primary_total * 100) if primary_total > 0 else None
-        primary_parent_quality = None
-        if primary_quality is not None:
-            primary_parent_quality_result = await db.execute(
-                text("""
-                    SELECT
-                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
-                        NULLIF(COUNT(*), 0) * 100 AS good_share
-                    FROM core_schools s
-                    WHERE s.phase = 'Primary' AND s.is_open = TRUE
-                      AND s.lad_code = ANY(:parent_lads)
-                """),
-                {"parent_lads": parent_lads},
-            )
-            primary_parent_quality_row = primary_parent_quality_result.mappings().first()
-            primary_parent_quality = _r(primary_parent_quality_row["good_share"]) if primary_parent_quality_row else None
-
-        metrics.append(metric(
-            "primary_schools", "Primary Schools (1 mile)",
-            primary_total,
-            None, "schools",
-            details={
-                "total_in_area": primary_total,
-                "good_count": primary_good_count,
-                "quality_pct": primary_quality,
-                "parent_quality_pct": primary_parent_quality,
-                "schools": prim_list,
-            },
-        ))
-
-        # Secondary: within 3 miles (4828m)
-        secondary = await db.execute(
-            text("""
-                SELECT COUNT(*) FILTER (WHERE ofsted_rating IN ('Outstanding', 'Good')) as good_count,
-                       COUNT(*) as total
-                FROM core_schools
-                WHERE phase = 'Secondary' AND is_open = TRUE
-                  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 4828)
-            """),
-            {"lat": lat, "lon": lon},
-        )
-        sec_row = secondary.mappings().first()
-
-        secondary_list = await db.execute(
-            text("""
-                SELECT school_name, ofsted_rating, gcse_progress_8, gcse_attainment_8,
-                       ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m
-                FROM core_schools
-                WHERE phase = 'Secondary' AND is_open = TRUE
-                  AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 4828)
-                ORDER BY distance_m LIMIT 10
-            """),
-            {"lat": lat, "lon": lon},
-        )
-        sec_list = [
-            {
-                "name": r["school_name"],
-                "ofsted": r["ofsted_rating"],
-                "progress_8": _r(r["gcse_progress_8"]),
-                "attainment_8": _r(r["gcse_attainment_8"]),
-                "distance_m": round(float(r["distance_m"])),
-            }
-            for r in secondary_list.mappings().all()
-        ]
-
-        secondary_good_count = int(sec_row["good_count"]) if sec_row and sec_row["good_count"] is not None else 0
-        secondary_total = int(sec_row["total"]) if sec_row and sec_row["total"] is not None else 0
-
-        secondary_quality = _r(secondary_good_count / secondary_total * 100) if secondary_total > 0 else None
-        secondary_parent_quality = None
-        if secondary_quality is not None:
-            secondary_parent_quality_result = await db.execute(
-                text("""
-                    SELECT
-                        COUNT(*) FILTER (WHERE s.ofsted_rating IN ('Outstanding', 'Good'))::float /
-                        NULLIF(COUNT(*), 0) * 100 AS good_share
-                    FROM core_schools s
-                    WHERE s.phase = 'Secondary' AND s.is_open = TRUE
-                      AND s.lad_code = ANY(:parent_lads)
-                """),
-                {"parent_lads": parent_lads},
-            )
-            secondary_parent_quality_row = secondary_parent_quality_result.mappings().first()
-            secondary_parent_quality = _r(secondary_parent_quality_row["good_share"]) if secondary_parent_quality_row else None
-
-        metrics.append(metric(
-            "secondary_schools", "Secondary Schools (3 miles)",
-            secondary_total,
-            None, "schools",
-            details={
-                "total_in_area": secondary_total,
-                "good_count": secondary_good_count,
-                "quality_pct": secondary_quality,
-                "parent_quality_pct": secondary_parent_quality,
-                "schools": sec_list,
-            },
-        ))
+        if nurs_total > 0:
+            metrics.append(metric(
+                "nurseries", "Nurseries & Childcare",
+                nurs_total,
+                None, "providers",
+                details={
+                    "total_providers": nurs_total,
+                    "good_count": nurs_good,
+                    "quality_pct": _r(nurs_good / nurs_total * 100) if nurs_total > 0 else None,
+                    "nurseries": all_nurseries,
+                    "nursery_summary": nurs_summary,
+                },
+            ))
 
     # --- IMD Deprivation ---
     imd_local = await db.execute(

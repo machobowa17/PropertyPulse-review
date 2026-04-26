@@ -93,6 +93,7 @@ export const METRIC_ICONS: Record<string, string> = {
   housing_type: 'LayoutGrid',
   primary_schools: 'GraduationCap',
   secondary_schools: 'School',
+  nurseries: 'Baby',
   deprivation: 'BarChart2',
   deprivation_income: 'BarChart2',
   deprivation_employment: 'BarChart2',

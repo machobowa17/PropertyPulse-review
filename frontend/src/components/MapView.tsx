@@ -36,6 +36,23 @@ const POI_COLOURS: Record<string, string> = {
   nhs_facility: '#dc2626',
   sold_price: '#0891b2',
 };
+const POI_ICONS: Record<string, string> = {
+  school: '🎓',
+  station: '🚆',
+  ev_charger: '⚡',
+  amenity: '🏪',
+  park: '🌳',
+  sports_recreation: '⚽',
+  nhs_facility: '🏥',
+};
+
+/** Ofsted-coded school marker colours: 1=Outstanding, 2=Good, 3=RI, 4=Inadequate */
+const OFSTED_MARKER_COLOURS: Record<number, string> = {
+  1: '#059669', // emerald-600 — Outstanding
+  2: '#2563eb', // blue-600 — Good
+  3: '#d97706', // amber-600 — Requires Improvement
+  4: '#dc2626', // red-600 — Inadequate
+};
 
 const PROPERTY_TYPE_COLOURS: Record<string, string> = {
   Detached: '#2563eb',
@@ -110,11 +127,11 @@ const CHOROPLETH_UNITS: Record<string, string> = {
 
 const POI_TABS = ['Property & Market', 'Community & Education', 'Lifestyle & Connectivity', 'Environment & Safety'];
 const ISOCHRONE_LAYERS = [
-  'iso-15-fill', 'iso-15-line',
-  'iso-10-fill', 'iso-10-line',
-  'iso-5-fill',  'iso-5-line',
+  'iso-15-fill', 'iso-15-line', 'iso-15-label',
+  'iso-10-fill', 'iso-10-line', 'iso-10-label',
+  'iso-5-fill',  'iso-5-line',  'iso-5-label',
 ] as const;
-const ISOCHRONE_SOURCES = ['iso-5', 'iso-10', 'iso-15'] as const;
+const ISOCHRONE_SOURCES = ['iso-5', 'iso-10', 'iso-15', 'iso-5-pt', 'iso-10-pt', 'iso-15-pt'] as const;
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -168,7 +185,7 @@ function formatLabel(value: string): string {
 
 function genericPoiPopupHtml(props: Record<string, unknown>): string {
   const detailRows = [
-    props.ofsted ? `Ofsted: ${esc(String(props.ofsted))}` : null,
+    props.ofsted ? `Ofsted: ${esc({1:'Outstanding',2:'Good',3:'Requires Improvement',4:'Inadequate'}[Number(props.ofsted)] ?? String(props.ofsted))}` : null,
     props.phase ? esc(String(props.phase)) : null,
     props.facility_type ? `Type: ${esc(formatLabel(String(props.facility_type)))}` : null,
     props.site_type ? `Type: ${esc(String(props.site_type))}` : null,
@@ -276,14 +293,18 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     ISOCHRONE_SOURCES.forEach((s) => { if (map.getSource(s)) map.removeSource(s); });
     if (tab !== 'Lifestyle & Connectivity') return;
     const rings = [
-      { id: 'iso-15', metres: 1250, colour: '#16a34a' },
-      { id: 'iso-10', metres: 833,  colour: '#ca8a04' },
-      { id: 'iso-5',  metres: 417,  colour: '#dc2626' },
+      { id: 'iso-15', metres: 1250, colour: '#16a34a', label: '15 min walk' },
+      { id: 'iso-10', metres: 833,  colour: '#ca8a04', label: '10 min walk' },
+      { id: 'iso-5',  metres: 417,  colour: '#dc2626', label: '5 min walk' },
     ];
-    rings.forEach(({ id, metres, colour }) => {
+    rings.forEach(({ id, metres, colour, label }) => {
       map.addSource(id, { type: 'geojson', data: createCircle(lonVal, latVal, metres) });
       map.addLayer({ id: `${id}-fill`, type: 'fill', source: id, paint: { 'fill-color': colour, 'fill-opacity': 0.05 } });
       map.addLayer({ id: `${id}-line`, type: 'line', source: id, paint: { 'line-color': colour, 'line-width': 1.5, 'line-dasharray': [4, 3], 'line-opacity': 0.7 } });
+      // Label at the east point of the circle
+      const dLon = (metres / 1000) / (111.32 * Math.cos((latVal * Math.PI) / 180));
+      map.addSource(`${id}-pt`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lonVal + dLon, latVal] } } });
+      map.addLayer({ id: `${id}-label`, type: 'symbol', source: `${id}-pt`, layout: { 'text-field': label, 'text-size': 11, 'text-anchor': 'left', 'text-offset': [0.5, 0] }, paint: { 'text-color': colour, 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
     });
   }, []);
 
@@ -553,18 +574,26 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         renderSoldPriceMarkers(map);
       }
 
-      // Render other POI markers (schools, stations, EV chargers)
+      // Render other POI markers with distinct icons per category
       for (const feature of otherPointFeatures) {
         const coords = (feature.geometry as GeoJSON.Point).coordinates;
         if (!coords || coords.length < 2 || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
         const [lng, lt] = coords as [number, number];
         const props = feature.properties || {};
 
-        const colour = POI_COLOURS[props.category] || '#6b7280';
-        const marker = new maplibregl.Marker({ color: colour, scale: 0.7 })
+        const isSchool = props.category === 'school';
+        const ofstedNum = isSchool ? Number(props.ofsted) : NaN;
+        const colour = isSchool && OFSTED_MARKER_COLOURS[ofstedNum]
+          ? OFSTED_MARKER_COLOURS[ofstedNum]
+          : POI_COLOURS[props.category] || '#6b7280';
+        const icon = POI_ICONS[props.category] || '●';
+        const el = document.createElement('div');
+        el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${colour};color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.4);border:2px solid #fff;`;
+        el.textContent = icon;
+        const marker = new maplibregl.Marker({ element: el })
           .setLngLat([lng, lt])
           .setPopup(
-            new maplibregl.Popup({ offset: 20, maxWidth: '200px' }).setHTML(
+            new maplibregl.Popup({ offset: 14, maxWidth: '200px' }).setHTML(
               genericPoiPopupHtml(props),
             ),
           )

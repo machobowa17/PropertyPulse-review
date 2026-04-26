@@ -496,7 +496,7 @@ export default function DistrictPriceHistoryChart({
             <Tooltip
               content={<CustomTooltip activeKey={activeKey} mode={mode} fmtGBP={fmtGBP} />}
               cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }}
-              allowEscapeViewBox={{ x: false, y: false }}
+              allowEscapeViewBox={{ x: false, y: true }}
               isAnimationActive={false}
               offset={16}
             />

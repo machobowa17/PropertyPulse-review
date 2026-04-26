@@ -1,15 +1,36 @@
 """Property & Market tab service.
 
-Headline prices and price-per-sqft come from raw Land Registry transactions.
-Parent comparison prices come from the pre-computed rolling parent view.
+Headline prices and price-per-sqft come from the Hetzner Property API which
+queries the gold table (PPD + EPC matched data).
+Parent comparison prices come from the pre-computed rolling parent view on EC2.
 Rental and earnings context remain LAD-level only.
-Housing-stock context is pulled from Census and EPC LSOA aggregates rather than
-from the currently empty bedroom-price table.
+Housing-stock context is pulled from Census and EPC LSOA aggregates on EC2.
 """
+import logging
+
 from sqlalchemy import text
 
 from app.constants import PRICE_TYPES, VOA_LAD_REMAP
 from app.services.helpers import metric
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Property API client (Hetzner)
+# ---------------------------------------------------------------------------
+# Import lazily to avoid circular imports and allow graceful fallback
+_property_api = None
+
+
+def _get_property_api():
+    global _property_api
+    if _property_api is None:
+        try:
+            from etl_lib import property_api
+            _property_api = property_api
+        except ImportError:
+            logger.warning("property_api module not available — will fall back to local DB")
+    return _property_api
 
 
 async def fetch_property_market(
@@ -36,35 +57,61 @@ async def fetch_property_market(
     is_lad_or_coarser = boundary_source in ("lad", "county")
     price_types = list(PRICE_TYPES)
 
-    if is_lad_or_coarser:
-        local_txn_filter = "t.lad_code = ANY(:local_lads)"
-        local_txn_filter_plain = "lad_code = ANY(:local_lads)"
-        local_txn_params = {"local_lads": local_lads, "price_types": price_types}
+    # ------------------------------------------------------------------
+    # Resolve LSOA codes for the Hetzner API
+    # For LAD/county searches, resolve lad_codes → lsoa_codes
+    # For postcode/ward searches, lsoa_codes are already provided
+    # ------------------------------------------------------------------
+    api_lsoa_codes = list(lsoa_codes) if lsoa_codes else []
+
+    if is_lad_or_coarser and local_lads:
+        # Resolve LAD codes to LSOA codes for the API
+        lsoa_result = await db.execute(
+            text("SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)"),
+            {"lads": local_lads},
+        )
+        api_lsoa_codes = [row["lsoa_code"] for row in lsoa_result.mappings().all()]
+
+    # ------------------------------------------------------------------
+    # Call Hetzner Property API for all transaction-based aggregations
+    # ------------------------------------------------------------------
+    prop_api = _get_property_api()
+    api_data = None
+    if prop_api and api_lsoa_codes:
+        api_data = prop_api.aggregate_transactions(api_lsoa_codes, price_types)
+        if api_data is None:
+            logger.warning("Property API returned None — no transaction data available")
+
+    # ------------------------------------------------------------------
+    # Extract local transaction aggregations from API response
+    # ------------------------------------------------------------------
+    if api_data:
+        core = api_data.get("core_recent") or {}
+        by_type_rows = api_data.get("by_type") or []
+        ppsm_data = api_data.get("ppsm") or {}
+        prior_data = api_data.get("prior_avg") or {}
+        prior_txn_data = api_data.get("prior_txn") or {}
+        nb_trend_data = api_data.get("nb_trend") or []
+        price_trend_data = api_data.get("price_trend") or []
+        spread_data = api_data.get("price_spread") or {}
     else:
-        local_txn_filter = "t.lsoa_code = ANY(:lsoa_codes)"
-        local_txn_filter_plain = "lsoa_code = ANY(:lsoa_codes)"
-        local_txn_params = {"lsoa_codes": lsoa_codes, "price_types": price_types}
+        core = {}
+        by_type_rows = []
+        ppsm_data = {}
+        prior_data = {}
+        prior_txn_data = {}
+        nb_trend_data = []
+        price_trend_data = []
+        spread_data = {}
 
     # ------------------------------------------------------------------
-    # Core recent sales prices
+    # Core recent sales prices (from API)
     # ------------------------------------------------------------------
-    raw_local = await db.execute(
-        text(
-            f"""
-            SELECT
-                AVG(t.price) AS avg_price,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY t.price) AS median_price,
-                AVG(t.price::numeric / NULLIF(t.floor_area_sqm::numeric * 10.7639, 0)) AS avg_ppsf
-            FROM core_property_transactions t
-            WHERE {local_txn_filter}
-              AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-              AND t.property_type = ANY(:price_types)
-            """
-        ),
-        local_txn_params,
-    )
-    raw_local_row = raw_local.mappings().first()
+    raw_local_avg = float(core["avg_price"]) if core.get("avg_price") is not None else None
+    raw_local_median = float(core["median_price"]) if core.get("median_price") is not None else None
+    raw_local_ppsf = float(core["avg_ppsf"]) if core.get("avg_ppsf") is not None else None
 
+    # Parent comparison from pre-computed materialized view (stays on EC2)
     if parent_lads:
         raw_parent = await db.execute(
             text(
@@ -81,37 +128,40 @@ async def fetch_property_market(
     else:
         raw_parent_row = None
 
-    raw_local_avg = float(raw_local_row["avg_price"]) if raw_local_row and raw_local_row["avg_price"] is not None else None
-    raw_local_median = float(raw_local_row["median_price"]) if raw_local_row and raw_local_row["median_price"] is not None else None
-    raw_local_ppsf = float(raw_local_row["avg_ppsf"]) if raw_local_row and raw_local_row["avg_ppsf"] is not None else None
     raw_parent_avg = float(raw_parent_row["avg_price"]) if raw_parent_row and raw_parent_row["avg_price"] is not None else None
     raw_parent_median = float(raw_parent_row["median_price"]) if raw_parent_row and raw_parent_row["median_price"] is not None else None
     raw_parent_ppsf = float(raw_parent_row["avg_ppsf"]) if raw_parent_row and raw_parent_row["avg_ppsf"] is not None else None
 
-    local_prices = await db.execute(
-        text(
-            f"""
-            SELECT
-                property_type,
-                ROUND(AVG(price)::numeric, 2) AS avg_price,
-                ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::numeric, 2) AS median_price,
-                COUNT(*) AS transaction_count,
-                COUNT(*) FILTER (WHERE old_new = 'Y') AS new_build_count,
-                COUNT(*) FILTER (WHERE duration = 'F') AS freehold_count,
-                COUNT(*) FILTER (WHERE duration = 'L') AS leasehold_count,
-                ROUND((AVG(price) FILTER (WHERE duration = 'F'))::numeric, 2) AS avg_freehold_price,
-                ROUND((AVG(price) FILTER (WHERE duration = 'L'))::numeric, 2) AS avg_leasehold_price
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-              AND property_type = ANY(:price_types)
-            GROUP BY property_type
-            """
-        ),
-        local_txn_params,
-    )
-    local_rows = local_prices.mappings().all()
+    # Process by-type rows from API
+    local_by_type = {}
+    local_median_by_type = {}
+    local_rows = by_type_rows  # alias for readability
+    for row in local_rows:
+        property_type = row.get("property_type", "")
+        if property_type in PRICE_TYPES:
+            local_by_type[property_type] = float(row["avg_price"]) if row.get("avg_price") else None
+            local_median_by_type[property_type] = float(row["median_price"]) if row.get("median_price") else None
 
+    local_avg = raw_local_avg or _wavg(
+        [float(row["avg_price"]) for row in local_rows if row.get("avg_price") and row.get("property_type") in PRICE_TYPES],
+        [int(row["transaction_count"]) for row in local_rows if row.get("avg_price") and row.get("property_type") in PRICE_TYPES],
+    )
+    local_median = raw_local_median or _wavg(
+        [float(row["median_price"]) for row in local_rows if row.get("median_price") and row.get("property_type") in PRICE_TYPES],
+        [int(row["transaction_count"]) for row in local_rows if row.get("median_price") and row.get("property_type") in PRICE_TYPES],
+    )
+    local_txn_raw = sum(
+        int(row["transaction_count"])
+        for row in local_rows
+        if row.get("transaction_count") and row.get("property_type") in PRICE_TYPES
+    )
+    local_lsoa_count = len(lsoa_codes) if lsoa_codes else 1
+    local_txn = round(local_txn_raw / local_lsoa_count, 1) if local_txn_raw else 0
+    local_newbuild = sum(int(row["new_build_count"]) for row in local_rows if row.get("new_build_count") and row.get("property_type") in PRICE_TYPES)
+    local_freehold = sum(int(row["freehold_count"]) for row in local_rows if row.get("freehold_count"))
+    local_leasehold = sum(int(row["leasehold_count"]) for row in local_rows if row.get("leasehold_count"))
+
+    # Parent by-type from materialized view (stays on EC2)
     parent_prices = await db.execute(
         text(
             """
@@ -127,33 +177,6 @@ async def fetch_property_market(
         {"parent_name": parent_name},
     )
     parent_rows = parent_prices.mappings().all()
-
-    local_by_type = {}
-    local_median_by_type = {}
-    for row in local_rows:
-        property_type = row["property_type"]
-        if property_type in PRICE_TYPES:
-            local_by_type[property_type] = float(row["avg_price"]) if row["avg_price"] else None
-            local_median_by_type[property_type] = float(row["median_price"]) if row["median_price"] else None
-
-    local_avg = raw_local_avg or _wavg(
-        [float(row["avg_price"]) for row in local_rows if row["avg_price"] and row["property_type"] in PRICE_TYPES],
-        [int(row["transaction_count"]) for row in local_rows if row["avg_price"] and row["property_type"] in PRICE_TYPES],
-    )
-    local_median = raw_local_median or _wavg(
-        [float(row["median_price"]) for row in local_rows if row["median_price"] and row["property_type"] in PRICE_TYPES],
-        [int(row["transaction_count"]) for row in local_rows if row["median_price"] and row["property_type"] in PRICE_TYPES],
-    )
-    local_txn_raw = sum(
-        int(row["transaction_count"])
-        for row in local_rows
-        if row["transaction_count"] and row["property_type"] in PRICE_TYPES
-    )
-    local_lsoa_count = len(lsoa_codes) if lsoa_codes else 1
-    local_txn = round(local_txn_raw / local_lsoa_count, 1) if local_txn_raw else 0
-    local_newbuild = sum(int(row["new_build_count"]) for row in local_rows if row["new_build_count"] and row["property_type"] in PRICE_TYPES)
-    local_freehold = sum(int(row["freehold_count"]) for row in local_rows if row["freehold_count"])
-    local_leasehold = sum(int(row["leasehold_count"]) for row in local_rows if row["leasehold_count"])
 
     parent_avg = raw_parent_avg or _wavg(
         [float(row["avg_price"]) for row in parent_rows if row["avg_price"] and row["property_type"] in PRICE_TYPES],
@@ -174,7 +197,7 @@ async def fetch_property_market(
     parent_txn = round(parent_txn_total / parent_lsoa_count, 1) if parent_lsoa_count > 0 else None
 
     # ------------------------------------------------------------------
-    # Housing-stock context from Census 2021
+    # Housing-stock context from Census 2021 (stays on EC2)
     # ------------------------------------------------------------------
     stock_local = await db.execute(
         text(
@@ -220,9 +243,6 @@ async def fetch_property_market(
     details_by_type = {type_names.get(key, key): _round(value) for key, value in local_by_type.items() if key in type_names}
     median_details_by_type = {type_names.get(key, key): _round(value) for key, value in local_median_by_type.items() if key in type_names}
 
-    # Keep the legacy `uk_median` detail key for frontend compatibility, but source
-    # the benchmark from the precomputed rolling parent view instead of scanning the
-    # full transactions table during every request.
     uk_median_result = await db.execute(
         text(
             """
@@ -239,21 +259,8 @@ async def fetch_property_market(
     if uk_median is None and raw_parent_avg is not None:
         uk_median = _round(raw_parent_avg)
 
-    prior_result = await db.execute(
-        text(
-            f"""
-            SELECT ROUND(AVG(price), 2) AS avg_price
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND property_type = ANY(:price_types)
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '25 months'
-              AND date_of_transfer < CURRENT_DATE - INTERVAL '13 months'
-            """
-        ),
-        local_txn_params,
-    )
-    prior_row = prior_result.mappings().first()
-    prior_avg_price = float(prior_row["avg_price"]) if prior_row and prior_row["avg_price"] else None
+    # Prior period avg price (from API)
+    prior_avg_price = float(prior_data["avg_price"]) if prior_data.get("avg_price") is not None else None
 
     price_trend = None
     if local_avg and prior_avg_price and prior_avg_price > 0:
@@ -298,27 +305,9 @@ async def fetch_property_market(
     )
 
     # ------------------------------------------------------------------
-    # Price per sqft
+    # Price per sqft (from API)
     # ------------------------------------------------------------------
-    ppsm_local = await db.execute(
-        text(
-            f"""
-            SELECT
-                AVG(price::numeric / NULLIF(floor_area_sqm::numeric, 0)) AS avg_price_per_sqm,
-                AVG(CASE WHEN property_type = 'D' THEN price::numeric / NULLIF(floor_area_sqm::numeric, 0) END) AS avg_ppsm_detached,
-                AVG(CASE WHEN property_type = 'S' THEN price::numeric / NULLIF(floor_area_sqm::numeric, 0) END) AS avg_ppsm_semi,
-                AVG(CASE WHEN property_type = 'T' THEN price::numeric / NULLIF(floor_area_sqm::numeric, 0) END) AS avg_ppsm_terraced,
-                AVG(CASE WHEN property_type = 'F' THEN price::numeric / NULLIF(floor_area_sqm::numeric, 0) END) AS avg_ppsm_flat
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND floor_area_sqm > 0
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '25 months'
-              AND property_type = ANY(:price_types)
-            """
-        ),
-        local_txn_params,
-    )
-    ppsm_row = ppsm_local.mappings().first()
+    ppsm_row = ppsm_data
 
     ppsm_parent = await db.execute(
         text(
@@ -336,7 +325,7 @@ async def fetch_property_market(
 
     local_ppsf_headline = round(raw_local_ppsf, 0) if raw_local_ppsf is not None else None
     parent_ppsf_headline = round(raw_parent_ppsf, 0) if raw_parent_ppsf is not None else None
-    if local_ppsf_headline is None and ppsm_row and ppsm_row["avg_price_per_sqm"]:
+    if local_ppsf_headline is None and ppsm_row.get("avg_price_per_sqm"):
         local_ppsf_headline = round(float(ppsm_row["avg_price_per_sqm"]) / 10.7639, 0)
     if parent_ppsf_headline is None and ppsm_parent_row and ppsm_parent_row["avg_ppsm"]:
         parent_ppsf_headline = round(float(ppsm_parent_row["avg_ppsm"]) / 10.7639, 0)
@@ -350,37 +339,21 @@ async def fetch_property_market(
                 parent_ppsf_headline,
                 "GBP/sqft",
                 details={
-                    "detached": round(float(ppsm_row["avg_ppsm_detached"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_detached"] else None,
-                    "semi": round(float(ppsm_row["avg_ppsm_semi"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_semi"] else None,
-                    "terraced": round(float(ppsm_row["avg_ppsm_terraced"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_terraced"] else None,
-                    "flat": round(float(ppsm_row["avg_ppsm_flat"]) / 10.7639, 0) if ppsm_row and ppsm_row["avg_ppsm_flat"] else None,
+                    "detached": round(float(ppsm_row["avg_ppsm_detached"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_detached") else None,
+                    "semi": round(float(ppsm_row["avg_ppsm_semi"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_semi") else None,
+                    "terraced": round(float(ppsm_row["avg_ppsm_terraced"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_terraced") else None,
+                    "flat": round(float(ppsm_row["avg_ppsm_flat"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_flat") else None,
                 },
             )
         )
 
     # ------------------------------------------------------------------
-    # Market activity
+    # Market activity (from API)
     # ------------------------------------------------------------------
     txn_yoy = None
-    prior_txn = None
-    if local_txn:
-        prior_txn_result = await db.execute(
-            text(
-                f"""
-                SELECT COUNT(*) AS txn
-                FROM core_property_transactions
-                WHERE {local_txn_filter_plain}
-                  AND property_type = ANY(:price_types)
-                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '25 months'
-                  AND date_of_transfer < CURRENT_DATE - INTERVAL '13 months'
-                """
-            ),
-            local_txn_params,
-        )
-        prior_txn_row = prior_txn_result.mappings().first()
-        prior_txn_raw = int(prior_txn_row["txn"]) if prior_txn_row and prior_txn_row["txn"] else None
-        if prior_txn_raw and prior_txn_raw > 0:
-            txn_yoy = round((local_txn_raw - prior_txn_raw) / prior_txn_raw * 100, 1)
+    prior_txn_raw = int(prior_txn_data["txn"]) if prior_txn_data.get("txn") else None
+    if local_txn and prior_txn_raw and prior_txn_raw > 0:
+        txn_yoy = round((local_txn_raw - prior_txn_raw) / prior_txn_raw * 100, 1)
 
     txn_details = {
         "local_absolute": local_txn_raw or None,
@@ -406,45 +379,71 @@ async def fetch_property_market(
     freehold_pct = round(local_freehold / total_tenure * 100, 1) if total_tenure > 0 else None
     leasehold_pct = round(local_leasehold / total_tenure * 100, 1) if total_tenure > 0 else None
 
+    # Parent tenure — use Hetzner API if available, otherwise fall back to EC2
     parent_freehold_pct = None
     parent_leasehold_pct = None
+    parent_nb_data = None
     if parent_lads:
-        parent_tenure_result = await db.execute(
-            text(
-                """
-                SELECT COUNT(*) FILTER (WHERE duration = 'F') AS fh,
-                       COUNT(*) FILTER (WHERE duration = 'L') AS lh
-                FROM core_property_transactions
-                WHERE lad_code = ANY(:lads)
-                  AND property_type = ANY(:price_types)
-                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                """
-            ),
-            {"lads": parent_lads, "price_types": price_types},
+        # Resolve parent LADs to LSOA codes for the API call
+        parent_lsoa_result = await db.execute(
+            text("SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)"),
+            {"lads": parent_lads},
         )
-        parent_tenure_row = parent_tenure_result.mappings().first()
-        if parent_tenure_row:
-            parent_tenure_total = int(parent_tenure_row["fh"] or 0) + int(parent_tenure_row["lh"] or 0)
+        parent_lsoa_codes = [row["lsoa_code"] for row in parent_lsoa_result.mappings().all()]
+
+        parent_tenure_data = None
+        if prop_api and parent_lsoa_codes:
+            parent_agg = prop_api.parent_aggregate_transactions(parent_lsoa_codes, price_types)
+            if parent_agg:
+                parent_tenure_data = parent_agg.get("tenure")
+
+        if parent_tenure_data:
+            parent_fh = int(parent_tenure_data.get("fh") or 0)
+            parent_lh = int(parent_tenure_data.get("lh") or 0)
+            parent_tenure_total = parent_fh + parent_lh
             if parent_tenure_total > 0:
-                parent_freehold_pct = round(int(parent_tenure_row["fh"]) / parent_tenure_total * 100, 1)
-                parent_leasehold_pct = round(int(parent_tenure_row["lh"]) / parent_tenure_total * 100, 1)
+                parent_freehold_pct = round(parent_fh / parent_tenure_total * 100, 1)
+                parent_leasehold_pct = round(parent_lh / parent_tenure_total * 100, 1)
+
+            # Also get parent newbuild from same API call
+            parent_nb_data = parent_agg.get("newbuild") if parent_agg else None
+        else:
+            # Fallback: query EC2 local DB
+            parent_tenure_result = await db.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FILTER (WHERE duration = 'F') AS fh,
+                           COUNT(*) FILTER (WHERE duration = 'L') AS lh
+                    FROM core_property_transactions
+                    WHERE lad_code = ANY(:lads)
+                      AND property_type = ANY(:price_types)
+                      AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    """
+                ),
+                {"lads": parent_lads, "price_types": price_types},
+            )
+            parent_tenure_row = parent_tenure_result.mappings().first()
+            if parent_tenure_row:
+                parent_tenure_total = int(parent_tenure_row["fh"] or 0) + int(parent_tenure_row["lh"] or 0)
+                if parent_tenure_total > 0:
+                    parent_freehold_pct = round(int(parent_tenure_row["fh"]) / parent_tenure_total * 100, 1)
+                    parent_leasehold_pct = round(int(parent_tenure_row["lh"]) / parent_tenure_total * 100, 1)
+            parent_nb_data = None
 
     local_fh_price = _wavg(
-        [float(row["avg_freehold_price"]) for row in local_rows if row["avg_freehold_price"] and row["property_type"] in PRICE_TYPES],
-        [int(row["freehold_count"]) for row in local_rows if row["avg_freehold_price"] and row["property_type"] in PRICE_TYPES],
+        [float(row["avg_freehold_price"]) for row in local_rows if row.get("avg_freehold_price") and row.get("property_type") in PRICE_TYPES],
+        [int(row["freehold_count"]) for row in local_rows if row.get("avg_freehold_price") and row.get("property_type") in PRICE_TYPES],
     )
     local_lh_price = _wavg(
-        [float(row["avg_leasehold_price"]) for row in local_rows if row["avg_leasehold_price"] and row["property_type"] in PRICE_TYPES],
-        [int(row["leasehold_count"]) for row in local_rows if row["avg_leasehold_price"] and row["property_type"] in PRICE_TYPES],
+        [float(row["avg_leasehold_price"]) for row in local_rows if row.get("avg_leasehold_price") and row.get("property_type") in PRICE_TYPES],
+        [int(row["leasehold_count"]) for row in local_rows if row.get("avg_leasehold_price") and row.get("property_type") in PRICE_TYPES],
     )
 
-    # Build breakdown for table rendering
     fl_breakdown = [
         {"label": "Freehold", "count": local_freehold, "pct": freehold_pct, "parent_pct": parent_freehold_pct, "avg_price": _round(local_fh_price)},
         {"label": "Leasehold", "count": local_leasehold, "pct": leasehold_pct, "parent_pct": parent_leasehold_pct, "avg_price": _round(local_lh_price)},
     ]
 
-    # Dynamic headline: pick dominant type, parent comparison is SAME type
     if (freehold_pct or 0) >= (leasehold_pct or 0):
         fl_headline_value = freehold_pct
         fl_headline_parent = parent_freehold_pct
@@ -454,7 +453,6 @@ async def fetch_property_market(
         fl_headline_parent = parent_leasehold_pct
         fl_headline_unit = "% leasehold"
 
-    # D10: Freehold premium ratio
     freehold_premium = None
     if local_fh_price and local_lh_price and local_lh_price > 0:
         freehold_premium = round(local_fh_price / local_lh_price, 2)
@@ -477,26 +475,14 @@ async def fetch_property_market(
         )
     )
 
-    nb_trend_result = await db.execute(
-        text(
-            f"""
-            SELECT EXTRACT(YEAR FROM date_of_transfer)::int AS yr,
-                   COUNT(*) FILTER (WHERE old_new = 'Y') AS nb,
-                   COUNT(*) AS txn
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND property_type = ANY(:price_types)
-            GROUP BY yr
-            ORDER BY yr
-            """
-        ),
-        local_txn_params,
-    )
+    # ------------------------------------------------------------------
+    # New build proportion (from API)
+    # ------------------------------------------------------------------
     nb_trend = []
-    for row in nb_trend_result.mappings().all():
-        if row["txn"] and int(row["txn"]) > 0 and row["nb"] is not None:
-            nb_count = int(row["nb"])
-            txn_count = int(row["txn"])
+    for row in nb_trend_data:
+        txn_count = int(row.get("txn", 0))
+        nb_count = int(row.get("nb", 0))
+        if txn_count > 0:
             nb_trend.append(
                 {
                     "year": int(row["yr"]),
@@ -508,22 +494,30 @@ async def fetch_property_market(
 
     parent_newbuild_pct = None
     if parent_lads:
-        parent_nb_result = await db.execute(
-            text(
-                """
-                SELECT COUNT(*) FILTER (WHERE old_new = 'Y') AS nb,
-                       COUNT(*) AS txn
-                FROM core_property_transactions
-                WHERE lad_code = ANY(:lads)
-                  AND property_type = ANY(:price_types)
-                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                """
-            ),
-            {"lads": parent_lads, "price_types": price_types},
-        )
-        parent_nb_row = parent_nb_result.mappings().first()
-        if parent_nb_row and parent_nb_row["txn"] and int(parent_nb_row["txn"]) > 0:
-            parent_newbuild_pct = round(int(parent_nb_row["nb"]) / int(parent_nb_row["txn"]) * 100, 1)
+        # Try to use data from parent_aggregate API call if available
+        if parent_nb_data:
+            p_nb = int(parent_nb_data.get("nb") or 0)
+            p_txn = int(parent_nb_data.get("txn") or 0)
+            if p_txn > 0:
+                parent_newbuild_pct = round(p_nb / p_txn * 100, 1)
+        else:
+            # Fallback: query EC2 local DB
+            parent_nb_result = await db.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FILTER (WHERE old_new = 'Y') AS nb,
+                           COUNT(*) AS txn
+                    FROM core_property_transactions
+                    WHERE lad_code = ANY(:lads)
+                      AND property_type = ANY(:price_types)
+                      AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                    """
+                ),
+                {"lads": parent_lads, "price_types": price_types},
+            )
+            parent_nb_row = parent_nb_result.mappings().first()
+            if parent_nb_row and parent_nb_row["txn"] and int(parent_nb_row["txn"]) > 0:
+                parent_newbuild_pct = round(int(parent_nb_row["nb"]) / int(parent_nb_row["txn"]) * 100, 1)
 
     newbuild_pct = round(local_newbuild / local_txn_raw * 100, 1) if local_txn_raw else None
     metrics.append(
@@ -541,54 +535,32 @@ async def fetch_property_market(
     )
 
     # ------------------------------------------------------------------
-    # Price trend (year-on-year) — from raw transactions at search-key level
+    # Price trend (year-on-year) — from API
     # ------------------------------------------------------------------
     local_price_yoy = None   # used later by investment_grade
     parent_price_yoy = None
-    trend_series_result = await db.execute(
-        text(
-            f"""
-            SELECT EXTRACT(YEAR FROM date_of_transfer)::int AS year,
-                   ROUND(AVG(price))::int AS avg_price,
-                   COUNT(*) AS txn_count,
-                   ROUND(AVG(CASE WHEN property_type = 'D' THEN price END))::int AS detached,
-                   ROUND(AVG(CASE WHEN property_type = 'S' THEN price END))::int AS semi,
-                   ROUND(AVG(CASE WHEN property_type = 'T' THEN price END))::int AS terraced,
-                   ROUND(AVG(CASE WHEN property_type = 'F' THEN price END))::int AS flat
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND property_type = ANY(:price_types)
-              AND date_of_transfer >= '2010-01-01'
-            GROUP BY 1
-            ORDER BY 1
-            """
-        ),
-        local_txn_params,
-    )
-    trend_rows = trend_series_result.mappings().all()
+    trend_rows = price_trend_data
 
     if len(trend_rows) >= 2:
-        # Build series with YoY % computed from avg prices
         trend_series = []
         for i, r in enumerate(trend_rows):
-            avg = int(r["avg_price"]) if r["avg_price"] else None
-            prev_avg = int(trend_rows[i - 1]["avg_price"]) if i > 0 and trend_rows[i - 1]["avg_price"] else None
+            avg = int(r["avg_price"]) if r.get("avg_price") else None
+            prev_avg = int(trend_rows[i - 1]["avg_price"]) if i > 0 and trend_rows[i - 1].get("avg_price") else None
             yoy = round((avg - prev_avg) / prev_avg * 100, 1) if avg and prev_avg and prev_avg > 0 else None
             trend_series.append({
                 "year": int(r["year"]),
                 "avg_price": avg,
                 "yoy_pct": yoy,
-                "detached": int(r["detached"]) if r["detached"] else None,
-                "semi": int(r["semi"]) if r["semi"] else None,
-                "terraced": int(r["terraced"]) if r["terraced"] else None,
-                "flat": int(r["flat"]) if r["flat"] else None,
+                "detached": int(r["detached"]) if r.get("detached") else None,
+                "semi": int(r["semi"]) if r.get("semi") else None,
+                "terraced": int(r["terraced"]) if r.get("terraced") else None,
+                "flat": int(r["flat"]) if r.get("flat") else None,
             })
 
-        # Headline: latest year's YoY %
         latest_yoy = trend_series[-1]["yoy_pct"]
-        local_price_yoy = latest_yoy  # for investment_grade later
+        local_price_yoy = latest_yoy
 
-        # Parent YoY from pre-computed materialized view
+        # Parent YoY from pre-computed materialized view (stays on EC2)
         parent_yoy = None
         if parent_lads:
             parent_trend_result = await db.execute(
@@ -610,7 +582,7 @@ async def fetch_property_market(
                 prev_p = float(parent_rows_yoy[1]["avg_price"]) if parent_rows_yoy[1]["avg_price"] else None
                 if cur_p and prev_p and prev_p > 0:
                     parent_yoy = round((cur_p - prev_p) / prev_p * 100, 1)
-        parent_price_yoy = parent_yoy  # for investment_grade later
+        parent_price_yoy = parent_yoy
 
         trend_details = {
             "hpi_series": trend_series,
@@ -628,10 +600,8 @@ async def fetch_property_market(
         )
 
     # ------------------------------------------------------------------
-    # Rental market and affordability
+    # Rental market and affordability (stays on EC2 — LAD-level data)
     # ------------------------------------------------------------------
-    # VOA PRMS data predates 2021/2023 LAD restructures — expand new codes
-    # to their old constituent district codes so the lookup succeeds.
     voa_local = list(local_lads)
     for code in local_lads:
         voa_local.extend(VOA_LAD_REMAP.get(code, []))
@@ -802,9 +772,6 @@ async def fetch_property_market(
                     )
                 )
 
-    # (Earnings query retained here for affordability calculation above;
-    #  standalone median_earnings metric now emitted from tab_community.py)
-
     # ------------------------------------------------------------------
     # Investment grade heuristic
     # ------------------------------------------------------------------
@@ -825,9 +792,7 @@ async def fetch_property_market(
         yoy = float(local_price_yoy)
         combined = (gross_yield or 0) + yoy
 
-        # Derive parent investment grade from parent yield + parent price YoY
         parent_grade = None
-        # parent_yield may not be in scope (defined inside rent block); recompute from available data
         p_yield = None
         if parent_avg and rent_parent_row and rent_parent_row["avg_rent"]:
             p_yield = round(float(rent_parent_row["avg_rent"]) * 12 / parent_avg * 100, 2)
@@ -868,7 +833,7 @@ async def fetch_property_market(
             )
 
     # ------------------------------------------------------------------
-    # D14+D15: Official ONS House Price Index
+    # Official ONS House Price Index (stays on EC2)
     # ------------------------------------------------------------------
     hpi_result = await db.execute(
         text(
@@ -888,7 +853,6 @@ async def fetch_property_market(
         latest_hpi = hpi_rows[-1]
         latest_yoy_official = float(latest_hpi["yearly_change_pct"]) if latest_hpi["yearly_change_pct"] is not None else None
 
-        # Parent HPI: average across parent LADs
         parent_hpi_yoy = None
         if parent_lads:
             parent_hpi_result = await db.execute(
@@ -906,12 +870,9 @@ async def fetch_property_market(
             if parent_hpi_row and parent_hpi_row["avg_yoy"] is not None:
                 parent_hpi_yoy = round(float(parent_hpi_row["avg_yoy"]), 1)
 
-        # Build annual series (one entry per January) for the chart
         hpi_series = []
         for row in hpi_rows:
             d = row["date"]
-            # Extract month from the date — HPI uses YYYY-01-MM format where MM is month
-            # But actually the dates appear as proper dates, so filter to January only for annual view
             if d.month == 1 and d.day == 1 and d.year >= 2010:
                 hpi_series.append({
                     "year": d.year,
@@ -947,31 +908,13 @@ async def fetch_property_market(
         )
 
     # ------------------------------------------------------------------
-    # D11: Price Spread (min/max range)
+    # Price Spread (from API)
     # ------------------------------------------------------------------
-    spread_result = await db.execute(
-        text(
-            f"""
-            SELECT MIN(price) AS min_price,
-                   MAX(price) AS max_price,
-                   PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY price) AS p10,
-                   PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY price) AS p90,
-                   COUNT(*) AS txn_count
-            FROM core_property_transactions
-            WHERE {local_txn_filter_plain}
-              AND property_type = ANY(:price_types)
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-            """
-        ),
-        local_txn_params,
-    )
-    spread_row = spread_result.mappings().first()
-
-    if spread_row and spread_row["min_price"] is not None and spread_row["max_price"] is not None:
-        min_p = int(spread_row["min_price"])
-        max_p = int(spread_row["max_price"])
-        p10 = int(float(spread_row["p10"])) if spread_row["p10"] else None
-        p90 = int(float(spread_row["p90"])) if spread_row["p90"] else None
+    if spread_data.get("min_price") is not None and spread_data.get("max_price") is not None:
+        min_p = int(spread_data["min_price"])
+        max_p = int(spread_data["max_price"])
+        p10 = int(float(spread_data["p10"])) if spread_data.get("p10") else None
+        p90 = int(float(spread_data["p90"])) if spread_data.get("p90") else None
         spread_ratio = round(max_p / min_p, 1) if min_p > 0 else None
 
         metrics.append(
@@ -987,13 +930,13 @@ async def fetch_property_market(
                     "p10": p10,
                     "p90": p90,
                     "spread_ratio": spread_ratio,
-                    "transaction_count": int(spread_row["txn_count"]),
+                    "transaction_count": int(spread_data.get("txn_count", 0)),
                 },
             )
         )
 
     # ------------------------------------------------------------------
-    # EPC housing-stock efficiency
+    # EPC housing-stock efficiency (stays on EC2)
     # ------------------------------------------------------------------
     epc_local = await db.execute(
         text(
@@ -1094,7 +1037,7 @@ async def fetch_property_market(
         )
 
     # ------------------------------------------------------------------
-    # Housing Tenure & Housing Stock (Census 2021, moved from Community tab)
+    # Housing Tenure & Housing Stock (Census 2021, stays on EC2)
     # ------------------------------------------------------------------
     housing_local = await db.execute(
         text(
@@ -1136,8 +1079,6 @@ async def fetch_property_market(
     if housing_row:
         total_hh = int(housing_row["total_households"]) if housing_row["total_households"] else 0
 
-        # Housing Tenure — breakdown with counts derived from total_households * pct
-        # (label, local_col, parent_col, unit_qualifier)
         tenure_categories = [
             ("Owner-occupied", "pct_owned", "avg_owned", "owner-occupied"),
             ("Social rent", "pct_social_rent", "avg_social_rent", "socially rented"),
@@ -1150,7 +1091,6 @@ async def fetch_property_market(
             parent_pct = _round(housing_parent_row[parent_key]) if housing_parent_row else None
             tenure_breakdown.append({"label": label, "count": count, "pct": pct, "parent_pct": parent_pct})
 
-        # Dynamic headline: pick dominant tenure type
         dominant_idx = max(range(len(tenure_breakdown)), key=lambda i: tenure_breakdown[i]["pct"] or 0)
         dominant_tenure = tenure_breakdown[dominant_idx]
         dominant_tenure_unit = tenure_categories[dominant_idx][3]
@@ -1170,8 +1110,6 @@ async def fetch_property_market(
             )
         )
 
-        # Housing Stock — breakdown with counts derived from total_households * pct
-        # (label, local_col, parent_col, unit_qualifier)
         stock_categories = [
             ("Detached", "pct_detached", "avg_det", "detached"),
             ("Semi-detached", "pct_semi", "avg_semi", "semi-detached"),
@@ -1185,7 +1123,6 @@ async def fetch_property_market(
             parent_pct = _round(housing_parent_row[parent_key]) if housing_parent_row else None
             stock_breakdown.append({"label": label, "count": count, "pct": pct, "parent_pct": parent_pct})
 
-        # Dynamic headline: pick dominant stock type
         dominant_idx = max(range(len(stock_breakdown)), key=lambda i: stock_breakdown[i]["pct"] or 0)
         dominant_stock = stock_breakdown[dominant_idx]
         dominant_stock_unit = stock_categories[dominant_idx][3]

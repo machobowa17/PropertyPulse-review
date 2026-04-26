@@ -11,12 +11,15 @@ import time
 
 def create_staging_table(conn, table_name: str) -> str:
     """
-    Create an UNLOGGED staging table '{table_name}_new' with the same columns
+    Create a staging table '{table_name}_new' with the same columns
     and constraints as the live table, but WITHOUT indexes.
 
     This is critical for large tables (>1M rows): inserting into a table with
     active indexes forces PostgreSQL to update B-Tree/GiST structures row-by-row.
     Creating indexes after the bulk insert is orders of magnitude faster.
+
+    Note: staging table is UNLOGGED during load for speed, then promoted to
+    LOGGED inside blue_green_swap() so data survives a Postgres restart.
 
     Returns the staging table name ('{table_name}_new').
     """
@@ -132,6 +135,11 @@ def blue_green_swap(conn, table_name: str) -> None:
 
     # Clean up old table (non-critical, outside the swap transaction)
     cur.execute(f"DROP TABLE IF EXISTS {old_name}")
+    conn.commit()
+
+    # Ensure the live table is LOGGED so data survives a Postgres restart.
+    # Staging tables are created UNLOGGED for insert speed; promote them here.
+    cur.execute(f"ALTER TABLE {table_name} SET LOGGED")
     conn.commit()
 
     cur.close()

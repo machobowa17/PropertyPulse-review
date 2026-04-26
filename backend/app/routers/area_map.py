@@ -23,7 +23,7 @@ from app.services.session_helpers import (
 
 router = APIRouter()
 
-MAP_CACHE_VERSION = "v2"
+MAP_CACHE_VERSION = "v5"  # bumped: remove duplicate park POIs from Env tab; EV charger limit 20/30→200
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ async def get_map_pois(
                     WHERE s.is_open = true AND s.geom IS NOT NULL
                       AND lb.lsoa_code = ANY(:codes)
                     ORDER BY s.school_name
-                    LIMIT 30
+                    LIMIT 100
                 """),
                 {"codes": area_lsoa_list},
             )
@@ -230,9 +230,9 @@ async def get_map_pois(
                     FROM core_schools
                     WHERE is_open = true
                       AND geom IS NOT NULL
-                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
+                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 5000)
                     ORDER BY dist_m
-                    LIMIT 20
+                    LIMIT 100
                 """),
                 {"lat": lat, "lon": lon},
             )
@@ -271,9 +271,9 @@ async def get_map_pois(
                            ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m
                     FROM core_nhs_facilities
                     WHERE geom IS NOT NULL
-                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 2000)
+                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 5000)
                     ORDER BY dist_m
-                    LIMIT 20
+                    LIMIT 50
                 """),
                 {"lat": lat, "lon": lon},
             )
@@ -325,72 +325,6 @@ async def get_map_pois(
                     "category": "flood_zone",
                     "flood_zone": r["flood_zone"],
                 },
-            })
-
-        park_types = ["Public Park Or Garden"]
-        sport_types = [
-            "Playing Field",
-            "Sports Facility",
-            "Golf Course",
-            "Tennis Court",
-            "Bowling Green",
-            "Other Sports Facility",
-        ]
-        if is_area and area_lsoa_list:
-            green_res = await db.execute(
-                text("""
-                    SELECT gs.site_name, gs.site_type,
-                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
-                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
-                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
-                           CASE
-                               WHEN gs.site_type = ANY(:park_types) THEN 'park'
-                               ELSE 'sports_recreation'
-                           END AS category
-                    FROM core_green_space gs
-                    JOIN core_lsoa_boundaries lb ON ST_Intersects(gs.geom, lb.geom)
-                    WHERE gs.geom IS NOT NULL
-                      AND lb.lsoa_code = ANY(:codes)
-                      AND gs.site_type = ANY(:all_types)
-                    ORDER BY area_ha DESC NULLS LAST, gs.site_name
-                    LIMIT 40
-                """),
-                {"codes": area_lsoa_list, "park_types": park_types, "all_types": park_types + sport_types},
-            )
-        else:
-            green_res = await db.execute(
-                text("""
-                    SELECT gs.site_name, gs.site_type,
-                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
-                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
-                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
-                           ST_Distance(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
-                           CASE
-                               WHEN gs.site_type = ANY(:park_types) THEN 'park'
-                               ELSE 'sports_recreation'
-                           END AS category
-                    FROM core_green_space gs
-                    WHERE gs.geom IS NOT NULL
-                      AND ST_DWithin(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1500)
-                      AND gs.site_type = ANY(:all_types)
-                    ORDER BY dist_m
-                    LIMIT 30
-                """),
-                {"lat": lat, "lon": lon, "park_types": park_types, "all_types": park_types + sport_types},
-            )
-        for r in green_res.mappings().all():
-            props = {
-                "name": r["site_name"] or "Green space",
-                "category": r["category"],
-                "site_type": r["site_type"],
-                "area_ha": round(float(r["area_ha"]), 2) if r["area_ha"] is not None else None,
-            }
-            if not is_area and "dist_m" in dict(r):
-                props["dist_m"] = round(float(r["dist_m"]))
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
-                "properties": props,
             })
 
     elif tab == "Lifestyle & Connectivity":
@@ -454,7 +388,7 @@ async def get_map_pois(
                     WHERE ev.geom IS NOT NULL
                       AND lb.lsoa_code = ANY(:codes)
                     ORDER BY ev.name
-                    LIMIT 30
+                    LIMIT 200
                 """),
                 {"codes": area_lsoa_list},
             )
@@ -467,7 +401,7 @@ async def get_map_pois(
                     WHERE geom IS NOT NULL
                       AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
                     ORDER BY dist_m
-                    LIMIT 20
+                    LIMIT 200
                 """),
                 {"lat": lat, "lon": lon},
             )
@@ -478,6 +412,59 @@ async def get_map_pois(
                 "operator": r["operator"],
                 "connectors": r["connector_count"],
                 "max_kw": float(r["max_power_kw"]) if r["max_power_kw"] else None,
+            }
+            if not is_area and "dist_m" in dict(r):
+                props["dist_m"] = round(float(r["dist_m"]))
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
+                "properties": props,
+            })
+
+        # Parks & green space from OS Green Space data
+        park_types = ["Public Park Or Garden"]
+        sport_types = [
+            "Playing Field", "Sports Facility", "Golf Course",
+            "Tennis Court", "Bowling Green", "Other Sports Facility",
+        ]
+        if is_area and area_lsoa_list:
+            green_res = await db.execute(
+                text("""
+                    SELECT gs.site_name, gs.site_type,
+                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
+                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
+                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
+                           CASE WHEN gs.site_type = ANY(:park_types) THEN 'park' ELSE 'sports_recreation' END AS category
+                    FROM core_green_space gs
+                    JOIN core_lsoa_boundaries lb ON ST_Intersects(gs.geom, lb.geom)
+                    WHERE gs.geom IS NOT NULL AND lb.lsoa_code = ANY(:codes) AND gs.site_type = ANY(:all_types)
+                    ORDER BY area_ha DESC NULLS LAST, gs.site_name LIMIT 40
+                """),
+                {"codes": area_lsoa_list, "park_types": park_types, "all_types": park_types + sport_types},
+            )
+        else:
+            green_res = await db.execute(
+                text("""
+                    SELECT gs.site_name, gs.site_type,
+                           COALESCE(gs.area_hectares, ST_Area(gs.geom::geography) / 10000) AS area_ha,
+                           ST_Y(ST_PointOnSurface(gs.geom)) AS latitude,
+                           ST_X(ST_PointOnSurface(gs.geom)) AS longitude,
+                           ST_Distance(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m,
+                           CASE WHEN gs.site_type = ANY(:park_types) THEN 'park' ELSE 'sports_recreation' END AS category
+                    FROM core_green_space gs
+                    WHERE gs.geom IS NOT NULL
+                      AND ST_DWithin(gs.geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1500)
+                      AND gs.site_type = ANY(:all_types)
+                    ORDER BY dist_m LIMIT 30
+                """),
+                {"lat": lat, "lon": lon, "park_types": park_types, "all_types": park_types + sport_types},
+            )
+        for r in green_res.mappings().all():
+            props = {
+                "name": r["site_name"] or "Green space",
+                "category": r["category"],
+                "site_type": r["site_type"],
+                "area_ha": round(float(r["area_ha"]), 1) if r["area_ha"] else None,
             }
             if not is_area and "dist_m" in dict(r):
                 props["dist_m"] = round(float(r["dist_m"]))

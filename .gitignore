@@ -18,3 +18,16 @@ frontend/test-results/
 .env.production
 baseline_screenshots/
 post_screenshots/
+ai_studio_screenshots/
+airflow/
+HANDOVER.md
+MANUS_CODE_REVIEW_2.md
+MANUS_MERGE_REVIEW.md
+Gemini_Review/
+codebase_review_*.zip
+ec2_test*.png
+screenshots/
+test-results/
+property/
+property-api/
+.github/
