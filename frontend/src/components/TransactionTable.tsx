@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { fetchTransactions, fetchPropertyHistory } from '../api/client';
+import { fetchTransactions, fetchPropertyHistory, SessionExpiredError } from '../api/client';
 import type { Transaction, PropertyHistoryEntry } from '../api/client';
 import { useResults } from '../context/ResultsContext';
 
@@ -179,6 +179,7 @@ function PropertyHistorySubRows({
 export default function TransactionTable({ sessionKey }: Props) {
   const [searchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
+  const queryClient = useQueryClient();
   const { mapFlyToRef, mapViewportRef, mapHighlightRef, clearMapHighlight } = useResults();
   // Save the map viewport before zooming to a property, so we can restore on collapse
   const preZoomViewportRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
@@ -202,7 +203,13 @@ export default function TransactionTable({ sessionKey }: Props) {
     enabled: !!sessionKey,
     placeholderData: (prev) => prev,
     staleTime: 60_000,
-    retry: 2,
+    retry: (failureCount, error) => {
+      if (error instanceof SessionExpiredError) {
+        queryClient.invalidateQueries({ queryKey: ['resolve', q] });
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
 
   const handleSort = (key: string) => {

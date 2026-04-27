@@ -113,11 +113,22 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   const rawMode = searchParams.get('mode');
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTabRaw] = useState<TabName>('Property & Market');
+  const rawTab = searchParams.get('tab');
+  const initialTab = ALL_TABS.find((t) => t === rawTab) ?? 'Property & Market';
+  const [activeTab, setActiveTabRaw] = useState<TabName>(initialTab);
   const [, startTransition] = useTransition();
   const setActiveTab = useCallback((tab: TabName) => {
     startTransition(() => setActiveTabRaw(tab));
-  }, [startTransition]);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === 'Property & Market') {
+        next.delete('tab');
+      } else {
+        next.set('tab', tab);
+      }
+      return next;
+    }, { replace: true });
+  }, [startTransition, setSearchParams]);
   const [persona, setPersona] = useState<PersonaId>('family');
   const [decisionMode, setDecisionMode] = useState<DecisionMode>(
     rawMode === 'rent' || rawMode === 'invest' ? rawMode : 'buy',

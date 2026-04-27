@@ -1220,7 +1220,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
   }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  return <div ref={containerRef} className="w-full h-full" role="application" aria-label="Interactive map" tabIndex={0} />;
 }
 
 /** Extract all coordinate pairs from any GeoJSON geometry */

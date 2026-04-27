@@ -3,8 +3,20 @@ import { AreaResponseSchema } from '../schemas/area';
 
 const BASE = '/api/v1';
 
+/** Fetch with automatic retry on 429 (rate-limited). Retries up to 2 times with exponential backoff. */
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, retries = 2): Promise<Response> {
+  let res = await fetch(input, init);
+  for (let i = 0; i < retries && res.status === 429; i++) {
+    const retryAfter = res.headers.get('Retry-After');
+    const delay = retryAfter ? Math.min(Number(retryAfter) * 1000, 10000) : (i + 1) * 1500;
+    await new Promise((r) => setTimeout(r, delay));
+    res = await fetch(input, init);
+  }
+  return res;
+}
+
 export async function resolveSearch(query: string): Promise<ResolveResponse> {
-  const res = await fetch(`${BASE}/resolve?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+  const res = await fetchWithRetry(`${BASE}/resolve?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Resolve failed: ${res.status}`);
   return res.json();
 }
@@ -21,7 +33,7 @@ export async function fetchAreaTab(
   tab: TabName,
 ): Promise<AreaResponse> {
   const url = `${BASE}/area?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetchWithRetry(url, { cache: 'no-store' });
   if (res.status === 410) throw new SessionExpiredError();
   if (!res.ok) throw new Error(`Area fetch failed: ${res.status}`);
   const json = await res.json();
@@ -48,7 +60,7 @@ export interface DataFreshnessResponse {
 
 export async function fetchDataFreshness(): Promise<DataFreshnessResponse | null> {
   try {
-    const res = await fetch(`${BASE}/data-freshness`);
+    const res = await fetchWithRetry(`${BASE}/data-freshness`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -77,7 +89,7 @@ export interface SuggestionResponse {
 
 export async function fetchSuggestions(query: string): Promise<SuggestionResponse> {
   try {
-    const res = await fetch(`${BASE}/search/suggest?q=${encodeURIComponent(query)}`);
+    const res = await fetchWithRetry(`${BASE}/search/suggest?q=${encodeURIComponent(query)}`);
     if (!res.ok) return { suggestions: [] };
     const data = await res.json();
     return {
@@ -115,7 +127,7 @@ export async function fetchPriceHistory(
   sessionKey: string,
 ): Promise<PriceHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/price-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    const res = await fetchWithRetry(`${BASE}/price-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -138,7 +150,7 @@ export interface AqHistoryResponse {
 
 export async function fetchAqHistory(sessionKey: string): Promise<AqHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/aq-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    const res = await fetchWithRetry(`${BASE}/aq-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -188,7 +200,7 @@ export interface ComparableResponse {
 
 export async function fetchComparable(sessionKey: string): Promise<ComparableResponse | null> {
   try {
-    const res = await fetch(`${BASE}/comparable?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    const res = await fetchWithRetry(`${BASE}/comparable?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -202,7 +214,7 @@ export async function fetchMapPois(
 ): Promise<GeoJSON.FeatureCollection | null> {
   try {
     const url = `${BASE}/map-pois?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetchWithRetry(url, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -232,7 +244,7 @@ export async function fetchCommute(
   sessionKey: string,
   destination: string,
 ): Promise<CommuteResult> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${BASE}/commute?session_key=${encodeURIComponent(sessionKey)}&destination=${encodeURIComponent(destination)}`,
   );
   if (!res.ok) {
@@ -246,7 +258,7 @@ export async function fetchBoundary(
   sessionKey: string,
 ): Promise<GeoJSON.FeatureCollection | GeoJSON.Feature | null> {
   try {
-    const res = await fetch(`${BASE}/boundary?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    const res = await fetchWithRetry(`${BASE}/boundary?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -279,7 +291,7 @@ export async function fetchChoropleth(
 ): Promise<ChoroplethResponse | null> {
   try {
     const url = buildChoroplethUrl(sessionKey, layer);
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetchWithRetry(url, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -304,7 +316,7 @@ export async function fetchPriceByType(
   sessionKey: string,
 ): Promise<PriceByTypeResponse | null> {
   try {
-    const res = await fetch(`${BASE}/price-by-type?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    const res = await fetchWithRetry(`${BASE}/price-by-type?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -383,10 +395,10 @@ export async function fetchTransactions(
   if (params.propertyType) qs.set('property_type', params.propertyType);
   if (params.year) qs.set('year', String(params.year));
   let url = `${BASE}/transactions?${qs}`;
-  let res = await fetch(url, { cache: 'no-store' });
+  let res = await fetchWithRetry(url, { cache: 'no-store' });
   if (res.status === 410 && _searchQuery) {
     // Session expired — re-resolve to get a fresh session_key, then retry once
-    const resolveRes = await fetch(
+    const resolveRes = await fetchWithRetry(
       `${BASE}/resolve?q=${encodeURIComponent(_searchQuery)}`,
       { cache: 'no-store' },
     );
@@ -396,7 +408,7 @@ export async function fetchTransactions(
         qs.set('session_key', resolved.session_key);
         url = `${BASE}/transactions?${qs}`;
       }
-      res = await fetch(url, { cache: 'no-store' });
+      res = await fetchWithRetry(url, { cache: 'no-store' });
     }
   }
   if (res.status === 410) throw new SessionExpiredError();
@@ -422,9 +434,9 @@ export async function fetchPropertyHistory(
     exclude_id: excludeId,
   });
   let url = `${BASE}/transactions/history?${qs}`;
-  let res = await fetch(url, { cache: 'no-store' });
+  let res = await fetchWithRetry(url, { cache: 'no-store' });
   if (res.status === 410 && _searchQuery) {
-    const resolveRes = await fetch(
+    const resolveRes = await fetchWithRetry(
       `${BASE}/resolve?q=${encodeURIComponent(_searchQuery)}`,
       { cache: 'no-store' },
     );
@@ -434,7 +446,7 @@ export async function fetchPropertyHistory(
         qs.set('session_key', resolved.session_key);
         url = `${BASE}/transactions/history?${qs}`;
       }
-      res = await fetch(url, { cache: 'no-store' });
+      res = await fetchWithRetry(url, { cache: 'no-store' });
     }
   }
   if (res.status === 410) throw new SessionExpiredError();

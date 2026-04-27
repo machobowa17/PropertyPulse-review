@@ -42,18 +42,18 @@ export function ResultsMetricsPanel() {
     setMetricElementRef,
   } = useResults();
 
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
   const sections = useMemo(
     () => groupMetricsBySection(tabData?.metrics ?? []),
     [tabData],
   );
 
-  // Reset all sections to collapsed + scroll to top on tab change
+  // Auto-open first section on tab change + scroll to top
   useEffect(() => {
-    setExpandedSection(null);
+    setExpandedSections(new Set(sections.length > 0 ? [sections[0].config.id] : []));
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [activeTab]);
+  }, [activeTab, sections]);
 
   const hiddenMetrics = useMemo(() => {
     if (!tabData?.metrics) return [];
@@ -93,7 +93,7 @@ export function ResultsMetricsPanel() {
 
           {/* Section accordion */}
           {sections.map((section) => {
-            const isOpen = expandedSection === section.config.id;
+            const isOpen = expandedSections.has(section.config.id);
             const SectionIcon = section.config.icon;
             const badge = sectionBadgeText(section.metrics);
             const pills = !isOpen ? pickSummaryPills(section.metrics) : [];
@@ -105,7 +105,12 @@ export function ResultsMetricsPanel() {
               >
                 {/* Section header */}
                 <button
-                  onClick={() => setExpandedSection(isOpen ? null : section.config.id)}
+                  onClick={() => setExpandedSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has(section.config.id)) next.delete(section.config.id);
+                    else next.add(section.config.id);
+                    return next;
+                  })}
                   aria-expanded={isOpen}
                   aria-controls={`section-panel-${section.config.id}`}
                   className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-surface-warm/50 transition-colors cursor-pointer"
