@@ -84,9 +84,11 @@ export function ResultsMobileMap() {
               focusLabel={focusLabel}
               focusReason={focusReason}
             />
-            {mapPoisLoading && (
+            {(mapPoisLoading || (activeChoropleth && !choroplethData)) && (
               <div className="absolute inset-0 z-[5] flex items-center justify-center bg-white/20 backdrop-blur-[1px] rounded-2xl pointer-events-none">
-                <div className="px-3 py-1.5 rounded-full bg-white/90 text-xs font-medium text-ink-muted shadow-sm">Loading…</div>
+                <div className="px-3 py-1.5 rounded-full bg-white/90 text-xs font-medium text-ink-muted shadow-sm">
+                  {activeChoropleth && !choroplethData ? 'Loading heatmap…' : 'Loading…'}
+                </div>
               </div>
             )}
           </div>
@@ -144,6 +146,9 @@ export function ResultsDesktopMap() {
           visibleLayers={visibleLayers}
           onToggle={handleLayerToggle}
           soldPricesSince={(mapPois as any)?.sold_prices_since}
+          focusMode={mapFocusMode}
+          focusLabel={focusLabel}
+          focusReason={focusReason}
         />
         {mapPoisLoading && (
           <div className="absolute inset-0 z-[5] flex items-center justify-center bg-white/20 backdrop-blur-[1px] rounded-2xl pointer-events-none">

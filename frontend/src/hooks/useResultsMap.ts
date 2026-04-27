@@ -48,6 +48,7 @@ export function useResultsMap({
   const mapViewportRef = useRef<Viewport | null>(null);
   const metricElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const activeScrollMetricIdRef = useRef<string | null>(null);
+  const manualToggleTimeRef = useRef<number>(0);
 
   const handleViewportChange = useCallback((vp: Viewport) => {
     mapViewportRef.current = vp;
@@ -82,6 +83,7 @@ export function useResultsMap({
   const handleLayerToggle = useCallback((key: string) => {
     setMapFocusMode('manual');
     setActiveMapMetricId(null);
+    manualToggleTimeRef.current = Date.now();
     if (ALL_CHOROPLETH_KEYS.includes(key)) {
       // Mutual exclusion: toggle off if already active, otherwise switch
       setActiveChoropleth((prev) => prev === key ? null : key);
@@ -137,8 +139,9 @@ export function useResultsMap({
   }, []);
 
   // Scroll-based metric follow via IntersectionObserver (desktop only)
+  // Re-enables after 5s of manual mode so users can scroll back to auto-follow
   useEffect(() => {
-    if (!isDesktop || !showMap || mapFocusMode === 'manual' || allMetrics.length === 0) return;
+    if (!isDesktop || !showMap || allMetrics.length === 0) return;
 
     const visibleIds = new Set<string>();
     const observer = new IntersectionObserver(
@@ -155,6 +158,8 @@ export function useResultsMap({
           if (visibleIds.has(m.id)) { nextMetricId = m.id; break; }
         }
         if (!nextMetricId || nextMetricId === activeScrollMetricIdRef.current) return;
+        // Skip scroll-follow for 5s after a manual layer toggle
+        if (manualToggleTimeRef.current && Date.now() - manualToggleTimeRef.current < 5000) return;
         activeScrollMetricIdRef.current = nextMetricId;
         focusMetricById(nextMetricId, 'scroll');
       },
@@ -171,7 +176,7 @@ export function useResultsMap({
     }
 
     return () => { observer.disconnect(); };
-  }, [allMetrics, focusMetricById, isDesktop, mapFocusMode, showMap]);
+  }, [allMetrics, focusMetricById, isDesktop, showMap]);
 
   // Compute focus label/reason for MapLayerControl
   const activeFocusBinding = activeMapMetricId ? METRIC_MAP_BINDINGS[activeMapMetricId] : null;

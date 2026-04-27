@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Home, Coffee, TreePine, Users, Landmark } from 'lucide-react';
 import type { TabName } from '../types';
 import { TABS } from '../utils/tabs';
@@ -14,7 +14,17 @@ interface Props {
 
 export default function TabBar({ active, onChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [pillStyle, setPillStyle] = useState({ left: 0, width: 0 });
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -22,15 +32,28 @@ export default function TabBar({ active, onChange }: Props) {
       if (el) {
         setPillStyle({ left: el.offsetLeft, width: el.offsetWidth });
       }
+      checkScroll();
     };
     update();
     window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [active]);
+    const scrollEl = scrollRef.current;
+    scrollEl?.addEventListener('scroll', checkScroll, { passive: true });
+    return () => {
+      window.removeEventListener('resize', update);
+      scrollEl?.removeEventListener('scroll', checkScroll);
+    };
+  }, [active, checkScroll]);
 
   return (
     <div className="relative" ref={ref}>
-      <div className="flex overflow-x-auto gap-1 py-2 scrollbar-none -mx-1 px-1 relative">
+      {/* Scroll fade indicators (mobile) */}
+      {canScrollLeft && (
+        <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-20 pointer-events-none lg:hidden" />
+      )}
+      {canScrollRight && (
+        <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-20 pointer-events-none lg:hidden" />
+      )}
+      <div ref={scrollRef} role="tablist" aria-label="Data tabs" className="flex overflow-x-auto gap-1 py-2 scrollbar-none -mx-1 px-1 relative">
         {/* Sliding pill background */}
         <div
           className="absolute top-2 h-[calc(100%-16px)] bg-brand-50 rounded-xl transition-all duration-300 ease-out"
@@ -42,6 +65,8 @@ export default function TabBar({ active, onChange }: Props) {
           return (
             <button
               key={tab.name}
+              role="tab"
+              aria-selected={isActive}
               data-tab={tab.name}
               onClick={() => onChange(tab.name)}
               className={`

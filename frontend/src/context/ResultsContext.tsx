@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback, useTransition } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useTransition, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -313,8 +313,8 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   // R2: URL for MapLibre off-thread fetch (parsed in worker, not main thread)
   const choroplethUrl = sessionKey && choroplethLayer ? buildChoroplethUrl(sessionKey, choroplethLayer) : null;
 
-  // R1: split into stable data + volatile UI
-  const dataValue: ResultsDataContextValue = {
+  // R1: split into stable data + volatile UI — memoized to prevent unnecessary re-renders
+  const dataValue: ResultsDataContextValue = useMemo(() => ({
     q,
     resolved,
     resolving,
@@ -347,11 +347,23 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     savedCollections,
     toggleSave,
     isDesktop,
-  };
+  }), [
+    q, resolved, resolving, resolveError, codes, sessionKey, lsoa, parentName, areaName,
+    activeTab, setActiveTab, persona, setPersona, decisionMode, handleDecisionModeChange,
+    tabData, tabLoading, allMetrics, priceHistory, aqHistory, priceByType, comparable,
+    boundaryData, effectiveBoundary, effectiveLsoaBoundary, mapPois, mapPoisLoading,
+    choroplethData, choroplethUrl, savedCollections, toggleSave, isDesktop,
+  ]);
 
-  const uiValue: ResultsUIContextValue = { ...mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight };
+  const uiValue: ResultsUIContextValue = useMemo(
+    () => ({ ...mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight }),
+    [mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight],
+  );
 
-  const combinedValue: ResultsContextValue = { ...dataValue, ...uiValue };
+  const combinedValue: ResultsContextValue = useMemo(
+    () => ({ ...dataValue, ...uiValue }),
+    [dataValue, uiValue],
+  );
 
   return (
     <ResultsDataContext.Provider value={dataValue}>

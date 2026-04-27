@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { Layers2 } from 'lucide-react';
 
 interface LayerDef {
@@ -10,6 +10,7 @@ interface LayerDef {
 
 const CHOROPLETH_KEYS = [
   'choropleth_avg_price',
+  'choropleth_median_price',
   'choropleth_price_per_sqft',
   'choropleth_median_rent',
   'choropleth_epc_score',
@@ -21,7 +22,6 @@ const CHOROPLETH_KEYS = [
   'choropleth_degree_educated',
   'choropleth_no_car',
   'choropleth_born_abroad',
-  'choropleth_wfh',
   'choropleth_housing_tenure',
   'choropleth_housing_type',
   'choropleth_household_size',
@@ -88,7 +88,6 @@ const TAB_LAYERS: Record<string, LayerDef[]> = {
     { key: 'choropleth_degree_educated', label: 'Degree education heatmap', colour: '#eab308', group: 'heatmap' },
     { key: 'choropleth_no_car', label: 'No-car households heatmap', colour: '#f59e0b', group: 'heatmap' },
     { key: 'choropleth_born_abroad', label: 'Born abroad heatmap', colour: '#f97316', group: 'heatmap' },
-    { key: 'choropleth_wfh', label: 'Works from home heatmap', colour: '#a855f7', group: 'heatmap' },
     { key: 'choropleth_median_earnings', label: 'Median earnings heatmap', colour: '#7c3aed', group: 'heatmap' },
     { key: 'choropleth_housing_tenure', label: 'Owner-occupation heatmap', colour: '#9333ea', group: 'heatmap' },
     { key: 'choropleth_housing_type', label: 'Detached homes heatmap', colour: '#c026d3', group: 'heatmap' },
@@ -121,8 +120,22 @@ interface Props {
   focusReason?: string | null;
 }
 
-export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince }: Props) {
+export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince, focusMode, focusLabel, focusReason }: Props) {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
   const baseLayers = TAB_LAYERS[activeTab] || TAB_LAYERS['Local Governance'];
 
   const layers = useMemo(() => {
@@ -146,7 +159,7 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
   }, [layers]);
 
   return (
-    <div className="absolute top-2 left-2 z-10 max-w-[280px]">
+    <div ref={containerRef} className="absolute top-2 left-2 z-10 max-w-[280px]">
       <button
         onClick={() => setOpen((prev) => !prev)}
         aria-label={open ? 'Close map layers' : 'Open map layers'}
@@ -157,6 +170,12 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
         <Layers2 className="w-4 h-4 text-ink" />
         <span className="text-xs font-semibold text-ink">Layers</span>
       </button>
+
+      {focusMode && focusMode !== 'manual' && focusLabel && (
+        <div className="mt-1.5 rounded-lg bg-brand-50/80 border border-brand-200/40 px-2.5 py-1.5 backdrop-blur" title={focusReason ?? undefined}>
+          <span className="text-[10px] font-medium text-brand-700 line-clamp-2">{focusLabel}</span>
+        </div>
+      )}
 
       {open && (
         <div className="mt-2 rounded-2xl border border-divider/60 bg-white shadow-lg overflow-hidden">

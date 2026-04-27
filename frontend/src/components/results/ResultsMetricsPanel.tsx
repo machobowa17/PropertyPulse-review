@@ -49,9 +49,10 @@ export function ResultsMetricsPanel() {
     [tabData],
   );
 
-  // Reset all sections to collapsed on tab change
+  // Reset all sections to collapsed + scroll to top on tab change
   useEffect(() => {
     setExpandedSection(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeTab]);
 
   const hiddenMetrics = useMemo(() => {
@@ -105,6 +106,8 @@ export function ResultsMetricsPanel() {
                 {/* Section header */}
                 <button
                   onClick={() => setExpandedSection(isOpen ? null : section.config.id)}
+                  aria-expanded={isOpen}
+                  aria-controls={`section-panel-${section.config.id}`}
                   className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-surface-warm/50 transition-colors cursor-pointer"
                 >
                   <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center shrink-0">
@@ -148,7 +151,7 @@ export function ResultsMetricsPanel() {
 
                 {/* Expanded: full metric cards */}
                 {isOpen && (
-                  <div className="divide-y divide-divider/50 border-t border-divider/50">
+                  <div id={`section-panel-${section.config.id}`} role="region" aria-label={section.config.label} className="divide-y divide-divider/50 border-t border-divider/50">
                     {/* Desktop header row */}
                     <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
                       <span>Metric</span>

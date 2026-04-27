@@ -4,7 +4,7 @@ import { AreaResponseSchema } from '../schemas/area';
 const BASE = '/api/v1';
 
 export async function resolveSearch(query: string): Promise<ResolveResponse> {
-  const res = await fetch(`${BASE}/resolve?q=${encodeURIComponent(query)}`);
+  const res = await fetch(`${BASE}/resolve?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Resolve failed: ${res.status}`);
   return res.json();
 }
@@ -21,7 +21,7 @@ export async function fetchAreaTab(
   tab: TabName,
 ): Promise<AreaResponse> {
   const url = `${BASE}/area?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'no-store' });
   if (res.status === 410) throw new SessionExpiredError();
   if (!res.ok) throw new Error(`Area fetch failed: ${res.status}`);
   const json = await res.json();
@@ -29,8 +29,10 @@ export async function fetchAreaTab(
   const parsed = AreaResponseSchema.safeParse(json);
   if (!parsed.success) {
     console.warn('[client] /area response failed schema validation:', parsed.error.flatten());
+    // Fall back to raw JSON — passthrough schemas may lag behind new backend fields
+    return json as AreaResponse;
   }
-  return json as AreaResponse;
+  return parsed.data as AreaResponse;
 }
 
 export interface DataFreshnessItem {
@@ -113,7 +115,7 @@ export async function fetchPriceHistory(
   sessionKey: string,
 ): Promise<PriceHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/price-history?session_key=${encodeURIComponent(sessionKey)}`);
+    const res = await fetch(`${BASE}/price-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -136,7 +138,7 @@ export interface AqHistoryResponse {
 
 export async function fetchAqHistory(sessionKey: string): Promise<AqHistoryResponse | null> {
   try {
-    const res = await fetch(`${BASE}/aq-history?session_key=${encodeURIComponent(sessionKey)}`);
+    const res = await fetch(`${BASE}/aq-history?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -186,7 +188,7 @@ export interface ComparableResponse {
 
 export async function fetchComparable(sessionKey: string): Promise<ComparableResponse | null> {
   try {
-    const res = await fetch(`${BASE}/comparable?session_key=${encodeURIComponent(sessionKey)}`);
+    const res = await fetch(`${BASE}/comparable?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -200,7 +202,7 @@ export async function fetchMapPois(
 ): Promise<GeoJSON.FeatureCollection | null> {
   try {
     const url = `${BASE}/map-pois?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -244,7 +246,7 @@ export async function fetchBoundary(
   sessionKey: string,
 ): Promise<GeoJSON.FeatureCollection | GeoJSON.Feature | null> {
   try {
-    const res = await fetch(`${BASE}/boundary?session_key=${encodeURIComponent(sessionKey)}`);
+    const res = await fetch(`${BASE}/boundary?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -277,7 +279,7 @@ export async function fetchChoropleth(
 ): Promise<ChoroplethResponse | null> {
   try {
     const url = buildChoroplethUrl(sessionKey, layer);
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -302,7 +304,7 @@ export async function fetchPriceByType(
   sessionKey: string,
 ): Promise<PriceByTypeResponse | null> {
   try {
-    const res = await fetch(`${BASE}/price-by-type?session_key=${encodeURIComponent(sessionKey)}`);
+    const res = await fetch(`${BASE}/price-by-type?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return res.json();
   } catch {

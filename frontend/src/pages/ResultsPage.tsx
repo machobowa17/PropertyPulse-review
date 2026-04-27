@@ -29,7 +29,7 @@ function ResultsInner() {
       {/* Skip to content (keyboard accessibility) */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-brand-600 focus:text-white focus:rounded-xl focus:text-sm focus:font-semibold"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-brand-600 focus:text-white focus:rounded-xl focus:text-sm focus:font-semibold focus:shadow-lg"
       >
         Skip to main content
       </a>
@@ -60,15 +60,15 @@ function ResultsInner() {
                 <p className="text-xs font-semibold text-ink-faint uppercase tracking-wide mb-3">Did you mean?</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {resolved.suggestions.map((s) => (
-                    <button
+                    <Link
                       key={s.label}
-                      onClick={() => window.location.href = `/results?q=${encodeURIComponent(s.label)}`}
+                      to={`/results?q=${encodeURIComponent(s.label)}`}
                       className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-surface hover:bg-brand-50 hover:text-brand-700 transition-all cursor-pointer"
                     >
                       <MapPin className="w-3 h-3 text-ink-faint group-hover:text-brand-500 shrink-0" />
                       <span className="font-semibold text-ink group-hover:text-brand-700">{s.label}</span>
                       {s.area && <span className="text-ink-faint text-xs group-hover:text-brand-500">{s.area}</span>}
-                    </button>
+                    </Link>
                   ))}
                 </div>
               </>

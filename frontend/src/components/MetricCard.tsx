@@ -150,26 +150,20 @@ interface Props {
 
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
 
-function TrendBadge({ trend }: { trend: Trend }) {
+function TrendBadge({ trend, direction }: { trend: Trend; direction?: Metric['interpretation_direction'] }) {
   const pct = typeof trend.pct === 'number' && Number.isFinite(trend.pct) ? trend.pct : 0;
   const label = `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
+  // Determine semantic color: "up" is good for higher_is_better, bad for lower_is_better
+  let colorClass = 'text-ink-faint'; // flat / neutral
   if (trend.direction === 'up') {
-    return (
-      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600">
-        <ArrowUp className="w-3 h-3" />{label}
-      </span>
-    );
+    colorClass = direction === 'lower_is_better' ? 'text-amber-600' : 'text-blue-600';
+  } else if (trend.direction === 'down') {
+    colorClass = direction === 'lower_is_better' ? 'text-blue-600' : 'text-amber-600';
   }
-  if (trend.direction === 'down') {
-    return (
-      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-600">
-        <ArrowDown className="w-3 h-3" />{label}
-      </span>
-    );
-  }
+  const Arrow = trend.direction === 'up' ? ArrowUp : trend.direction === 'down' ? ArrowDown : Minus;
   return (
-    <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-ink-faint">
-      <Minus className="w-3 h-3" />0%
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${colorClass}`}>
+      <Arrow className="w-3 h-3" />{trend.direction === 'flat' ? '0%' : label}
     </span>
   );
 }
@@ -278,7 +272,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
               ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
               : formatValue(metric.local_value, metric.unit)}
           </span>
-          {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
+          {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} direction={metric.interpretation_direction} />}
         </div>
 
         {/* Parent */}
@@ -354,7 +348,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
                 : formatValue(metric.local_value, metric.unit)}
             </span>
-            {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} />}
+            {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} direction={metric.interpretation_direction} />}
             {metric.parent_value !== null ? (
               <span className={`flex items-center gap-1 text-xs ${compColourClass}`}>
                 <ComparisonIcon className="w-3 h-3" />

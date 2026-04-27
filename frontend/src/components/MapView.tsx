@@ -63,6 +63,7 @@ const PROPERTY_TYPE_COLOURS: Record<string, string> = {
 
 const CHOROPLETH_RAMPS: Record<string, string[]> = {
   avg_price: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
+  median_price: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
   price_per_sqft: ['#2166ac', '#67a9cf', '#fddbc7', '#ef8a62', '#b2182b'],
   epc_score: ['#d73027', '#fc8d59', '#fee08b', '#91cf60', '#1a9850'],
   population_density: ['#ecfeff', '#a5f3fc', '#67e8f9', '#06b6d4', '#155e75'],
@@ -95,6 +96,7 @@ const CHOROPLETH_RAMPS: Record<string, string[]> = {
 
 const CHOROPLETH_UNITS: Record<string, string> = {
   avg_price: '£',
+  median_price: '£',
   price_per_sqft: '£/sqft',
   epc_score: 'score',
   population_density: 'people/hectare',
@@ -166,9 +168,12 @@ function createPricePillElement(price: number, propertyType?: string): HTMLDivEl
     box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     line-height: 1.4; border: 1.5px solid rgba(255,255,255,0.6);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
   `;
   el.textContent = formatPrice(price);
   el.onclick = null;
+  el.onmouseenter = () => { el.style.transform = 'scale(1.15)'; el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)'; };
+  el.onmouseleave = () => { el.style.transform = ''; el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)'; };
   return el;
 }
 
@@ -927,6 +932,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       `;
       const layerLabels: Record<string, string> = {
         avg_price: 'Average price',
+        median_price: 'Median price',
         price_per_sqft: 'Price per sqft',
         epc_score: 'EPC score',
         population_density: 'Population density',
@@ -1039,19 +1045,23 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       center: mapCenter,
       zoom: mapZoom,
       attributionControl: { compact: true },
-      cooperativeGestures: window.matchMedia('(pointer: coarse)').matches,
+      cooperativeGestures: true,
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    // Re-render sold price clusters on zoom/pan change
+    // Re-render sold price clusters on zoom/pan change (debounced to avoid churn during pinch-zoom)
+    let moveendTimer: ReturnType<typeof setTimeout> | null = null;
     map.on('moveend', () => {
-      if (clusterIndexRef.current) {
-        renderSoldPriceMarkers(map);
-      }
-      // Report viewport to parent for preservation across mount/unmount
-      const c = map.getCenter();
-      onViewportChangeRef.current?.({ center: [c.lng, c.lat], zoom: map.getZoom() });
+      if (moveendTimer) clearTimeout(moveendTimer);
+      moveendTimer = setTimeout(() => {
+        if (clusterIndexRef.current) {
+          renderSoldPriceMarkers(map);
+        }
+        // Report viewport to parent for preservation across mount/unmount
+        const c = map.getCenter();
+        onViewportChangeRef.current?.({ center: [c.lng, c.lat], zoom: map.getZoom() });
+      }, 100);
     });
 
     // Close spider when clicking empty map area
