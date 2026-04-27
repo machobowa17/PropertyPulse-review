@@ -32,7 +32,7 @@ export async function fetchAreaTab(
     // Fall back to raw JSON — passthrough schemas may lag behind new backend fields
     return json as AreaResponse;
   }
-  return parsed.data as AreaResponse;
+  return parsed.data as unknown as AreaResponse;
 }
 
 export interface DataFreshnessItem {
