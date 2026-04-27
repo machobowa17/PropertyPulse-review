@@ -200,15 +200,15 @@ export function pillColor(flag: Metric['comparison_flag']): string {
 export function sectionBadgeText(metrics: Metric[]): string | null {
   const above = metrics.filter(m => m.comparison_flag === 'higher_than_parent').length;
   const below = metrics.filter(m => m.comparison_flag === 'lower_than_parent').length;
-  if (above === 0 && below === 0) return null;
-  if (above > below) return 'Above Average';
-  if (below > above) return 'Below Average';
-  return 'Average';
+  const equal = metrics.filter(m => m.comparison_flag === 'equal_to_parent').length;
+  if (above + below + equal === 0) return null;
+  if (above >= below) return above > equal ? 'Above Average' : 'Average';
+  return 'Below Average';
 }
 
 export function sectionBadgeColor(text: string | null): string {
-  if (text === 'Above Average') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (text === 'Below Average') return 'bg-orange-50 text-orange-700 border-orange-200';
-  if (text === 'Average') return 'bg-slate-50 text-slate-600 border-slate-200';
+  if (text === 'Above Average') return 'text-signal-green bg-signal-green-bg border-signal-green/20';
+  if (text === 'Below Average') return 'text-signal-amber bg-signal-amber-bg border-signal-amber/20';
+  if (text === 'Average') return 'text-ink-muted bg-surface-warm border-divider';
   return '';
 }

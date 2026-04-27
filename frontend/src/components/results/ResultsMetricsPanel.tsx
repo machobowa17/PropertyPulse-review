@@ -113,7 +113,7 @@ export function ResultsMetricsPanel() {
                   <h3 className="text-sm font-semibold text-ink">{section.config.label}</h3>
                   <div className="flex-1" />
                   {badge && (
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${sectionBadgeColor(badge)}`}>
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${sectionBadgeColor(badge)}`}>
                       {badge}
                     </span>
                   )}
@@ -148,7 +148,7 @@ export function ResultsMetricsPanel() {
 
                 {/* Expanded: full metric cards */}
                 {isOpen && (
-                  <div className="border-t border-divider/50">
+                  <div className="divide-y divide-divider/50 border-t border-divider/50">
                     {/* Desktop header row */}
                     <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
                       <span>Metric</span>
