@@ -75,16 +75,16 @@ def wait_for_sections(page, timeout=60000):
 
 
 def expand_all_sections(page):
-    """Click each section header one at a time; the accordion only allows one open at a time,
-    so we count metrics per section and sum them."""
-    total = 0
+    """Click each collapsed section header to expand all sections (multi-expand accordion).
+    Returns total visible metric count after all sections are open."""
     section_btns = page.locator("button:has(h3.text-sm.font-semibold)").all()
     for btn in section_btns:
-        btn.click()
-        time.sleep(1)
-        count = page.locator("[id^='metric-']").count()
-        total += count
-    return total
+        expanded = btn.get_attribute("aria-expanded")
+        if expanded != "true":
+            btn.click()
+            time.sleep(0.5)
+    time.sleep(1)
+    return page.locator("[id^='metric-']").count()
 
 
 def count_metrics_via_api(tab_name):
@@ -221,10 +221,11 @@ def run_tests():
         switch_tab(page, "Property")
         time.sleep(2)
 
-        # Click first section header to expand it (should be Prices & Value)
+        # First section auto-opens on tab switch; ensure it's expanded
         first_section = page.locator("button:has(h3.text-sm.font-semibold)").first
-        first_section.click()
-        time.sleep(1.5)
+        if first_section.get_attribute("aria-expanded") != "true":
+            first_section.click()
+            time.sleep(1.5)
 
         # Click on first metric to expand its detail panel
         first_metric_btn = page.locator("[id^='metric-'] button").first

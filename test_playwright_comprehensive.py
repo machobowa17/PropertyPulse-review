@@ -233,24 +233,28 @@ def run_all_tests():
         wait_for_results(page)
         wait_for_tab_data(page)  # Wait for real MetricCards
 
-        # Property tab should be default — expand first section to reveal metric cards
+        # Property tab should be default — expand sections to reveal metric cards
         # Then click a price metric card to expand it and reveal the chart
-        section_btns = page.locator('button:has(h3.text-sm.font-semibold)').all()
+        # First section is auto-expanded; try to find and click the Average Sale Price metric
+        avg_btn = page.locator('button[aria-label*="Average Sale Price"]').first
         expanded_chart = False
-        for btn in section_btns[:3]:  # Try first 3 sections
-            btn.click()
-            time.sleep(1)
-            metric_cards = page.locator('[id^="metric-"]')
-            for i in range(min(metric_cards.count(), 8)):
-                card = metric_cards.nth(i)
-                card_text = card.inner_text()
-                if "Average" in card_text and "Price" in card_text:
-                    card.click()
-                    time.sleep(3)  # Wait for chart to render
+        if avg_btn.count() > 0:
+            avg_btn.click()
+            time.sleep(3)
+            expanded_chart = True
+        else:
+            # Fallback: expand sections and look for price metrics
+            section_btns = page.locator('button:has(h3.text-sm.font-semibold)').all()
+            for btn in section_btns[:3]:
+                if btn.get_attribute("aria-expanded") != "true":
+                    btn.click()
+                    time.sleep(1)
+                price_btn = page.locator('button[aria-label*="Price"]').first
+                if price_btn.count() > 0:
+                    price_btn.click()
+                    time.sleep(3)
                     expanded_chart = True
                     break
-            if expanded_chart:
-                break
 
         recharts_count = page.locator(".recharts-wrapper").count()
         R.add(section, "Recharts SVG containers",
@@ -678,9 +682,9 @@ def run_all_tests():
         wait_for_results(page)
         wait_for_tab_data(page)  # Wait for Property tab to load
 
-        # Expand first section (Prices & Value) to reveal metric cards
+        # Ensure first section (Prices & Value) is expanded to reveal metric cards
         first_section = page.locator('button:has(h3.text-sm.font-semibold)').first
-        if first_section.count() > 0:
+        if first_section.count() > 0 and first_section.get_attribute("aria-expanded") != "true":
             first_section.click()
             time.sleep(1.5)
 
@@ -690,8 +694,8 @@ def run_all_tests():
             avg_price_btn.click()
             time.sleep(3)
 
-        # Look for chart view toggle buttons (type pills: All Types, Detached, etc.)
-        type_buttons = page.locator('button:has-text("All Types"), button:has-text("Combined Average"), button:has-text("Average by Type")')
+        # Look for chart view toggle buttons (type pills: All Types, Price, YoY %, Detached, etc.)
+        type_buttons = page.locator('button:has-text("All Types"), button:has-text("Price"), button:has-text("Detached")')
         type_count = type_buttons.count()
         R.add(section, "Chart view toggle buttons",
               type_count > 0, f"{type_count} toggle buttons found")
