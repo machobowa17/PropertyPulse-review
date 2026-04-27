@@ -124,19 +124,27 @@ export function ResultsMetricsPanel() {
                 </button>
 
                 {/* Collapsed: summary pills */}
-                {!isOpen && pills.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 px-5 pb-3 -mt-1">
-                    {pills.map((m) => (
-                      <span
-                        key={m.id}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${pillColor(m.comparison_flag)}`}
-                      >
-                        <span className="truncate max-w-[120px]">{m.name}</span>
-                        <span className="font-semibold font-mono tabular-nums">{formatValue(m.local_value as number | string | null, m.unit)}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {!isOpen && pills.length > 0 && (() => {
+                  const remaining = section.metrics.length - pills.length;
+                  return (
+                    <div className="flex flex-wrap gap-2 px-5 pb-3">
+                      {pills.map((m) => (
+                        <span
+                          key={m.id}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${pillColor(m.comparison_flag)}`}
+                        >
+                          <span className="truncate max-w-[120px]">{m.name}</span>
+                          <span className="font-semibold font-mono tabular-nums">{formatValue(m.local_value as number | string | null, m.unit)}</span>
+                        </span>
+                      ))}
+                      {remaining > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-surface-warm text-xs text-ink-faint border border-divider/50">
+                          +{remaining} more
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Expanded: full metric cards */}
                 {isOpen && (

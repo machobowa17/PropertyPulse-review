@@ -121,7 +121,7 @@ export function ResultsDesktopMap() {
   if (!isDesktop || !resolved?.coordinates?.lat) return null;
 
   return (
-    <aside className="w-[420px] shrink-0 sticky top-[105px] h-[calc(100vh-105px)] p-4 pl-0">
+    <aside className="w-[40%] shrink-0 sticky top-[105px] h-[calc(100vh-105px)] p-4 pl-0">
       <div className="rounded-2xl overflow-hidden shadow-sm h-full relative">
         <MapView
           lat={resolved.coordinates.lat}
