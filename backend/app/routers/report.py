@@ -121,7 +121,24 @@ def _build_pdf(area_name: str, lad_code: str, all_tabs: dict) -> bytes:
                       fontName="Helvetica-Oblique")
     disc_style  = sty("Disc",       fontSize=7.5, textColor=c_muted, spaceAfter=0)
 
-    def _badge_text(flag):
+    def _badge_text(flag, direction=None):
+        if not flag:
+            return None, None, None
+        if direction and direction != "neutral":
+            is_good = (
+                (direction == "lower_is_better" and flag == "lower_than_parent") or
+                (direction == "higher_is_better" and flag == "higher_than_parent")
+            )
+            is_bad = (
+                (direction == "lower_is_better" and flag == "higher_than_parent") or
+                (direction == "higher_is_better" and flag == "lower_than_parent")
+            )
+            if is_good:
+                return "▲ Above avg", c_gbg, c_gtxt
+            if is_bad:
+                return "▼ Below avg", c_rbg, c_rtxt
+            return "= Area avg", c_bbg, c_btxt
+        # Fallback for metrics without direction
         if flag == "higher_than_parent":
             return "▲ Above avg", c_gbg, c_gtxt
         if flag == "lower_than_parent":
@@ -147,7 +164,7 @@ def _build_pdf(area_name: str, lad_code: str, all_tabs: dict) -> bytes:
         items.append(Paragraph(_xml_escape(name.upper()), metric_name))
         items.append(Paragraph(_xml_escape(_fmt(local, unit)), metric_val))
 
-        badge_txt, bg, fg = _badge_text(flag)
+        badge_txt, bg, fg = _badge_text(flag, m.get("interpretation_direction"))
         if badge_txt:
             items.append(Paragraph(f'<font color="#{_hex(fg)}">{_xml_escape(badge_txt)}</font>', metric_par))
 

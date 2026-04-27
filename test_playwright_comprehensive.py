@@ -49,15 +49,14 @@ def wait_for_results(page, timeout=60000):
 
 
 def wait_for_tab_data(page, timeout=45000):
-    """Wait for real metric cards to appear (not skeletons).
-    Polls until at least one card with border-l- (MetricCard accent) is found,
+    """Wait for section accordion headers to appear (accordion layout).
+    Polls until at least one section header (h3.text-sm.font-semibold) is found,
     or until timeout."""
     deadline = time.time() + timeout / 1000
     while time.time() < deadline:
-        # Real MetricCards have border-l-[3px]; skeletons don't
-        count = page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
+        count = page.locator('h3.text-sm.font-semibold').count()
         if count >= 1:
-            time.sleep(0.5)  # Small buffer for remaining cards to render
+            time.sleep(0.5)  # Small buffer for remaining sections to render
             return
         time.sleep(1)
     # Fallback: wait for any grid content
@@ -81,17 +80,17 @@ def switch_tab(page, short_name: str):
 
 
 def count_metric_cards(page) -> int:
-    """Count visible real metric card elements (not skeletons).
-    Real MetricCards have border-l-[3px] accent; skeletons don't."""
-    return page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
+    """Count section headers in the accordion layout.
+    Each section header (h3.text-sm.font-semibold) represents a group of metrics."""
+    return page.locator('h3.text-sm.font-semibold').count()
 
 
 def get_metric_card_texts(page) -> list[str]:
-    """Get all real metric card text content."""
-    cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]')
+    """Get all section header text content."""
+    headers = page.locator('h3.text-sm.font-semibold')
     texts = []
-    for i in range(cards.count()):
-        texts.append(cards.nth(i).inner_text())
+    for i in range(headers.count()):
+        texts.append(headers.nth(i).inner_text())
     return texts
 
 
@@ -234,18 +233,23 @@ def run_all_tests():
         wait_for_results(page)
         wait_for_tab_data(page)  # Wait for real MetricCards
 
-        # Property tab should be default — charts inside metric card detail panels
-        # Need to click a price metric card to expand it and reveal the chart
-        metric_cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]')
+        # Property tab should be default — expand first section to reveal metric cards
+        # Then click a price metric card to expand it and reveal the chart
+        section_btns = page.locator('button:has(h3.text-sm.font-semibold)').all()
         expanded_chart = False
-        for i in range(min(metric_cards.count(), 8)):
-            card = metric_cards.nth(i)
-            card_text = card.inner_text()
-            if "Average" in card_text and "Price" in card_text:
-                # Click the card to expand it
-                card.click()
-                time.sleep(3)  # Wait for chart to render (data may need fetching)
-                expanded_chart = True
+        for btn in section_btns[:3]:  # Try first 3 sections
+            btn.click()
+            time.sleep(1)
+            metric_cards = page.locator('[id^="metric-"]')
+            for i in range(min(metric_cards.count(), 8)):
+                card = metric_cards.nth(i)
+                card_text = card.inner_text()
+                if "Average" in card_text and "Price" in card_text:
+                    card.click()
+                    time.sleep(3)  # Wait for chart to render
+                    expanded_chart = True
+                    break
+            if expanded_chart:
                 break
 
         recharts_count = page.locator(".recharts-wrapper").count()
@@ -673,6 +677,12 @@ def run_all_tests():
         page.goto(results_url("SW1A 1AA"))  # postcode — has full price data including charts
         wait_for_results(page)
         wait_for_tab_data(page)  # Wait for Property tab to load
+
+        # Expand first section (Prices & Value) to reveal metric cards
+        first_section = page.locator('button:has(h3.text-sm.font-semibold)').first
+        if first_section.count() > 0:
+            first_section.click()
+            time.sleep(1.5)
 
         # Expand the Average Sale Price metric card
         avg_price_btn = page.locator('button[aria-label*="Average Sale Price"]').first

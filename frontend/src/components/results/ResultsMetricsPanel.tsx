@@ -131,7 +131,7 @@ export function ResultsMetricsPanel() {
                       {pills.map((m) => (
                         <span
                           key={m.id}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${pillColor(m.comparison_flag)}`}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${pillColor(m.comparison_flag, m.interpretation_direction)}`}
                         >
                           <span className="truncate max-w-[120px]">{m.name}</span>
                           <span className="font-semibold font-mono tabular-nums">{formatValue(m.local_value as number | string | null, m.unit)}</span>

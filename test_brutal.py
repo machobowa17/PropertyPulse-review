@@ -7,6 +7,7 @@ Requires: pip3 install playwright requests && playwright install chromium
 Servers: frontend on :5173, backend on :8000
 """
 
+import os
 import time
 import json
 import math
@@ -14,8 +15,8 @@ import requests
 import sys
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
-API = "http://127.0.0.1:8000/api/v1"
-BASE = "http://localhost:5173"
+API = os.environ.get("API_URL", "http://127.0.0.1:8000/api/v1")
+BASE = os.environ.get("BASE_URL", "http://localhost:5173")
 
 # Rate-limit aware: 60 req/min = 1 req/sec max. We add a small buffer.
 PACE = 1.1
@@ -707,11 +708,11 @@ def test_playwright_brutal(R: TestResults):
 
             # After rapid switching, page should still be functional
             time.sleep(3)
-            # Should have metric cards visible (last tab)
-            cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
+            # Should have section headers visible (accordion layout)
+            sections = page.locator('h3.text-sm.font-semibold').count()
             R.add(S, "Rapid tab switch: page survives",
-                  cards > 0,
-                  f"cards_visible={cards}")
+                  sections > 0,
+                  f"sections_visible={sections}")
 
             # No console errors from tab switching
             console_errors = []
@@ -732,10 +733,10 @@ def test_playwright_brutal(R: TestResults):
         try:
             page.wait_for_selector('h1', timeout=30000)
             time.sleep(5)
-            cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
+            sections = page.locator('h3.text-sm.font-semibold').count()
             R.add(S, "Direct URL nav: Manchester loads",
-                  cards > 0,
-                  f"cards={cards}")
+                  sections > 0,
+                  f"sections={sections}")
         except PwTimeout:
             R.add(S, "Direct URL nav: Manchester", False, "timeout")
         ctx.close()
@@ -747,10 +748,10 @@ def test_playwright_brutal(R: TestResults):
         try:
             page.wait_for_selector('h1', timeout=30000)
             time.sleep(5)
-            cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
-            R.add(S, "Mobile viewport: renders metrics",
-                  cards > 0,
-                  f"cards={cards}")
+            sections = page.locator('h3.text-sm.font-semibold').count()
+            R.add(S, "Mobile viewport: renders sections",
+                  sections > 0,
+                  f"sections={sections}")
         except PwTimeout:
             R.add(S, "Mobile viewport", False, "timeout")
         ctx.close()
@@ -774,7 +775,7 @@ def test_playwright_brutal(R: TestResults):
         # Should show error state, not crash
         body_text = page.inner_text("body")
         R.add(S, "Nonexistent search: error shown",
-              "not found" in body_text.lower() or "no results" in body_text.lower() or "error" in body_text.lower() or page.locator('[class*="border-l-"]').count() == 0,
+              "not found" in body_text.lower() or "no results" in body_text.lower() or "error" in body_text.lower() or page.locator('h3.text-sm.font-semibold').count() == 0,
               "shows error or empty state")
         ctx.close()
 
@@ -791,10 +792,10 @@ def test_playwright_brutal(R: TestResults):
             # Navigate back
             page.go_back()
             time.sleep(5)
-            cards = page.locator('[class*="border-l-"][class*="rounded-2xl"]').count()
+            sections = page.locator('h3.text-sm.font-semibold').count()
             R.add(S, "Navigate away and back: data preserved",
-                  cards > 0,
-                  f"cards={cards}")
+                  sections > 0,
+                  f"sections={sections}")
         except PwTimeout:
             R.add(S, "Navigate away and back", False, "timeout")
         ctx.close()

@@ -99,6 +99,8 @@ const METRIC_SECTION_OVERRIDE: Record<string, string> = {
   deprivation_crime:              'deprivation',
   deprivation_barriers:           'deprivation',
   deprivation_living_environment: 'deprivation',
+  // median_earnings appears on Community tab — belongs with People, not Costs & Income
+  median_earnings:                'people',
 };
 
 // ─── Grouping function ───────────────────────────────────────────────
@@ -189,20 +191,39 @@ export function pickSummaryPills(metrics: Metric[], max = 3): Metric[] {
   return picked;
 }
 
-export function pillColor(flag: Metric['comparison_flag']): string {
-  if (flag === 'higher_than_parent') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  if (flag === 'lower_than_parent') return 'bg-orange-50 text-orange-700 border-orange-200';
+export function pillColor(flag: Metric['comparison_flag'], direction?: Metric['interpretation_direction']): string {
+  if (!flag || !direction || direction === 'neutral') return 'bg-slate-50 text-slate-600 border-slate-200';
+  const isGood =
+    (direction === 'lower_is_better' && flag === 'lower_than_parent') ||
+    (direction === 'higher_is_better' && flag === 'higher_than_parent');
+  const isBad =
+    (direction === 'lower_is_better' && flag === 'higher_than_parent') ||
+    (direction === 'higher_is_better' && flag === 'lower_than_parent');
+  if (isGood) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (isBad) return 'bg-orange-50 text-orange-700 border-orange-200';
   return 'bg-slate-50 text-slate-600 border-slate-200';
 }
 
 // ─── Section badge ───────────────────────────────────────────────────
 
 export function sectionBadgeText(metrics: Metric[]): string | null {
-  const above = metrics.filter(m => m.comparison_flag === 'higher_than_parent').length;
-  const below = metrics.filter(m => m.comparison_flag === 'lower_than_parent').length;
-  const equal = metrics.filter(m => m.comparison_flag === 'equal_to_parent').length;
-  if (above + below + equal === 0) return null;
-  if (above >= below) return above > equal ? 'Above Average' : 'Average';
+  let good = 0, bad = 0, neutral = 0;
+  for (const m of metrics) {
+    if (!m.comparison_flag) continue;
+    const dir = m.interpretation_direction;
+    if (!dir || dir === 'neutral') { neutral++; continue; }
+    const isGood =
+      (dir === 'lower_is_better' && m.comparison_flag === 'lower_than_parent') ||
+      (dir === 'higher_is_better' && m.comparison_flag === 'higher_than_parent');
+    const isBad =
+      (dir === 'lower_is_better' && m.comparison_flag === 'higher_than_parent') ||
+      (dir === 'higher_is_better' && m.comparison_flag === 'lower_than_parent');
+    if (isGood) good++;
+    else if (isBad) bad++;
+    else neutral++;
+  }
+  if (good + bad + neutral === 0) return null;
+  if (good >= bad) return good > neutral ? 'Above Average' : 'Average';
   return 'Below Average';
 }
 
