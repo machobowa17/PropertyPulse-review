@@ -13,6 +13,10 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     if parent_lads is None:
         parent_lads = []
     is_area = search_mode == "area"
+    is_lad_or_coarser = boundary_source in ("lad", "county")
+
+    if local_lads is None:
+        local_lads = [lad_code] if lad_code and lad_code != "_" else []
 
     # --- Crime & Safety ---
     # Bible: Overall crime rate per 1,000 population vs national average, breakdown by type
@@ -24,17 +28,30 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
     window_start = latest_month - relativedelta(years=1) if latest_month else None
 
-    crime_local = await db.execute(
-        text("""
-            SELECT crime_type, SUM(crime_count) as cnt,
-                   COUNT(DISTINCT month) as months_count
-            FROM core_crime_lsoa
-            WHERE lsoa_code = ANY(:codes)
-              AND month > :window_start AND month <= :window_end
-            GROUP BY crime_type ORDER BY cnt DESC
-        """),
-        {"codes": lsoa_codes, "window_start": window_start, "window_end": latest_month},
-    )
+    if is_lad_or_coarser and local_lads:
+        crime_local = await db.execute(
+            text("""
+                SELECT crime_type, SUM(crime_count) as cnt,
+                       COUNT(DISTINCT month) as months_count
+                FROM mv_lad_crime_stats
+                WHERE lad_code = ANY(:lads)
+                  AND month > :window_start AND month <= :window_end
+                GROUP BY crime_type ORDER BY cnt DESC
+            """),
+            {"lads": local_lads, "window_start": window_start, "window_end": latest_month},
+        )
+    else:
+        crime_local = await db.execute(
+            text("""
+                SELECT crime_type, SUM(crime_count) as cnt,
+                       COUNT(DISTINCT month) as months_count
+                FROM core_crime_lsoa
+                WHERE lsoa_code = ANY(:codes)
+                  AND month > :window_start AND month <= :window_end
+                GROUP BY crime_type ORDER BY cnt DESC
+            """),
+            {"codes": lsoa_codes, "window_start": window_start, "window_end": latest_month},
+        )
     crime_rows = crime_local.mappings().all()
     local_total = sum(int(r["cnt"]) for r in crime_rows)
     local_months = max((int(r["months_count"]) for r in crime_rows), default=0)
@@ -166,28 +183,52 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     # Bible: Crime Trend — year-on-year change using rolling 12-month windows
     # Single-month comparisons are too noisy for small LSOAs (e.g. 8 vs 4 = +100%).
     if latest_month:
-        rolling_current = await db.execute(
-            text("""
-                SELECT SUM(crime_count) as cnt
-                FROM core_crime_lsoa
-                WHERE lsoa_code = ANY(:codes)
-                  AND month > :month_start AND month <= :month_end
-            """),
-            {"codes": lsoa_codes,
-             "month_start": latest_month - relativedelta(years=1),
-             "month_end": latest_month},
-        )
-        rolling_prior = await db.execute(
-            text("""
-                SELECT SUM(crime_count) as cnt
-                FROM core_crime_lsoa
-                WHERE lsoa_code = ANY(:codes)
-                  AND month > :month_start AND month <= :month_end
-            """),
-            {"codes": lsoa_codes,
-             "month_start": latest_month - relativedelta(years=2),
-             "month_end": latest_month - relativedelta(years=1)},
-        )
+        if is_lad_or_coarser and local_lads:
+            rolling_current = await db.execute(
+                text("""
+                    SELECT SUM(crime_count) as cnt
+                    FROM mv_lad_crime_stats
+                    WHERE lad_code = ANY(:lads)
+                      AND month > :month_start AND month <= :month_end
+                """),
+                {"lads": local_lads,
+                 "month_start": latest_month - relativedelta(years=1),
+                 "month_end": latest_month},
+            )
+            rolling_prior = await db.execute(
+                text("""
+                    SELECT SUM(crime_count) as cnt
+                    FROM mv_lad_crime_stats
+                    WHERE lad_code = ANY(:lads)
+                      AND month > :month_start AND month <= :month_end
+                """),
+                {"lads": local_lads,
+                 "month_start": latest_month - relativedelta(years=2),
+                 "month_end": latest_month - relativedelta(years=1)},
+            )
+        else:
+            rolling_current = await db.execute(
+                text("""
+                    SELECT SUM(crime_count) as cnt
+                    FROM core_crime_lsoa
+                    WHERE lsoa_code = ANY(:codes)
+                      AND month > :month_start AND month <= :month_end
+                """),
+                {"codes": lsoa_codes,
+                 "month_start": latest_month - relativedelta(years=1),
+                 "month_end": latest_month},
+            )
+            rolling_prior = await db.execute(
+                text("""
+                    SELECT SUM(crime_count) as cnt
+                    FROM core_crime_lsoa
+                    WHERE lsoa_code = ANY(:codes)
+                      AND month > :month_start AND month <= :month_end
+                """),
+                {"codes": lsoa_codes,
+                 "month_start": latest_month - relativedelta(years=2),
+                 "month_end": latest_month - relativedelta(years=1)},
+            )
         current_row = rolling_current.mappings().first()
         prior_row = rolling_prior.mappings().first()
         rolling_current_total = int(current_row["cnt"]) if current_row and current_row["cnt"] is not None else None
@@ -200,11 +241,10 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             if parent_lads and not gmp_parent:
                 parent_current_res = await db.execute(
                     text("""
-                        SELECT SUM(c.crime_count) as cnt
-                        FROM core_crime_lsoa c
-                        JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
-                        WHERE l.lad_code = ANY(:parent_lads)
-                          AND c.month > :month_start AND c.month <= :month_end
+                        SELECT SUM(crime_count) as cnt
+                        FROM mv_lad_crime_stats
+                        WHERE lad_code = ANY(:parent_lads)
+                          AND month > :month_start AND month <= :month_end
                     """),
                     {"parent_lads": parent_lads,
                      "month_start": latest_month - relativedelta(years=1),
@@ -212,11 +252,10 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                 )
                 parent_prior_res = await db.execute(
                     text("""
-                        SELECT SUM(c.crime_count) as cnt
-                        FROM core_crime_lsoa c
-                        JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
-                        WHERE l.lad_code = ANY(:parent_lads)
-                          AND c.month > :month_start AND c.month <= :month_end
+                        SELECT SUM(crime_count) as cnt
+                        FROM mv_lad_crime_stats
+                        WHERE lad_code = ANY(:parent_lads)
+                          AND month > :month_start AND month <= :month_end
                     """),
                     {"parent_lads": parent_lads,
                      "month_start": latest_month - relativedelta(years=2),
@@ -317,7 +356,19 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
 
     # --- Air Quality ---
     # WHO limits: NO2 = 10 µg/m³ (annual), PM2.5 = 5 µg/m³ (annual)
-    if is_area:
+    if is_area and is_lad_or_coarser and local_lads:
+        # LAD/county: use pre-computed LAD table (avoids spatial join on grid)
+        aq_result = await db.execute(
+            text("""
+                SELECT AVG(no2_ugm3) as no2_ugm3, AVG(pm25_ugm3) as pm25_ugm3,
+                       AVG(pm10_ugm3) as pm10_ugm3
+                FROM core_air_quality_lad
+                WHERE lad_code = ANY(:lads) AND year >= 2020
+            """),
+            {"lads": local_lads},
+        )
+        aq_row = aq_result.mappings().first()
+    elif is_area:
         # Area mode: average AQ across grid cells intersecting LSOA boundaries
         aq_result = await db.execute(
             text("""
@@ -389,18 +440,32 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     # --- Noise ---
     # Bible: average decibel level (road/rail/air)
     # Query postcodes in LSOA(s) for noise data, average across all
-    noise_result = await db.execute(
-        text("""
-            SELECT AVG(n.road_noise_db) as road_noise_db,
-                   AVG(n.rail_noise_db) as rail_noise_db,
-                   AVG(n.air_noise_db) as air_noise_db,
-                   MODE() WITHIN GROUP (ORDER BY n.noise_band) as noise_band
-            FROM core_noise n
-            JOIN core_postcodes p ON p.postcode = n.postcode
-            WHERE p.lsoa_code = ANY(:codes)
-        """),
-        {"codes": lsoa_codes},
-    )
+    if is_lad_or_coarser and local_lads:
+        noise_result = await db.execute(
+            text("""
+                SELECT AVG(n.road_noise_db) as road_noise_db,
+                       AVG(n.rail_noise_db) as rail_noise_db,
+                       AVG(n.air_noise_db) as air_noise_db,
+                       MODE() WITHIN GROUP (ORDER BY n.noise_band) as noise_band
+                FROM core_noise n
+                JOIN core_postcodes p ON p.postcode = n.postcode
+                WHERE p.lad_code = ANY(:lads)
+            """),
+            {"lads": local_lads},
+        )
+    else:
+        noise_result = await db.execute(
+            text("""
+                SELECT AVG(n.road_noise_db) as road_noise_db,
+                       AVG(n.rail_noise_db) as rail_noise_db,
+                       AVG(n.air_noise_db) as air_noise_db,
+                       MODE() WITHIN GROUP (ORDER BY n.noise_band) as noise_band
+                FROM core_noise n
+                JOIN core_postcodes p ON p.postcode = n.postcode
+                WHERE p.lsoa_code = ANY(:codes)
+            """),
+            {"codes": lsoa_codes},
+        )
     noise_row = noise_result.mappings().first()
     # Parent noise average — from pre-computed MV (avoids 1.4M row seq scan)
     parent_noise = None
@@ -458,7 +523,49 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     parent_cover_pct = round(float(parent_green["avg_cover"]), 1) if parent_green and parent_green["avg_cover"] else None
     parent_sports = round(float(parent_green["avg_sports"]), 1) if parent_green and parent_green["avg_sports"] else None
 
-    if is_area:
+    if is_area and is_lad_or_coarser and local_lads:
+        # LAD/county: use pre-aggregated MV (avoids expensive spatial join)
+        gs_mv = await db.execute(
+            text("""
+                SELECT site_type, SUM(cnt) as cnt, SUM(total_ha) as total_ha
+                FROM mv_lad_green_space_stats
+                WHERE lad_code = ANY(:lads)
+                  AND site_type = ANY(:types)
+                GROUP BY site_type
+            """),
+            {"lads": local_lads, "types": list(PARK_TYPES + SPORT_TYPES)},
+        )
+        gs_mv_rows = {r["site_type"]: r for r in gs_mv.mappings().all()}
+
+        park_mv = gs_mv_rows.get("Public Park Or Garden")
+        park_count = int(park_mv["cnt"]) if park_mv else 0
+        park_ha = float(park_mv["total_ha"]) if park_mv and park_mv["total_ha"] else 0.0
+        metrics.append(metric(
+            "green_spaces", "Parks & Gardens in Area",
+            park_count, parent_parks_1km, "count",
+            details={"total_hectares": round(park_ha, 1)} if park_count else None,
+        ))
+
+        sport_count = 0
+        sport_ha = 0.0
+        sport_type_counts: dict[str, int] = {}
+        for st in SPORT_TYPES:
+            row = gs_mv_rows.get(st)
+            if row:
+                c = int(row["cnt"])
+                sport_count += c
+                sport_ha += float(row["total_ha"]) if row["total_ha"] else 0.0
+                sport_type_counts[st] = c
+        metrics.append(metric(
+            "sports_recreation", "Sports & Recreation in Area",
+            sport_count, parent_sports, "count",
+            details={
+                "total_hectares": round(sport_ha, 1),
+                **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
+            } if sport_count else None,
+        ))
+
+    elif is_area:
         # Area mode: parks + sports within LSOA boundaries
         gs_within = await db.execute(
             text("""

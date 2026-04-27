@@ -58,29 +58,34 @@ async def fetch_property_market(
     price_types = list(PRICE_TYPES)
 
     # ------------------------------------------------------------------
-    # Resolve LSOA codes for the Hetzner API
-    # For LAD/county searches, resolve lad_codes → lsoa_codes
-    # For postcode/ward searches, lsoa_codes are already provided
-    # ------------------------------------------------------------------
-    api_lsoa_codes = list(lsoa_codes) if lsoa_codes else []
-
-    if is_lad_or_coarser and local_lads:
-        # Resolve LAD codes to LSOA codes for the API
-        lsoa_result = await db.execute(
-            text("SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)"),
-            {"lads": local_lads},
-        )
-        api_lsoa_codes = [row["lsoa_code"] for row in lsoa_result.mappings().all()]
-
-    # ------------------------------------------------------------------
     # Call Hetzner Property API for all transaction-based aggregations
+    # LAD/county: use pre-aggregated LAD endpoint (instant, reads MVs)
+    # Postcode/ward/place: use LSOA endpoint (live scan, fast for small sets)
     # ------------------------------------------------------------------
     prop_api = _get_property_api()
     api_data = None
-    if prop_api and api_lsoa_codes:
-        api_data = prop_api.aggregate_transactions(api_lsoa_codes, price_types)
+
+    if prop_api and is_lad_or_coarser and local_lads:
+        # Fast path: LAD-level pre-aggregated data (no LSOA expansion needed)
+        api_data = prop_api.aggregate_transactions_by_lad(local_lads, price_types)
         if api_data is None:
-            logger.warning("Property API returned None — no transaction data available")
+            logger.warning("Property API LAD aggregate returned None — falling back to LSOA path")
+            # Fall back to LSOA path if LAD endpoint unavailable
+            lsoa_result = await db.execute(
+                text("SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)"),
+                {"lads": local_lads},
+            )
+            api_lsoa_codes = [row["lsoa_code"] for row in lsoa_result.mappings().all()]
+            if api_lsoa_codes:
+                api_data = prop_api.aggregate_transactions(api_lsoa_codes, price_types)
+    elif prop_api:
+        # Standard path: LSOA-level live aggregation (postcode, ward, place)
+        api_lsoa_codes = list(lsoa_codes) if lsoa_codes else []
+        if api_lsoa_codes:
+            api_data = prop_api.aggregate_transactions(api_lsoa_codes, price_types)
+
+    if api_data is None and prop_api:
+        logger.warning("Property API returned None — no transaction data available")
 
     # ------------------------------------------------------------------
     # Extract local transaction aggregations from API response

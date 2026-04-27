@@ -301,6 +301,7 @@ def build_metric_contract(flat_metric: dict, parent_name: str | None = None) -> 
     contract["registry"] = {
         "metric_id": mid,
         "section_id": reg.get("section_id", "general"),
+        "metric_family": reg.get("metric_family", "general"),
         "headline_label": reg.get("label", flat_metric.get("name", mid)),
         "short_label": reg.get("short_label", flat_metric.get("name", mid)),
         "description": reg.get("description", ""),

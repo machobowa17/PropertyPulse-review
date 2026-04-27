@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState } from 'react';
-import { TrendingUp, Coffee, Leaf, Users, Landmark } from 'lucide-react';
+import { Home, Coffee, TreePine, Users, Landmark } from 'lucide-react';
 import type { TabName } from '../types';
 import { TABS } from '../utils/tabs';
 
 const ICONS: Record<string, React.ElementType> = {
-  TrendingUp, Coffee, Leaf, Users, Landmark,
+  Home, Coffee, TreePine, Users, Landmark,
 };
 
 interface Props {
@@ -37,7 +37,7 @@ export default function TabBar({ active, onChange }: Props) {
           style={{ left: pillStyle.left, width: pillStyle.width }}
         />
         {TABS.map((tab) => {
-          const Icon = ICONS[tab.icon] || TrendingUp;
+          const Icon = ICONS[tab.icon] || Home;
           const isActive = active === tab.name;
           return (
             <button

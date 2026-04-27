@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BellRing, Heart, MapPin, Trash2 } from 'lucide-react';
 import type { SavedAreaCollection, SavedAreaEntry } from '../utils/savedAreas';
@@ -127,21 +127,13 @@ function SavedAreaSection({
 }
 
 export default function SavedAreas() {
-  const [shortlist, setShortlist] = useState<SavedAreaEntry[]>([]);
-  const [watchlist, setWatchlist] = useState<SavedAreaEntry[]>([]);
-
-  const refresh = () => {
-    setShortlist(getSavedAreasByCollection('shortlist'));
-    setWatchlist(getSavedAreasByCollection('watchlist'));
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
+  const [shortlist, setShortlist] = useState<SavedAreaEntry[]>(() => getSavedAreasByCollection('shortlist'));
+  const [watchlist, setWatchlist] = useState<SavedAreaEntry[]>(() => getSavedAreasByCollection('watchlist'));
 
   const handleRemove = (id: string) => {
     removeSavedArea(id);
-    refresh();
+    setShortlist(getSavedAreasByCollection('shortlist'));
+    setWatchlist(getSavedAreasByCollection('watchlist'));
   };
 
   return (

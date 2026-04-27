@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useTransition } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIsDesktop } from '../hooks/useIsDesktop';
@@ -113,7 +113,11 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   const rawMode = searchParams.get('mode');
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<TabName>('Property & Market');
+  const [activeTab, setActiveTabRaw] = useState<TabName>('Property & Market');
+  const [, startTransition] = useTransition();
+  const setActiveTab = useCallback((tab: TabName) => {
+    startTransition(() => setActiveTabRaw(tab));
+  }, [startTransition]);
   const [persona, setPersona] = useState<PersonaId>('family');
   const [decisionMode, setDecisionMode] = useState<DecisionMode>(
     rawMode === 'rent' || rawMode === 'invest' ? rawMode : 'buy',

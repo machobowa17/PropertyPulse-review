@@ -54,8 +54,24 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     if local_lads is None:
         local_lads = [lad_code] if lad_code and lad_code != "_" else []
 
+    is_lad_or_coarser = boundary_source in ("lad", "county")
+
     # --- 15-Minute Neighbourhood ---
-    if is_area:
+    if is_area and is_lad_or_coarser and local_lads:
+        # LAD/county: use pre-aggregated MV (avoids expensive spatial join)
+        amenity_mv = await db.execute(
+            text("""
+                SELECT amenity_type, SUM(cnt) as cnt
+                FROM mv_lad_amenity_counts
+                WHERE lad_code = ANY(:lads)
+                GROUP BY amenity_type
+            """),
+            {"lads": local_lads},
+        )
+        local_amenities = {r["amenity_type"]: int(r["cnt"]) for r in amenity_mv.mappings().all()}
+        total_local = sum(local_amenities.values())
+        amenity_nearest = []  # No individual nearest for county-scale
+    elif is_area:
         # Area mode: count amenities within boundary (LSOA union)
         amenity_counts = await db.execute(
             text("""
@@ -67,22 +83,9 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             """),
             {"codes": lsoa_codes},
         )
-    else:
-        amenity_counts = await db.execute(
-            text("""
-                SELECT amenity_type, COUNT(*) as cnt
-                FROM core_osm_amenities
-                WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
-                GROUP BY amenity_type
-            """),
-            {"lat": lat, "lon": lon},
-        )
-    local_amenities = {r["amenity_type"]: int(r["cnt"]) for r in amenity_counts.mappings().all()}
-    total_local = sum(local_amenities.values())
+        local_amenities = {r["amenity_type"]: int(r["cnt"]) for r in amenity_counts.mappings().all()}
+        total_local = sum(local_amenities.values())
 
-    # Nearest amenity of each type
-    if is_area:
-        # Area mode: list amenities within boundary, no distance
         amenity_list_result = await db.execute(
             text("""
                 SELECT DISTINCT ON (a.amenity_type) a.amenity_type, a.name
@@ -94,7 +97,23 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             """),
             {"codes": lsoa_codes, "types": AMENITY_TYPES},
         )
+        amenity_nearest = [
+            {"type": r["amenity_type"], "name": r["name"]}
+            for r in amenity_list_result.mappings().all()
+        ]
     else:
+        amenity_counts = await db.execute(
+            text("""
+                SELECT amenity_type, COUNT(*) as cnt
+                FROM core_osm_amenities
+                WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 1000)
+                GROUP BY amenity_type
+            """),
+            {"lat": lat, "lon": lon},
+        )
+        local_amenities = {r["amenity_type"]: int(r["cnt"]) for r in amenity_counts.mappings().all()}
+        total_local = sum(local_amenities.values())
+
         amenity_list_result = await db.execute(
             text("""
                 SELECT DISTINCT ON (amenity_type) amenity_type, name,
@@ -106,12 +125,6 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             """),
             {"lat": lat, "lon": lon, "types": AMENITY_TYPES},
         )
-    if is_area:
-        amenity_nearest = [
-            {"type": r["amenity_type"], "name": r["name"]}
-            for r in amenity_list_result.mappings().all()
-        ]
-    else:
         amenity_nearest = [
             {"type": r["amenity_type"], "name": r["name"], "distance_m": int(r["distance_m"])}
             for r in amenity_list_result.mappings().all()
@@ -120,10 +133,9 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     # Parent average: count amenities within parent comparison group / number of LSOAs
     parent_avg_result = await db.execute(
         text("""
-            SELECT COUNT(a.id)::float / NULLIF((SELECT COUNT(*) FROM core_lsoa_boundaries WHERE lad_code = ANY(:parent_lads)), 0) as avg_count
-            FROM core_osm_amenities a
-            JOIN core_lad_boundaries l ON ST_Intersects(a.geom, l.geom)
-            WHERE l.lad_code = ANY(:parent_lads)
+            SELECT SUM(cnt)::float / NULLIF((SELECT COUNT(*) FROM core_lsoa_boundaries WHERE lad_code = ANY(:parent_lads)), 0) as avg_count
+            FROM mv_lad_amenity_counts
+            WHERE lad_code = ANY(:parent_lads)
         """),
         {"parent_lads": parent_lads},
     )
@@ -153,7 +165,65 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
         ps_row = parent_station_res.mappings().first()
         parent_station_m = round(float(ps_row["avg_station_m"])) if ps_row and ps_row["avg_station_m"] else None
 
-    if is_area:
+    if is_area and is_lad_or_coarser and local_lads:
+        # LAD/county: use pre-aggregated MV for mode counts + LAD join for station list
+        all_stops_result = await db.execute(
+            text(f"""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (cat, base_name)
+                           {_CAT_CASE.format(a='t.')} AS cat,
+                           REGEXP_REPLACE(
+                             REGEXP_REPLACE(
+                               REGEXP_REPLACE(t.stop_name,
+                                   ' (Rail Station|Underground Station|DLR Station|Overground Station|Tram Stop|Station|Bus Station)$',
+                                   '', 'i'),
+                               '^London ', '', 'i'),
+                             ' \\(London\\)$', '', 'i') AS base_name,
+                           t.stop_name, t.stop_type, t.atco_code,
+                           t.street, t.indicator, t.locality_name,
+                           t.parent_locality, t.suburb, t.status,
+                           t.crs_code, t.lines, t.operator, t.zone,
+                           t.step_free, t.facilities
+                    FROM core_transport_stops t
+                    JOIN core_lad_boundaries lb ON ST_Within(t.geom, lb.geom)
+                    WHERE lb.lad_code = ANY(:lads)
+                    ORDER BY cat, base_name,
+                             CASE WHEN t.stop_type = 'RLY' THEN 0
+                                  WHEN t.stop_type = 'RSE' THEN 1
+                                  ELSE 2 END,
+                             t.stop_name
+                ) deduped
+                WHERE cat IS NOT NULL
+                ORDER BY base_name
+                LIMIT 500
+            """),
+            {"lads": local_lads},
+        )
+        all_stop_rows = all_stops_result.mappings().all()
+        rail_rows = [r for r in all_stop_rows if r.get("cat", "") in ('rail', 'underground', 'dlr', 'overground', 'tram')]
+
+        # Mode counts from pre-aggregated MV (instant)
+        transport_mv = await db.execute(
+            text("""
+                SELECT cat, SUM(cnt) as cnt
+                FROM mv_lad_transport_mode_counts
+                WHERE lad_code = ANY(:lads)
+                GROUP BY cat
+            """),
+            {"lads": local_lads},
+        )
+        mv_counts = {r["cat"]: int(r["cnt"]) for r in transport_mv.mappings().all()}
+        mode_row = {
+            "bus_count": mv_counts.get("bus", 0),
+            "rail_count": mv_counts.get("rail", 0),
+            "underground_count": mv_counts.get("underground", 0),
+            "dlr_count": mv_counts.get("dlr", 0),
+            "overground_count": mv_counts.get("overground", 0),
+            "tram_count": mv_counts.get("tram", 0),
+            "ferry_count": mv_counts.get("ferry", 0),
+        }
+
+    elif is_area:
         # Area mode: all stop types within boundary
         # Dedup by (category, base_name) so bus "Green Park" doesn't shadow
         # the tube station "Green Park Underground Station".
@@ -510,7 +580,17 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
         ))
 
     # --- EV Chargers ---
-    if is_area:
+    if is_area and is_lad_or_coarser and local_lads:
+        ev_result = await db.execute(
+            text("""
+                SELECT COUNT(*) as cnt
+                FROM core_ev_chargers e
+                JOIN core_lad_boundaries lb ON ST_Within(e.geom, lb.geom)
+                WHERE lb.lad_code = ANY(:lads)
+            """),
+            {"lads": local_lads},
+        )
+    elif is_area:
         ev_result = await db.execute(
             text("""
                 SELECT COUNT(*) as cnt

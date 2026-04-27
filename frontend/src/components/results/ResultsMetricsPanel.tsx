@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { CirclePlus, CircleMinus } from 'lucide-react';
 import MetricCard from '../MetricCard';
+import { MetricErrorBoundary } from '../ErrorBoundary';
 import AirQualityChart from '../AirQualityChart';
 import ComparableAreas from '../ComparableAreas';
 import CommuteEstimator from '../CommuteEstimator';
@@ -8,7 +10,14 @@ import UsefulResourcesPanel from '../UsefulResourcesPanel';
 import CollapsibleSection from '../CollapsibleSection';
 import SkeletonCard from '../SkeletonCard';
 import { TAB_EXPLAINERS } from '../../utils/tabExplainers';
-import { buildSectionSummary } from '../../utils/sectionSummary';
+import { formatValue } from '../../utils/tabs';
+import {
+  groupMetricsBySection,
+  pickSummaryPills,
+  pillColor,
+  sectionBadgeText,
+  sectionBadgeColor,
+} from '../../utils/sectionGrouping';
 import { useResults } from '../../context/ResultsContext';
 import { ResultsMobileMap } from './ResultsMapPanel';
 import type { Metric } from '../../types';
@@ -32,6 +41,18 @@ export function ResultsMetricsPanel() {
     decisionMode,
     setMetricElementRef,
   } = useResults();
+
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const sections = useMemo(
+    () => groupMetricsBySection(tabData?.metrics ?? []),
+    [tabData],
+  );
+
+  // Reset all sections to collapsed on tab change
+  useEffect(() => {
+    setExpandedSection(null);
+  }, [activeTab]);
 
   const hiddenMetrics = useMemo(() => {
     if (!tabData?.metrics) return [];
@@ -64,59 +85,104 @@ export function ResultsMetricsPanel() {
             </div>
           )}
 
-          {/* Section summary chip */}
-          {(tabData?.metrics?.length ?? 0) > 0 && (() => {
-            const summary = buildSectionSummary(tabData!.metrics, parentName);
-            return summary.comparableCount > 0 ? (
-              <div className="flex items-center gap-2 text-[11px] text-ink-muted">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface border border-divider/60 font-medium">
-                  {summary.headline}
-                </span>
-                <span className="text-ink-faint">{summary.totalCount} metrics total</span>
-              </div>
-            ) : null;
-          })()}
-
           {/* Persona score card */}
           {(tabData?.metrics?.length ?? 0) > 0 && (
             <PersonaScoreCard metrics={tabData!.metrics} persona={persona} decisionMode={decisionMode} />
           )}
-          {/* Desktop table header */}
-          {(tabData?.metrics?.length ?? 0) > 0 ? (
-            <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
-              <span>Metric</span>
-              <span>Local</span>
-              <span>{parentName}</span>
-              <span>So What</span>
-              <span>Watch Out</span>
-              <span />
-            </div>
-          ) : null}
-          {tabData?.metrics.filter((m) => m.local_value != null).map((m) => (
-            <div key={m.id}>
-              <div id={`metric-${m.id}`} ref={(node) => setMetricElementRef(m.id, node)}>
-                <MetricCard
-                  metric={m}
-                  persona={persona}
-                  parentName={parentName}
-                  priceByTypeData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceByType ?? undefined) : undefined}
-                  priceHistoryData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceHistory ?? undefined) : undefined}
-                  areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
-                  sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
-                />
+
+          {/* Section accordion */}
+          {sections.map((section) => {
+            const isOpen = expandedSection === section.config.id;
+            const SectionIcon = section.config.icon;
+            const badge = sectionBadgeText(section.metrics);
+            const pills = !isOpen ? pickSummaryPills(section.metrics) : [];
+
+            return (
+              <div
+                key={section.config.id}
+                className="rounded-2xl border border-divider bg-white overflow-hidden shadow-sm"
+              >
+                {/* Section header */}
+                <button
+                  onClick={() => setExpandedSection(isOpen ? null : section.config.id)}
+                  className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-surface-warm/50 transition-colors cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center shrink-0">
+                    <SectionIcon size={15} className="text-amber-700" />
+                  </div>
+                  <h3 className="text-sm font-semibold text-ink">{section.config.label}</h3>
+                  <div className="flex-1" />
+                  {badge && (
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${sectionBadgeColor(badge)}`}>
+                      {badge}
+                    </span>
+                  )}
+                  {isOpen
+                    ? <CircleMinus size={20} className="text-ink-faint shrink-0" />
+                    : <CirclePlus size={20} className="text-ink-faint shrink-0" />
+                  }
+                </button>
+
+                {/* Collapsed: summary pills */}
+                {!isOpen && pills.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-5 pb-3 -mt-1">
+                    {pills.map((m) => (
+                      <span
+                        key={m.id}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border ${pillColor(m.comparison_flag)}`}
+                      >
+                        <span className="truncate max-w-[120px]">{m.name}</span>
+                        <span className="font-semibold font-mono tabular-nums">{formatValue(m.local_value as number | string | null, m.unit)}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Expanded: full metric cards */}
+                {isOpen && (
+                  <div className="border-t border-divider/50">
+                    {/* Desktop header row */}
+                    <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
+                      <span>Metric</span>
+                      <span>Local</span>
+                      <span>{parentName}</span>
+                      <span>So What</span>
+                      <span>Watch Out</span>
+                      <span />
+                    </div>
+                    {section.metrics.map((m) => (
+                      <div key={m.id}>
+                        <div id={`metric-${m.id}`} ref={(node) => setMetricElementRef(m.id, node)}>
+                          <MetricErrorBoundary>
+                            <MetricCard
+                              metric={m}
+                              persona={persona}
+                              parentName={parentName}
+                              priceByTypeData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceByType ?? undefined) : undefined}
+                              priceHistoryData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceHistory ?? undefined) : undefined}
+                              areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
+                              sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
+                            />
+                          </MetricErrorBoundary>
+                        </div>
+                        {m.id === 'air_quality_pm25' && aqHistory != null && aqHistory.local.length > 1 && (
+                          <div className="mt-2">
+                            <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="pm25" />
+                          </div>
+                        )}
+                        {m.id === 'air_quality_no2' && aqHistory != null && aqHistory.local.length > 1 && (
+                          <div className="mt-2">
+                            <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="no2" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {m.id === 'air_quality_pm25' && aqHistory != null && aqHistory.local.length > 1 && (
-                <div className="mt-2">
-                  <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="pm25" />
-                </div>
-              )}
-              {m.id === 'air_quality_no2' && aqHistory != null && aqHistory.local.length > 1 && (
-                <div className="mt-2">
-                  <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="no2" />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
+
           {/* Comparable areas */}
           {activeTab === 'Property & Market' && comparable != null && comparable.comparable.length > 0 && (
             <CollapsibleSection title="Comparable Areas">

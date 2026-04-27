@@ -126,12 +126,18 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
     setLoading(true);
     const seq = ++fetchSeqRef.current;
     debounceRef.current = setTimeout(async () => {
-      const result = await fetchSuggestions(value.trim());
-      if (seq !== fetchSeqRef.current) return;
-      setSuggestions(result.suggestions);
-      setCoverage(result.coverage || null);
-      setShowDropdown(true);
-      setLoading(false);
+      try {
+        const result = await fetchSuggestions(value.trim());
+        if (seq !== fetchSeqRef.current) return;
+        setSuggestions(result.suggestions);
+        setCoverage(result.coverage || null);
+        setShowDropdown(true);
+      } catch {
+        if (seq !== fetchSeqRef.current) return;
+        setSuggestions([]);
+      } finally {
+        if (seq === fetchSeqRef.current) setLoading(false);
+      }
     }, 200);
   };
 

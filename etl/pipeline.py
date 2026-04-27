@@ -841,7 +841,10 @@ Examples:
         conn = psycopg2.connect(DB_DSN)
         conn.autocommit = True
         cur = conn.cursor()
-        for view in ("mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_lad_comparable_features"):
+        for view in (
+            "mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_lad_comparable_features",
+            "mv_lad_crime_stats", "mv_lad_amenity_counts", "mv_lad_transport_mode_counts", "mv_lad_green_space_stats",
+        ):
             t_mv = time.time()
             print(f"  REFRESH {view} ...", end=" ", flush=True)
             cur.execute(f"REFRESH MATERIALIZED VIEW {view}")

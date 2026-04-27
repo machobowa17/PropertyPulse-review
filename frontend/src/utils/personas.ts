@@ -272,6 +272,10 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'investor') return { soWhat: 'Broadband gap', watchOut: 'Tenant complaints', colour: 'amber' };
       return { soWhat: 'Below average', watchOut: 'Remote work risk', colour: 'amber' };
     }
+    // Absolute fallback (no comparison)
+    if (val >= 80) return { soWhat: 'Good coverage', watchOut: 'Check your provider', colour: 'green' };
+    if (val >= 50) return { soWhat: 'Partial coverage', watchOut: 'Check availability', colour: 'neutral' };
+    return { soWhat: 'Limited broadband', watchOut: 'WFH risk', colour: 'amber' };
   }
 
   // --- Mobile Coverage ---
@@ -358,6 +362,17 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'expat') return { soWhat: 'Air quality issue', watchOut: 'Health impact', colour: 'amber' };
       return { soWhat: 'Above average pollution', watchOut: 'Health impact', colour: 'amber' };
     }
+    // Fallback when no comparison available — use WHO guidelines
+    if (id === 'air_quality_pm25') {
+      if (val <= 5) return { soWhat: 'Meets WHO guideline', watchOut: 'None', colour: 'green' };
+      if (val <= 10) return { soWhat: 'Moderate PM2.5', watchOut: 'Above WHO limit', colour: 'amber' };
+      return { soWhat: 'Elevated PM2.5', watchOut: 'Health risk', colour: 'red' };
+    }
+    if (id === 'air_quality_no2') {
+      if (val <= 10) return { soWhat: 'Meets WHO guideline', watchOut: 'None', colour: 'green' };
+      if (val <= 25) return { soWhat: 'Moderate NO2', watchOut: 'Above WHO limit', colour: 'amber' };
+      return { soWhat: 'Elevated NO2', watchOut: 'Health risk', colour: 'red' };
+    }
   }
 
   // --- Nearest Park ---
@@ -384,6 +399,10 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'family') return { soWhat: 'Higher energy bills', watchOut: 'Insulation costs', colour: 'amber' };
       return { soWhat: 'Low efficiency', watchOut: 'Energy costs', colour: 'amber' };
     }
+    // Absolute fallback (no comparison)
+    if (val >= 70) return { soWhat: 'Good efficiency', watchOut: 'None', colour: 'green' };
+    if (val >= 50) return { soWhat: 'Average efficiency', watchOut: 'Check insulation', colour: 'neutral' };
+    return { soWhat: 'Efficiency concerns', watchOut: 'Energy costs', colour: 'amber' };
   }
 
   // --- EPC Energy Score ---
@@ -398,6 +417,10 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'family') return { soWhat: 'Higher energy bills', watchOut: 'Insulation costs', colour: 'amber' };
       return { soWhat: 'Below-avg efficiency', watchOut: 'Energy costs', colour: 'amber' };
     }
+    // Absolute fallback
+    if (val >= 69) return { soWhat: 'Good efficiency', watchOut: 'None', colour: 'green' };
+    if (val >= 55) return { soWhat: 'Average efficiency', watchOut: 'Upgrade potential', colour: 'neutral' };
+    return { soWhat: 'Low efficiency', watchOut: 'Energy costs', colour: 'amber' };
   }
 
   // --- Noise ---
@@ -413,6 +436,10 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
       if (persona === 'retired') return { soWhat: 'Peaceful area', watchOut: 'None', colour: 'green' };
       return { soWhat: 'Lower noise levels', watchOut: 'None', colour: 'green' };
     }
+    // Absolute fallback (no comparison)
+    if (val >= 65) return { soWhat: 'High noise area', watchOut: 'Street-level exposure', colour: 'red' };
+    if (val >= 55) return { soWhat: 'Moderate noise', watchOut: 'Check daytime vs night', colour: 'amber' };
+    return { soWhat: 'Relatively quiet', watchOut: 'None', colour: 'green' };
   }
 
   // --- Green Cover (% land covered by vegetation) ---
@@ -800,7 +827,7 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
   // ═══════════════════════════════════════════
   // DEFAULT FALLBACK
   // ═══════════════════════════════════════════
-  if (comparison_flag === null) return { soWhat: '', watchOut: '', colour: 'neutral' };
+  if (comparison_flag === null) return { soWhat: 'Data available', watchOut: 'No comparison', colour: 'neutral' };
   if (isHigher) return { soWhat: 'Above parent average', watchOut: 'Worth investigating', colour: 'amber' };
   if (isLower) return { soWhat: 'Below parent average', watchOut: 'Worth investigating', colour: 'amber' };
   return { soWhat: 'In line with average', watchOut: 'None', colour: 'neutral' };

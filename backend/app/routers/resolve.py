@@ -3,6 +3,7 @@ GET /api/v1/resolve?q={search_key}
 GET /api/v1/search/suggest?q={partial}
 Build Bible Part 6, Section 6.1 — Geo-Resolution + Autocomplete
 """
+import hashlib
 import re
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import text as sa_text
@@ -18,6 +19,21 @@ from app.rate_limit import limiter
 router = APIRouter()
 
 POSTCODE_RE = re.compile(r"^[A-Z]{1,2}[0-9]", re.IGNORECASE)
+# Only allow printable ASCII + common accented chars (place names); reject junk input early
+_SAFE_QUERY_RE = re.compile(r"^[\w\s\-',./()&àáâãäåèéêëìíîïòóôõöùúûüýÿñçšžœæ]+$", re.IGNORECASE | re.UNICODE)
+
+# Statement timeout for search queries (milliseconds) — prevents CPU-intensive regex/trigram abuse
+_SEARCH_STATEMENT_TIMEOUT_MS = 3000
+
+
+def _safe_cache_key(prefix: str, q: str) -> str:
+    """Produce a bounded cache key. Short queries use the literal value for readability;
+    longer or unusual ones are hashed to cap Redis key cardinality."""
+    normalised = q.strip().lower()
+    if len(normalised) <= 30 and _SAFE_QUERY_RE.match(normalised):
+        return f"{prefix}:{normalised}"
+    return f"{prefix}:h:{hashlib.sha256(normalised.encode()).hexdigest()[:16]}"
+
 
 TYPE_LABELS = {
     "postcode": "Postcode",
@@ -83,7 +99,9 @@ async def resolve(
     q = q.replace("\x00", "").strip()
     if len(q) < 2:
         raise http_error(422, "INVALID_QUERY", "Query too short after sanitisation")
-    cache_key = f"resolve:{q.strip().lower()}"
+    if not _SAFE_QUERY_RE.match(q):
+        raise http_error(422, "INVALID_QUERY", "Query contains unsupported characters")
+    cache_key = _safe_cache_key("resolve", q)
     cached = await cache_get(cache_key)
     if cached:
         # Re-populate the session in Redis in case it expired (TTL refresh).
@@ -168,16 +186,22 @@ async def suggest(
     db: AsyncSession = Depends(get_db),
 ):
     """Return up to 8 suggestions as the user types."""
-    cache_key = f"suggest:{q.strip().lower()}"
+    q_clean = q.replace("\x00", "").strip()
+    if not q_clean:
+        return {"suggestions": []}
+    if not _SAFE_QUERY_RE.match(q_clean):
+        return {"suggestions": [], "coverage": _coverage_metadata()}
+
+    cache_key = _safe_cache_key("suggest", q_clean)
     cached = await cache_get(cache_key)
     if cached:
         if not cached.get("coverage"):
             cached = {**cached, "coverage": _coverage_metadata()}
         return cached
 
-    q_clean = q.strip()
-    if not q_clean:
-        return {"suggestions": []}
+    # Guard against expensive regex/trigram queries: set per-session statement timeout
+    await db.execute(sa_text(f"SET LOCAL statement_timeout = '{_SEARCH_STATEMENT_TIMEOUT_MS}'"))
+
     q_lower = q_clean.lower()
     # Escape LIKE special characters so user input is treated as literal text
     q_like = q_lower.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

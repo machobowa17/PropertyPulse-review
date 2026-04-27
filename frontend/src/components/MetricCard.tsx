@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import {
   ChevronRight, TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
   PoundSterling, BarChart3, Activity, Scale, Building2, Home,
@@ -151,7 +151,8 @@ interface Props {
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
 
 function TrendBadge({ trend }: { trend: Trend }) {
-  const label = `${trend.pct > 0 ? '+' : ''}${trend.pct.toFixed(1)}%`;
+  const pct = typeof trend.pct === 'number' && Number.isFinite(trend.pct) ? trend.pct : 0;
+  const label = `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
   if (trend.direction === 'up') {
     return (
       <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600">
@@ -195,6 +196,7 @@ function comparisonColor(
 
 export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
   const takeaway = getTakeaway(metric, persona);
   // Prefer nested trend object from contract; fall back to details.trend for backward compat
@@ -218,6 +220,18 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
     }
   }, [expanded, hasDetails]);
 
+  // Defer chart mount until expand animation settles (prevents Recharts -1 width/height)
+  useEffect(() => {
+    if (!expanded) { setDetailsReady(false); return; }
+    const el = detailsRef.current;
+    if (!el) { setDetailsReady(true); return; }
+    const onEnd = () => setDetailsReady(true);
+    el.addEventListener('transitionend', onEnd, { once: true });
+    // Fallback if transitionend doesn't fire (e.g. reduced motion)
+    const fallback = setTimeout(onEnd, 250);
+    return () => { el.removeEventListener('transitionend', onEnd); clearTimeout(fallback); };
+  }, [expanded]);
+
   const ComparisonIcon = metric.comparison_flag === 'higher_than_parent'
     ? TrendingUp
     : metric.comparison_flag === 'lower_than_parent'
@@ -233,9 +247,8 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
   return (
     <div
       className={`
-        rounded-2xl bg-white border-l-[3px] transition-all duration-200
-        ${colours.accent}
-        ${expanded ? 'shadow-md ring-1 ring-brand-200/50' : 'shadow-sm hover:shadow-md hover:-translate-y-px'}
+        rounded-2xl bg-white transition-all duration-200
+        ${expanded ? 'shadow-md ring-1 ring-brand-200/50 bg-brand-50/30 border-l-2 border-l-brand-500' : 'shadow-sm hover:shadow-md hover:-translate-y-px'}
       `}
     >
       {/* ═══ DESKTOP: Table Row (Bible 6.2.1: Metric | Local | Parent | So What | Watch Out) ═══ */}
@@ -384,7 +397,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         style={{ gridTemplateRows: expanded && metric.details ? '1fr' : '0fr', opacity: expanded && metric.details ? 1 : 0, visibility: expanded && metric.details ? 'visible' : 'hidden' }}
       >
         <div className="overflow-hidden">
-          <Suspense fallback={null}>
+          {detailsReady && <Suspense fallback={null}>
             <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
               {priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
                 <DistrictPriceHistoryChart
@@ -437,7 +450,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 </div>
               )}
             </div>
-          </Suspense>
+          </Suspense>}
         </div>
       </div>
     </div>

@@ -10,9 +10,9 @@ export interface TabConfig {
 }
 
 export const TABS: TabConfig[] = [
-  { name: 'Property & Market', icon: 'TrendingUp', shortName: 'Property', colour: '#2563eb', bgColour: '#eff6ff' },
+  { name: 'Property & Market', icon: 'Home', shortName: 'Property', colour: '#2563eb', bgColour: '#eff6ff' },
   { name: 'Lifestyle & Connectivity', icon: 'Coffee', shortName: 'Lifestyle', colour: '#7c3aed', bgColour: '#f5f3ff' },
-  { name: 'Environment & Safety', icon: 'Leaf', shortName: 'Environment', colour: '#059669', bgColour: '#ecfdf5' },
+  { name: 'Environment & Safety', icon: 'TreePine', shortName: 'Environment', colour: '#059669', bgColour: '#ecfdf5' },
   { name: 'Community & Education', icon: 'Users', shortName: 'Community', colour: '#ea580c', bgColour: '#fff7ed' },
   { name: 'Local Governance', icon: 'Landmark', shortName: 'Governance', colour: '#0891b2', bgColour: '#ecfeff' },
 ];

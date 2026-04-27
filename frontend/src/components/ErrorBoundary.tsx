@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, AlertCircle } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -57,6 +57,36 @@ export default class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    return this.props.children;
+  }
+}
+
+/**
+ * Lightweight boundary for individual metric cards / widgets.
+ * Catches render crashes without taking down the entire page.
+ */
+interface CardState { hasError: boolean }
+
+export class MetricErrorBoundary extends Component<Props, CardState> {
+  state: CardState = { hasError: false };
+
+  static getDerivedStateFromError(): CardState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[MetricErrorBoundary]', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-2xl border border-amber-200/30 bg-amber-50/5 px-4 py-3 flex items-center gap-2 text-sm text-amber-700">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>This metric failed to load.</span>
+        </div>
+      );
+    }
     return this.props.children;
   }
 }

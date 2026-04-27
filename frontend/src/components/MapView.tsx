@@ -144,9 +144,22 @@ function formatPrice(price: number): string {
   return `£${price}`;
 }
 
+// DOM element pools to avoid constant create/destroy on zoom/pan (reduces GC pressure on mobile)
+const pillPool: HTMLDivElement[] = [];
+const clusterPool: HTMLDivElement[] = [];
+const MAX_POOL_SIZE = 200;
+
+function recyclePill(el: HTMLDivElement): void {
+  // Strip event listeners by cloning — cheap for simple pill elements
+  if (pillPool.length < MAX_POOL_SIZE) pillPool.push(el);
+}
+function recycleCluster(el: HTMLDivElement): void {
+  if (clusterPool.length < MAX_POOL_SIZE) clusterPool.push(el);
+}
+
 function createPricePillElement(price: number, propertyType?: string): HTMLDivElement {
   const bg = (propertyType && PROPERTY_TYPE_COLOURS[propertyType]) || '#0891b2';
-  const el = document.createElement('div');
+  const el = pillPool.pop() || document.createElement('div');
   el.style.cssText = `
     background: ${bg}; color: white; font-size: 11px; font-weight: 700;
     padding: 2px 7px; border-radius: 9999px; white-space: nowrap;
@@ -155,12 +168,13 @@ function createPricePillElement(price: number, propertyType?: string): HTMLDivEl
     line-height: 1.4; border: 1.5px solid rgba(255,255,255,0.6);
   `;
   el.textContent = formatPrice(price);
+  el.onclick = null;
   return el;
 }
 
 function createClusterElement(count: number): HTMLDivElement {
   const size = 28 + Math.min(count, 80) * 0.2;
-  const el = document.createElement('div');
+  const el = clusterPool.pop() || document.createElement('div');
   el.style.cssText = `
     background: rgba(8,145,178,0.85); color: white; width: ${size}px; height: ${size}px;
     border-radius: 50%; display: flex; align-items: center; justify-content: center;
@@ -169,6 +183,7 @@ function createClusterElement(count: number): HTMLDivElement {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
   `;
   el.textContent = `${count}`;
+  el.onclick = null;
   return el;
 }
 
@@ -402,8 +417,14 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
   /** Render sold price markers from the current supercluster index at the map's current zoom/bounds */
   const renderSoldPriceMarkers = useCallback((map: maplibregl.Map) => {
-    // Clear old sold markers (but NOT the spider — it persists across zoom/pan)
-    soldMarkersRef.current.forEach((m) => m.remove());
+    // Recycle old sold markers into DOM pool (but NOT the spider — it persists across zoom/pan)
+    for (const m of soldMarkersRef.current) {
+      const el = m.getElement();
+      m.remove();
+      // Recycle based on shape: cluster = round (border-radius 50%), pill = pill-shaped
+      if (el.style.borderRadius === '50%') recycleCluster(el as HTMLDivElement);
+      else recyclePill(el as HTMLDivElement);
+    }
     soldMarkersRef.current = [];
 
     const index = clusterIndexRef.current;
@@ -937,14 +958,18 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       };
       const layerLabel = layerLabels[meta.layer] || formatLabel(meta.layer);
 
+      const sameMinMax = meta.min_value != null && meta.max_value != null && meta.min_value === meta.max_value;
       legend.innerHTML = `
         <div style="font-weight:600;margin-bottom:4px">${layerLabel}</div>
         <div style="display:flex;gap:0;height:10px;border-radius:3px;overflow:hidden;margin-bottom:3px">
           ${ramp.map((c) => `<div style="flex:1;background:${c}"></div>`).join('')}
         </div>
-        <div style="display:flex;justify-content:space-between;color:#666">
-          <span>${fmtVal(meta.min_value)}</span><span>${fmtVal(meta.max_value)}</span>
-        </div>
+        ${sameMinMax
+          ? `<div style="text-align:center;color:#666">Uniform: ${fmtVal(meta.min_value)}</div>`
+          : `<div style="display:flex;justify-content:space-between;color:#666">
+              <span>${fmtVal(meta.min_value)}</span><span>${fmtVal(meta.max_value)}</span>
+            </div>`
+        }
         <div data-hover-info style="display:none;margin-top:5px;padding-top:5px;border-top:1px solid #e2e8f0;font-size:11px;color:#334155"></div>
       `;
       containerRef.current?.appendChild(legend);

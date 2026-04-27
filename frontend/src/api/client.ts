@@ -380,15 +380,20 @@ export async function fetchTransactions(
   if (params.sortDir) qs.set('sort_dir', params.sortDir);
   if (params.propertyType) qs.set('property_type', params.propertyType);
   if (params.year) qs.set('year', String(params.year));
-  const url = `${BASE}/transactions?${qs}`;
+  let url = `${BASE}/transactions?${qs}`;
   let res = await fetch(url, { cache: 'no-store' });
   if (res.status === 410 && _searchQuery) {
-    // Session expired — re-resolve to refresh TTL, then retry once
+    // Session expired — re-resolve to get a fresh session_key, then retry once
     const resolveRes = await fetch(
       `${BASE}/resolve?q=${encodeURIComponent(_searchQuery)}`,
       { cache: 'no-store' },
     );
     if (resolveRes.ok) {
+      const resolved = await resolveRes.json();
+      if (resolved.session_key) {
+        qs.set('session_key', resolved.session_key);
+        url = `${BASE}/transactions?${qs}`;
+      }
       res = await fetch(url, { cache: 'no-store' });
     }
   }
@@ -414,7 +419,7 @@ export async function fetchPropertyHistory(
     street,
     exclude_id: excludeId,
   });
-  const url = `${BASE}/transactions/history?${qs}`;
+  let url = `${BASE}/transactions/history?${qs}`;
   let res = await fetch(url, { cache: 'no-store' });
   if (res.status === 410 && _searchQuery) {
     const resolveRes = await fetch(
@@ -422,6 +427,11 @@ export async function fetchPropertyHistory(
       { cache: 'no-store' },
     );
     if (resolveRes.ok) {
+      const resolved = await resolveRes.json();
+      if (resolved.session_key) {
+        qs.set('session_key', resolved.session_key);
+        url = `${BASE}/transactions/history?${qs}`;
+      }
       res = await fetch(url, { cache: 'no-store' });
     }
   }

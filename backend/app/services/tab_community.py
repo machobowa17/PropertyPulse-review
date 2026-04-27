@@ -238,6 +238,19 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             },
         ))
 
+    # --- Ward codes for LSOA-based searches (reused by ethnicity + religion) ---
+    # Derive once, use twice — avoids redundant core_postcodes scans.
+    _derived_ward_codes: list[str] | None = None
+    if not (ward_code and ward_code != "_") and lsoa_codes and len(lsoa_codes) > 0:
+        _ward_rows = await db.execute(
+            text("""
+                SELECT DISTINCT p.ward_code FROM core_postcodes p
+                WHERE p.lsoa_code = ANY(:codes) AND p.ward_code IS NOT NULL
+            """),
+            {"codes": lsoa_codes},
+        )
+        _derived_ward_codes = [r[0] for r in _ward_rows.all()]
+
     # --- Ethnicity (TS022, ward-level) ---
     # For postcode/ward: use single ward. For place/LAD/county: derive wards from
     # the session's LSOA set so that place searches reflect the actual area's
@@ -252,9 +265,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             """),
             {"ward": ward_code},
         )
-    elif lsoa_codes and len(lsoa_codes) > 0:
-        # Derive distinct ward codes from the session's LSOA set via postcodes,
-        # then average ethnicity across those wards only.
+    elif _derived_ward_codes:
         ethnicity_local = await db.execute(
             text("""
                 SELECT SUM(e.total_pop * e.pct_white) / NULLIF(SUM(e.total_pop), 0) as pct_white,
@@ -263,13 +274,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                        SUM(e.total_pop * e.pct_mixed) / NULLIF(SUM(e.total_pop), 0) as pct_mixed,
                        SUM(e.total_pop * e.pct_other) / NULLIF(SUM(e.total_pop), 0) as pct_other
                 FROM core_census_ethnicity_ward e
-                WHERE e.ward_code IN (
-                    SELECT DISTINCT p.ward_code FROM core_postcodes p
-                    WHERE p.lsoa_code = ANY(:codes)
-                      AND p.ward_code IS NOT NULL
-                )
+                WHERE e.ward_code = ANY(:ward_codes)
             """),
-            {"codes": lsoa_codes},
+            {"ward_codes": _derived_ward_codes},
         )
     else:
         # Fallback: average across all wards in the LAD
@@ -331,7 +338,7 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             """),
             {"ward": ward_code},
         )
-    elif lsoa_codes and len(lsoa_codes) > 0:
+    elif _derived_ward_codes:
         religion_local = await db.execute(
             text("""
                 SELECT SUM(r.total_pop * r.pct_christian) / NULLIF(SUM(r.total_pop), 0) as pct_christian,
@@ -343,13 +350,9 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                        SUM(r.total_pop * r.pct_no_religion) / NULLIF(SUM(r.total_pop), 0) as pct_no_religion,
                        SUM(r.total_pop * r.pct_other) / NULLIF(SUM(r.total_pop), 0) as pct_other
                 FROM core_census_religion_ward r
-                WHERE r.ward_code IN (
-                    SELECT DISTINCT p.ward_code FROM core_postcodes p
-                    WHERE p.lsoa_code = ANY(:codes)
-                      AND p.ward_code IS NOT NULL
-                )
+                WHERE r.ward_code = ANY(:ward_codes)
             """),
-            {"codes": lsoa_codes},
+            {"ward_codes": _derived_ward_codes},
         )
     else:
         religion_local = await db.execute(
@@ -399,12 +402,11 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
             "Buddhist": _r(rel_row["pct_buddhist"]),
             "No religion": _r(rel_row["pct_no_religion"]),
         }
-        _dominant = max(
-            ((name, val) for name, val in _religion_map.items() if val is not None),
-            key=lambda x: x[1],
-            default=("Christian", _r(rel_row["pct_christian"])),
-        )
-        _dominant_name, _dominant_val = _dominant
+        _valid_religions = [(name, val) for name, val in _religion_map.items() if val is not None]
+        if not _valid_religions:
+            _dominant_name, _dominant_val = "Christian", 0.0
+        else:
+            _dominant_name, _dominant_val = max(_valid_religions, key=lambda x: x[1])
         _parent_key_map = {
             "Christian": "pct_christian", "Muslim": "pct_muslim",
             "Hindu": "pct_hindu", "Sikh": "pct_sikh",

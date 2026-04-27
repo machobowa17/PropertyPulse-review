@@ -26,7 +26,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v25"  # bumped: teacher turnover, parent view 2021-2026, Ofsted history + category + prev_rating
+AREA_CACHE_VERSION = "v26"  # bumped: LAD pre-aggregation MVs for county/LAD searches
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

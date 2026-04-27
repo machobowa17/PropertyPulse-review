@@ -82,6 +82,28 @@ def aggregate_transactions(lsoa_codes, price_types=None):
     return _request("POST", "/transactions/aggregate", body, timeout=60)
 
 
+def aggregate_transactions_by_lad(lad_codes, price_types=None):
+    """Fetch pre-aggregated transaction stats by LAD code.
+
+    Fast path for LAD/county searches — reads from materialized views
+    instead of scanning 31M gold rows. Response shape is identical to
+    aggregate_transactions() so downstream code needs no changes.
+
+    Args:
+        lad_codes: List of LAD code strings (e.g. ["E07000207"]).
+        price_types: List of property type codes (default: D,S,T,F).
+
+    Returns:
+        Dict with keys: core_recent, by_type, ppsm, prior_avg, prior_txn,
+        nb_trend, price_trend, price_spread.
+        Or None if the API call fails.
+    """
+    body = {"lad_codes": lad_codes}
+    if price_types:
+        body["price_types"] = price_types
+    return _request("POST", "/transactions/aggregate-by-lad", body, timeout=10)
+
+
 def parent_aggregate_transactions(lsoa_codes, price_types=None):
     """Fetch parent-area tenure and new-build aggregations.
 

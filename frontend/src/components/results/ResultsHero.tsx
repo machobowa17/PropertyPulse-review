@@ -47,13 +47,15 @@ function LsoaContextBlurb({ resolved, areaName }: { resolved: any; areaName: str
 export function ResultsHero() {
   const { areaName, parentName, savedCollections, toggleSave, sessionKey, resolved } = useResults();
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleDownload = useCallback(async () => {
     if (!sessionKey || downloading) return;
     setDownloading(true);
+    setDownloadError(null);
     try {
       const res = await fetch(`/api/v1/report?session_key=${encodeURIComponent(sessionKey)}`);
-      if (!res.ok) throw new Error(`Report failed: ${res.status}`);
+      if (!res.ok) throw new Error(`Report generation failed (${res.status}). Please try again.`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -62,6 +64,8 @@ export function ResultsHero() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Report download failed. Please try again.';
+      setDownloadError(message);
       console.error('PDF download failed:', err);
     } finally {
       setDownloading(false);
@@ -124,6 +128,12 @@ export function ResultsHero() {
             )}
           </div>
         </div>
+        {downloadError && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-500/15 border border-red-400/20 px-3 py-2 text-sm text-red-200">
+            <span>{downloadError}</span>
+            <button type="button" onClick={() => setDownloadError(null)} className="ml-auto text-red-300 hover:text-white text-xs font-semibold">Dismiss</button>
+          </div>
+        )}
         {resolved && <LsoaContextBlurb resolved={resolved} areaName={areaName} />}
       </div>
     </div>

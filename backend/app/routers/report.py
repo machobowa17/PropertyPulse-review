@@ -5,12 +5,15 @@ Uses ReportLab (pure Python, no system dependencies).
 """
 import asyncio
 import io
+import logging
 from datetime import date
 from xml.sax.saxutils import escape as _xml_escape
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+
+log = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.errors import http_error
@@ -340,7 +343,11 @@ async def generate_report(
     ]
     all_tabs = {}
     for tab_name, result in zip(tab_names, results):
-        flat = [] if isinstance(result, Exception) else result
+        if isinstance(result, Exception):
+            log.error("Report tab %s failed: %s", tab_name, result, exc_info=result)
+            flat = []
+        else:
+            flat = result
         all_tabs[tab_name] = enrich_metrics(flat, parent_name=parent_name)
 
     try:

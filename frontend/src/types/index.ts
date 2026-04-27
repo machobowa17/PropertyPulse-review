@@ -63,6 +63,7 @@ export interface ResolveResponse {
 export interface MetricRegistryMeta {
   metric_id: string;
   section_id: string;
+  metric_family: string;
   headline_label: string;
   short_label: string;
   description: string;
