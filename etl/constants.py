@@ -454,6 +454,8 @@ TABLE_NAMES = {
     "council_control_lad":      "core_council_control_lad",
     "s114_notices":             "core_s114_notices",
     "water_company_lad":        "core_water_company_lad",
+    "electricity_dno_lad":      "core_electricity_dno_lad",
+    "gas_gdn_lad":              "core_gas_gdn_lad",
     "inspire_parcels":          "core_inspire_parcels",
     "llc_charges":              "core_llc_charges",
     "pipeline_runs":            "core_pipeline_runs",

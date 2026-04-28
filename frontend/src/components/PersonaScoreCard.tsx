@@ -68,7 +68,10 @@ export default function PersonaScoreCard({ metrics, persona, decisionMode = 'buy
             <h4 className="text-base font-bold text-ink">{summary.verdict}</h4>
           </div>
           <p className="text-sm text-ink-muted leading-relaxed">
-            For a <span className="font-semibold text-ink">{personaLabel.toLowerCase()}</span>,
+            For a <span className="font-semibold text-ink">{personaLabel.toLowerCase()}</span>{' '}
+            <span className="text-ink-faint">
+              {decisionMode === 'rent' ? 'renting' : decisionMode === 'invest' ? 'investing' : 'buying'}
+            </span>,
             this area scores {summary.score}/100 based on {summary.metricCount} weighted metrics.
           </p>
           <div className="flex items-center gap-3 mt-2 text-xs font-medium">

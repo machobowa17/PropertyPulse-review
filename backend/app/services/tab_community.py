@@ -493,6 +493,30 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 },
             ))
 
+    # --- Outstanding schools within walking distance (postcode only) ---
+    if schools_api and lat is not None and not is_area:
+        walk_nearby = schools_api.nearby_schools(lat, lon, radius_m=1500, limit=50)
+        walk_schools = (walk_nearby or {}).get("schools", [])
+        outstanding = [s for s in walk_schools if s.get("ofsted_rating") == 1]
+        metrics.append(metric(
+            "outstanding_schools_walk", "Outstanding Schools (walkable)",
+            len(outstanding),
+            None, "schools",
+            details={
+                "schools": [
+                    {
+                        "name": s.get("name"),
+                        "phase": s.get("phase"),
+                        "distance_m": s.get("distance_m"),
+                        "urn": s.get("urn"),
+                    }
+                    for s in outstanding
+                ],
+                "search_radius_m": 1500,
+                "context_note": "Ofsted 'Outstanding' schools within ~15 minute walk (1.5 km radius).",
+            },
+        ))
+
     # --- Nurseries & Childcare (from Hetzner School API) ---
     if schools_api and lat is not None:
         nurseries_data = schools_api.nearby_nurseries(lat, lon, radius_m=2000, limit=50)

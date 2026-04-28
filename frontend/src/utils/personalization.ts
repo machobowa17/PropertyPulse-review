@@ -66,6 +66,7 @@ export const PERSONA_METRIC_WEIGHTS: Record<string, Partial<Record<PersonaId, nu
   epc_rating:    { investor: 2, family: 2, young_professional: 1, retired: 1, student: 1, expat: 1 },
   primary_schools: { family: 3, expat: 3, young_professional: 0, investor: 0, retired: 0, student: 0 },
   secondary_schools: { family: 3, expat: 3, young_professional: 0, investor: 0, retired: 0, student: 0 },
+  outstanding_schools_walk: { family: 3, expat: 3, young_professional: 1, investor: 2, retired: 1, student: 0 },
   deprivation: { family: 3, retired: 2, young_professional: 1, investor: 2, student: 1, expat: 2 },
   nhs_facilities: { retired: 3, family: 2, young_professional: 1, student: 1, investor: 0, expat: 1 },
   median_earnings:    { investor: 2, young_professional: 2, family: 2, retired: 1, student: 1, expat: 2 },
@@ -94,7 +95,7 @@ export const PERSONA_METRIC_WEIGHTS: Record<string, Partial<Record<PersonaId, nu
  * A multiplier of 0 zeroes out the metric; 3 triples its importance.
  * Metrics not listed default to 1 (unchanged).
  */
-const DECISION_MODE_MULTIPLIERS: Record<DecisionMode, Record<string, number>> = {
+export const DECISION_MODE_MULTIPLIERS: Record<DecisionMode, Record<string, number>> = {
   buy: {
     // Buy already aligns with default persona weights — minor boosts
     avg_price: 1.5,

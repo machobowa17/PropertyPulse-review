@@ -28,7 +28,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v30"  # bumped: D29 land_designations, D31 EPC coverage footnote
+AREA_CACHE_VERSION = "v31"  # bumped: S114, cycling enrichment, decision mode badges, outstanding schools, EPC details, DNO/GDN
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

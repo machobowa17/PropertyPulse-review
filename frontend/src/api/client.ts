@@ -274,6 +274,54 @@ export async function fetchPriceByType(
 }
 
 // ---------------------------------------------------------------------------
+// Per-transaction EPC certificate details (lazy-loaded from Hetzner)
+// ---------------------------------------------------------------------------
+
+export interface TransactionEpc {
+  construction_age_band: string | null;
+  built_form: string | null;
+  mainheat_description: string | null;
+  main_fuel: string | null;
+  energy_consumption_current: number | null;
+  co2_emissions_current: number | null;
+  heating_cost_current: number | null;
+  hot_water_cost_current: number | null;
+  lighting_cost_current: number | null;
+  windows_description: string | null;
+  walls_description: string | null;
+  roof_description: string | null;
+  floor_description: string | null;
+  solar_water_heating_flag: string | null;
+  photo_supply: number | null;
+  mains_gas_flag: string | null;
+  number_heated_rooms: number | null;
+  floor_level: string | null;
+  tenure: string | null;
+  inspection_date: string | null;
+  potential_energy_rating: string | null;
+  current_energy_rating: string | null;
+  low_energy_lighting: number | null;
+  extension_count: number | null;
+}
+
+export async function fetchTransactionEpc(
+  sessionKey: string,
+  transactionId: string,
+): Promise<TransactionEpc | null> {
+  try {
+    const res = await fetchWithRetry(
+      `${BASE}/transactions/${encodeURIComponent(transactionId)}/epc?session_key=${encodeURIComponent(sessionKey)}`,
+      { cache: 'no-store' },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.epc ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Individual transactions (paginated, sortable, filterable)
 // ---------------------------------------------------------------------------
 

@@ -684,11 +684,19 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
 
     # --- Cycling ---
     cycling_result = await db.execute(
-        text("SELECT SUM(total_workers * pct_cycling) / NULLIF(SUM(total_workers), 0) as pct_cycling FROM core_cycling_lsoa WHERE lsoa_code = ANY(:codes)"),
+        text("""
+            SELECT SUM(c.total_workers * c.pct_cycling) / NULLIF(SUM(c.total_workers), 0) AS pct_cycling,
+                   SUM(c.cycling_count) AS cycling_count,
+                   SUM(c.total_workers) AS total_workers,
+                   (SELECT AVG(cs.pct_no_car) FROM core_census_lsoa cs WHERE cs.lsoa_code = ANY(:codes)) AS pct_no_car
+            FROM core_cycling_lsoa c
+            WHERE c.lsoa_code = ANY(:codes)
+        """),
         {"codes": lsoa_codes},
     )
     cycling_row = cycling_result.mappings().first()
     if cycling_row and cycling_row["pct_cycling"] is not None:
+        local_pct = round(float(cycling_row["pct_cycling"]), 1)
         cycling_parent = await db.execute(
             text("""
                 SELECT SUM(c.total_workers * c.pct_cycling) / NULLIF(SUM(c.total_workers), 0) as avg_pct
@@ -699,11 +707,30 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
             {"parent_lads": parent_lads},
         )
         cp_row = cycling_parent.mappings().first()
+        # National percentile — what % of LSOAs have a lower cycling rate?
+        pct_result = await db.execute(
+            text("""
+                SELECT COUNT(*) FILTER (WHERE pct_cycling < :local_pct)::float
+                     / NULLIF(COUNT(*)::float, 0) * 100 AS percentile
+                FROM core_cycling_lsoa
+            """),
+            {"local_pct": float(cycling_row["pct_cycling"])},
+        )
+        pct_row = pct_result.mappings().first()
+        national_percentile = round(float(pct_row["percentile"]), 0) if pct_row and pct_row["percentile"] is not None else None
+
         metrics.append(metric(
             "cycling", "Cycling to Work",
-            round(float(cycling_row["pct_cycling"]), 1),
+            local_pct,
             round(float(cp_row["avg_pct"]), 1) if cp_row and cp_row["avg_pct"] else None,
             "% commuters",
+            details={
+                "cycling_count": int(cycling_row["cycling_count"]) if cycling_row["cycling_count"] else None,
+                "total_workers": int(cycling_row["total_workers"]) if cycling_row["total_workers"] else None,
+                "national_percentile": national_percentile,
+                "pct_no_car": round(float(cycling_row["pct_no_car"]), 1) if cycling_row["pct_no_car"] else None,
+                "context_note": "Census 2021 method of travel to work. Higher cycling rates correlate with flat terrain, cycle infrastructure, and shorter commutes.",
+            },
         ))
 
     # --- Commute Distance (TS058) ---

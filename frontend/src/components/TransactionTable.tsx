@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { fetchTransactions, fetchPropertyHistory, SessionExpiredError } from '../api/client';
-import type { Transaction, PropertyHistoryEntry } from '../api/client';
+import { fetchTransactions, fetchPropertyHistory, fetchTransactionEpc, SessionExpiredError } from '../api/client';
+import type { Transaction, PropertyHistoryEntry, TransactionEpc } from '../api/client';
 import { useResults } from '../context/ResultsContext';
 
 const EPC_COLOURS: Record<string, string> = {
@@ -169,6 +169,100 @@ function PropertyHistorySubRows({
         );
       })}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* EPC detail panel — lazy-loaded per transaction from Hetzner         */
+/* ------------------------------------------------------------------ */
+
+function EpcDetailRow({ label, value, suffix }: { label: string; value: string | number | null | undefined; suffix?: string }) {
+  if (value == null || value === '') return null;
+  return (
+    <div className="flex justify-between gap-2 py-0.5">
+      <span className="text-ink-faint text-[10px]">{label}</span>
+      <span className="text-ink-muted text-[10px] font-medium text-right">{value}{suffix || ''}</span>
+    </div>
+  );
+}
+
+function EpcDetailPanel({ transactionId, sessionKey }: { transactionId: string; sessionKey: string }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['transaction-epc', transactionId],
+    queryFn: () => fetchTransactionEpc(sessionKey, transactionId),
+    staleTime: 10 * 60_000,
+    retry: 1,
+  });
+
+  if (isLoading) {
+    return (
+      <tr>
+        <td colSpan={COL_COUNT} className="px-0 py-0">
+          <div className="bg-amber-50/20 border-l-2 border-amber-300 ml-4 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-[10px] text-ink-faint">Loading EPC certificate…</span>
+            </div>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  if (isError || !data) return null;
+
+  const epc = data as TransactionEpc;
+
+  return (
+    <tr>
+      <td colSpan={COL_COUNT} className="px-0 py-0">
+        <div className="bg-amber-50/20 border-l-2 border-amber-300 ml-4 px-4 py-3">
+          <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-2">EPC Certificate Details</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-0.5">
+            {/* Building */}
+            <div>
+              <p className="text-[9px] font-semibold text-ink-faint uppercase tracking-wider mb-1 border-b border-divider/40 pb-0.5">Building</p>
+              <EpcDetailRow label="Construction" value={epc.construction_age_band} />
+              <EpcDetailRow label="Built form" value={epc.built_form} />
+              <EpcDetailRow label="Floor level" value={epc.floor_level} />
+              <EpcDetailRow label="Extensions" value={epc.extension_count} />
+              <EpcDetailRow label="Heated rooms" value={epc.number_heated_rooms} />
+              <EpcDetailRow label="Tenure" value={epc.tenure} />
+            </div>
+            {/* Energy */}
+            <div>
+              <p className="text-[9px] font-semibold text-ink-faint uppercase tracking-wider mb-1 border-b border-divider/40 pb-0.5">Energy</p>
+              <EpcDetailRow label="Current EPC" value={epc.current_energy_rating} />
+              <EpcDetailRow label="Potential EPC" value={epc.potential_energy_rating} />
+              <EpcDetailRow label="Energy use" value={epc.energy_consumption_current != null ? Math.round(epc.energy_consumption_current) : null} suffix=" kWh/yr" />
+              <EpcDetailRow label="CO₂" value={epc.co2_emissions_current != null ? Number(epc.co2_emissions_current).toFixed(1) : null} suffix=" t/yr" />
+              <EpcDetailRow label="Low-energy lighting" value={epc.low_energy_lighting != null ? `${epc.low_energy_lighting}%` : null} />
+              <EpcDetailRow label="Inspected" value={epc.inspection_date} />
+            </div>
+            {/* Costs */}
+            <div>
+              <p className="text-[9px] font-semibold text-ink-faint uppercase tracking-wider mb-1 border-b border-divider/40 pb-0.5">Running Costs</p>
+              <EpcDetailRow label="Heating" value={epc.heating_cost_current != null ? `£${Math.round(epc.heating_cost_current)}` : null} suffix="/yr" />
+              <EpcDetailRow label="Hot water" value={epc.hot_water_cost_current != null ? `£${Math.round(epc.hot_water_cost_current)}` : null} suffix="/yr" />
+              <EpcDetailRow label="Lighting" value={epc.lighting_cost_current != null ? `£${Math.round(epc.lighting_cost_current)}` : null} suffix="/yr" />
+              <EpcDetailRow label="Main fuel" value={epc.main_fuel} />
+              <EpcDetailRow label="Mains gas" value={epc.mains_gas_flag === 'Y' ? 'Yes' : epc.mains_gas_flag === 'N' ? 'No' : epc.mains_gas_flag} />
+            </div>
+            {/* Fabric & Systems */}
+            <div>
+              <p className="text-[9px] font-semibold text-ink-faint uppercase tracking-wider mb-1 border-b border-divider/40 pb-0.5">Fabric & Systems</p>
+              <EpcDetailRow label="Heating" value={epc.mainheat_description} />
+              <EpcDetailRow label="Walls" value={epc.walls_description} />
+              <EpcDetailRow label="Windows" value={epc.windows_description} />
+              <EpcDetailRow label="Roof" value={epc.roof_description} />
+              <EpcDetailRow label="Floor" value={epc.floor_description} />
+              <EpcDetailRow label="Solar PV" value={epc.photo_supply != null && epc.photo_supply > 0 ? `${epc.photo_supply}%` : null} />
+              <EpcDetailRow label="Solar water" value={epc.solar_water_heating_flag === 'Y' ? 'Yes' : epc.solar_water_heating_flag === 'N' ? 'No' : null} />
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -475,6 +569,7 @@ export default function TransactionTable({ sessionKey }: Props) {
                             </td>
                           </tr>
                         )}
+                        <EpcDetailPanel transactionId={txn.transaction_id} sessionKey={sessionKey} />
                       </>
                     )}
                   </Fragment>

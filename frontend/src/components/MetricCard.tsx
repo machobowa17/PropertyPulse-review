@@ -136,6 +136,7 @@ interface Props {
   areaName?: string;
   sessionKey?: string;
   isMapActive?: boolean;
+  modeMultiplier?: number;
 }
 
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
@@ -178,7 +179,7 @@ function comparisonColor(
   return 'neutral';
 }
 
-export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey, isMapActive }: Props) {
+export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey, isMapActive, modeMultiplier }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
@@ -245,6 +246,12 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           <div className="text-sm font-semibold text-ink truncate flex items-center gap-1.5">
             {metric.name}
             {isMapActive && <MapPin size={13} className="text-brand-500 shrink-0" />}
+            {modeMultiplier != null && modeMultiplier > 1 && (
+              <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 shrink-0">Prioritised</span>
+            )}
+            {modeMultiplier != null && modeMultiplier < 1 && modeMultiplier > 0 && (
+              <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-amber-50 text-amber-600 shrink-0">Lower priority</span>
+            )}
           </div>
           {metric.decision_question && <div className="text-[11px] text-ink-faint truncate">{metric.decision_question}</div>}
         </div>

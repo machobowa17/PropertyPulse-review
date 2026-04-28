@@ -286,11 +286,144 @@ async def fetch_local_governance(
             )
         )
 
-    # Financial health / Section 114 metric intentionally withheld for now.
-    # The previous implementation emitted factual answers from a hard-coded
-    # notice list, which does not meet the source-backed production standard.
-    # Re-enable only after the data path is replaced with a provenance-backed
-    # ingestion register built from authoritative official publications.
+    # --- Electricity Distribution (DNO) ---
+    try:
+        elec_result = await db.execute(
+            text(
+                """
+                SELECT e.lad_code,
+                       l.lad_name,
+                       e.dno_name,
+                       e.dno_region,
+                       e.dno_code
+                FROM core_electricity_dno_lad e
+                LEFT JOIN core_lad_county_lookup l ON l.lad_code = e.lad_code
+                WHERE e.lad_code = ANY(:lads)
+                ORDER BY l.lad_name
+                """
+            ),
+            {"lads": local_lads},
+        )
+        elec_rows = [dict(r) for r in elec_result.mappings().all()]
+        if elec_rows:
+            operators = sorted({row["dno_name"] for row in elec_rows if row.get("dno_name")})
+            regions = sorted({row["dno_region"] for row in elec_rows if row.get("dno_region")})
+            elec_label = operators[0] if len(operators) == 1 else "Multiple operators"
+            metrics.append(
+                metric(
+                    "electricity_dno",
+                    "Electricity Provider",
+                    elec_label,
+                    None,
+                    "provider",
+                    details={
+                        "operator_count": len(operators),
+                        "operators": operators,
+                        "regions": regions,
+                        "authority_operators": [
+                            {
+                                "lad_code": row.get("lad_code"),
+                                "lad_name": row.get("lad_name"),
+                                "dno_name": row.get("dno_name"),
+                                "dno_region": row.get("dno_region"),
+                            }
+                            for row in elec_rows
+                        ],
+                    },
+                )
+            )
+    except Exception:
+        pass  # Table may not exist yet
+
+    # --- Gas Distribution (GDN) ---
+    try:
+        gas_result = await db.execute(
+            text(
+                """
+                SELECT g.lad_code,
+                       l.lad_name,
+                       g.gdn_name,
+                       g.gdn_region
+                FROM core_gas_gdn_lad g
+                LEFT JOIN core_lad_county_lookup l ON l.lad_code = g.lad_code
+                WHERE g.lad_code = ANY(:lads)
+                ORDER BY l.lad_name
+                """
+            ),
+            {"lads": local_lads},
+        )
+        gas_rows = [dict(r) for r in gas_result.mappings().all()]
+        if gas_rows:
+            operators = sorted({row["gdn_name"] for row in gas_rows if row.get("gdn_name")})
+            regions = sorted({row["gdn_region"] for row in gas_rows if row.get("gdn_region")})
+            gas_label = operators[0] if len(operators) == 1 else "Multiple operators"
+            metrics.append(
+                metric(
+                    "gas_gdn",
+                    "Gas Provider",
+                    gas_label,
+                    None,
+                    "provider",
+                    details={
+                        "operator_count": len(operators),
+                        "operators": operators,
+                        "regions": regions,
+                        "authority_operators": [
+                            {
+                                "lad_code": row.get("lad_code"),
+                                "lad_name": row.get("lad_name"),
+                                "gdn_name": row.get("gdn_name"),
+                                "gdn_region": row.get("gdn_region"),
+                            }
+                            for row in gas_rows
+                        ],
+                    },
+                )
+            )
+    except Exception:
+        pass  # Table may not exist yet
+
+    # --- Financial Health (Section 114 Notices) ---
+    # Data source: core_s114_notices — ingested from official GOV.UK publications.
+    s114_result = await db.execute(
+        text(
+            "SELECT council_name, notice_date FROM core_s114_notices WHERE lad_code = ANY(:lads) ORDER BY notice_date DESC"
+        ),
+        {"lads": local_lads},
+    )
+    s114_rows = [dict(r) for r in s114_result.mappings().all()]
+    if s114_rows:
+        latest = s114_rows[0]
+        metrics.append(
+            metric(
+                "financial_health",
+                "Financial Health Warning",
+                f"S114 issued ({latest['notice_date'].year})",
+                None,
+                "status",
+                details={
+                    "notices": [
+                        {
+                            "council_name": row["council_name"],
+                            "notice_date": row["notice_date"].isoformat(),
+                        }
+                        for row in s114_rows
+                    ],
+                    "notice_count": len(s114_rows),
+                    "data_note": "Section 114 notices are issued when a council cannot balance its budget. Based on published notices as of April 2025.",
+                },
+            )
+        )
+    else:
+        metrics.append(
+            metric(
+                "financial_health",
+                "Financial Health",
+                "No S114 notice",
+                None,
+                "status",
+            )
+        )
 
     return metrics
 

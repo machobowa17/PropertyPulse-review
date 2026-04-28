@@ -18,6 +18,7 @@ import {
   sectionBadgeColor,
 } from '../../utils/sectionGrouping';
 import { useResults } from '../../context/ResultsContext';
+import { DECISION_MODE_MULTIPLIERS } from '../../utils/personalization';
 import { ResultsMobileMap } from './ResultsMapPanel';
 import type { Metric } from '../../types';
 
@@ -170,6 +171,7 @@ export function ResultsMetricsPanel() {
                               areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
                               sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
                               isMapActive={isDesktop && activeMapMetricId === m.id}
+                              modeMultiplier={decisionMode && decisionMode !== 'buy' ? DECISION_MODE_MULTIPLIERS[decisionMode]?.[m.id] : undefined}
                             />
                           </MetricErrorBoundary>
                         </div>

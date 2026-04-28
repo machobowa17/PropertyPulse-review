@@ -32,8 +32,8 @@ EXPECTED_METRIC_COUNTS = {
     "Property": 12,
     "Lifestyle": 8,
     "Environment": 11,
-    "Community": 25,
-    "Governance": 4,
+    "Community": 26,
+    "Governance": 5,
 }
 
 passed = 0

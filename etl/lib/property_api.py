@@ -151,6 +151,20 @@ def transactions_by_uprn(uprn):
     return _request("GET", f"/transactions/by-uprn/{uprn}", timeout=15)
 
 
+def epc_by_transaction(transaction_id):
+    """Fetch matched EPC certificate details for a PPD transaction.
+
+    Queries silver.match_results → bronze.raw_epc_domestic on Hetzner.
+
+    Args:
+        transaction_id: PPD transaction UUID string.
+
+    Returns:
+        Dict with EPC fields (construction_age, heating, costs, etc.), or None.
+    """
+    return _request("GET", f"/transactions/epc/by-transaction/{transaction_id}", timeout=10)
+
+
 def transactions_by_address(postcode, paon=None, saon=None, street=None):
     """Fetch transactions matching an address (fallback when no UPRN).
 
