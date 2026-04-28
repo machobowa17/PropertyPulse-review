@@ -126,7 +126,7 @@ function PropertyHistorySubRows({
         const change = olderSale ? pctChangeLabel(h.price, olderSale.price) : null;
 
         return (
-          <tr key={idx} className="bg-brand-50/20">
+          <tr key={`${h.date}-${h.price}`} className="bg-brand-50/20">
             {/* Expand column — connector line */}
             <td className="px-0 py-0 w-[3%]">
               <div className="border-l-2 border-brand-300 ml-4 h-full">&nbsp;</div>

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import * as Sentry from '@sentry/react';
 import { AlertTriangle, AlertCircle } from 'lucide-react';
 
 interface Props {
@@ -19,6 +20,9 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: info.componentStack ?? '' } },
+    });
   }
 
   render() {
@@ -76,6 +80,9 @@ export class MetricErrorBoundary extends Component<Props, CardState> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[MetricErrorBoundary]', error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: info.componentStack ?? '' } },
+    });
   }
 
   render() {

@@ -285,11 +285,11 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     enabled: !!sessionKey && activeTab === 'Property & Market',
   });
 
-  // Fetch comparable areas
+  // Fetch comparable areas (only needed on Property tab)
   const { data: comparable } = useQuery({
     queryKey: ['comparable', sessionKey],
     queryFn: () => fetchComparable(sessionKey!),
-    enabled: !!sessionKey,
+    enabled: !!sessionKey && activeTab === 'Property & Market',
   });
 
   // Fetch map POIs based on active tab

@@ -18,7 +18,7 @@ export default defineConfig({
           if (id.includes('maplibre-gl') || id.includes('supercluster') || id.includes('maplibre')) {
             return 'map';
           }
-          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) {
+          if (id.includes('recharts') || id.includes('d3-')) {
             return 'charts';
           }
           if (

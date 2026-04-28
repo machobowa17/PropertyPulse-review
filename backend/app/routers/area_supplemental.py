@@ -8,7 +8,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.errors import http_error
 from app.cache import cache_get, cache_set
 from app.services.session_helpers import (
     session_boundary_source,

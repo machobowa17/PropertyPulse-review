@@ -467,7 +467,7 @@ export default function DistrictPriceHistoryChart({
       </div>
 
       {/* Chart */}
-      <div ref={containerRef} className="h-[260px]">
+      <div ref={containerRef} className="h-[260px]" role="img" aria-label="Line chart showing district average sale price history">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart
             data={chartData}

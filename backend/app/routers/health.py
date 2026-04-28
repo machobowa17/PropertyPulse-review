@@ -35,8 +35,8 @@ async def health():
             await db.execute(text("SELECT 1"))
             db_status = "ok"
             break
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Health check: DB unreachable — %s", e)
 
     # Redis check
     try:
@@ -44,8 +44,8 @@ async def health():
         if r:
             await r.ping()
             redis_status = "ok"
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Health check: Redis unreachable — %s", e)
 
     status = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
     http_code = 200 if status == "ok" else 503

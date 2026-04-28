@@ -28,7 +28,7 @@ export default function TransportModeChart({ modeCounts }: Props) {
   return (
     <div className="bg-surface rounded-xl p-3 space-y-1 mt-2">
       <h4 className="text-xs font-semibold text-ink-muted">Stops within 1km by mode</h4>
-      <div className="h-[140px]">
+      <div className="h-[140px]" role="img" aria-label="Bar chart showing transport stops by mode within 1 kilometre">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barSize={36}>
             <XAxis

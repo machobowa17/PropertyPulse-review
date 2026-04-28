@@ -11,10 +11,11 @@ import {
 } from 'lucide-react';
 import type { Metric, PersonaId } from '../types';
 import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
+import type { SchoolRow, QualitySummary } from './SchoolTable';
+import type { NurseryRow, NurserySummary } from './NurseryTable';
 import { formatValue, METRIC_ICONS } from '../utils/tabs';
 import { getTakeaway } from '../utils/personas';
-import TransactionTable from './TransactionTable';
-// R3: lazy-load chart components — only parsed when the metric card is expanded
+// R3: lazy-load detail components — only parsed when the metric card is expanded
 const NewBuildTrendChart      = lazy(() => import('./NewBuildTrendChart'));
 const AmenityRadarChart       = lazy(() => import('./AmenityRadarChart'));
 const PriceByTypeChart        = lazy(() => import('./PriceByTypeChart'));
@@ -30,6 +31,7 @@ const HpiTrendChart           = lazy(() => import('./HpiTrendChart'));
 const StationTable            = lazy(() => import('./StationTable'));
 const SchoolTable             = lazy(() => import('./SchoolTable'));
 const NurseryTable            = lazy(() => import('./NurseryTable'));
+const TransactionTable        = lazy(() => import('./TransactionTable'));
 
 // Runtime-safe accessors for details: Record<string, unknown>
 // Replaces 40+ unsafe `as` casts with type-checked reads.
@@ -411,7 +413,9 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 />
               )}
               {metric.id === 'transaction_volume' && sessionKey && expanded && (
-                <TransactionTable sessionKey={sessionKey} />
+                <Suspense fallback={null}>
+                  <TransactionTable sessionKey={sessionKey} />
+                </Suspense>
               )}
               {/* Quality flags (deduplicated against data notes) */}
               {(() => {
@@ -545,15 +549,14 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
 function renderDetailsContent(details: Record<string, unknown>, unit: string, parentName: string): React.ReactNode {
   if (Array.isArray(details.schools)) {
     // Use SchoolTable when all_schools array is available (from Hetzner School API)
-    const allSchools = arr(details, 'all_schools');
-    const summary = details.summary as Record<string, unknown> | undefined;
+    const allSchools = arr(details, 'all_schools') as unknown as SchoolRow[];
+    const summary = details.summary as QualitySummary | undefined;
     if (allSchools.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (
         <Suspense fallback={null}>
           <SchoolTable
-            schools={allSchools as any}
-            summary={summary as any}
+            schools={allSchools}
+            summary={summary}
           />
         </Suspense>
       );
@@ -602,14 +605,14 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
   }
 
   if (Array.isArray(details.nurseries)) {
-    const allNurseries = arr(details, 'nurseries');
-    const nurserySummary = details.nursery_summary as Record<string, unknown> | undefined;
+    const allNurseries = arr(details, 'nurseries') as unknown as NurseryRow[];
+    const nurserySummary = details.nursery_summary as NurserySummary | undefined;
     if (allNurseries.length > 0) {
       return (
         <Suspense fallback={null}>
           <NurseryTable
-            nurseries={allNurseries as any}
-            summary={nurserySummary as any}
+            nurseries={allNurseries}
+            summary={nurserySummary}
           />
         </Suspense>
       );

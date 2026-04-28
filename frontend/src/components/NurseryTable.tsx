@@ -4,7 +4,7 @@ import {
   Baby, Users,
 } from 'lucide-react';
 
-interface NurseryRow {
+export interface NurseryRow {
   urn: string;
   name: string;
   type?: string | null;
@@ -18,7 +18,7 @@ interface NurseryRow {
   distance_m?: number | null;
 }
 
-interface NurserySummary {
+export interface NurserySummary {
   total?: number;
   outstanding?: number;
   good?: number;

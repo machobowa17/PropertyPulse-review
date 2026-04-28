@@ -10,7 +10,7 @@ DATA_DIR="$SCRIPT_DIR/data"
 mkdir -p "$DATA_DIR"
 
 echo "=== Downloading GB GTFS (all modes: rail, bus, metro, tram, ferry) ==="
-echo "Source: Transitous/aubin.app combined feed (~1 GB)"
+echo "Source: aubin.app combined feed (~1 GB)"
 curl -L -o "$DATA_DIR/great_britain_gtfs.zip" \
   "https://beta.aubin.app/gtfs/great_britain_gtfs.zip"
 echo "Done: $(ls -lh "$DATA_DIR/great_britain_gtfs.zip" | awk '{print $5}')"

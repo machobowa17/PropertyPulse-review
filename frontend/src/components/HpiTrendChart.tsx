@@ -234,7 +234,7 @@ export default function HpiTrendChart({ series }: Props) {
       </div>
 
       {/* Chart */}
-      <div className="h-[220px]">
+      <div className="h-[220px]" role="img" aria-label="Line chart showing house price index trend">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

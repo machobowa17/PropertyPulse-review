@@ -81,7 +81,7 @@ export function ResultsMobileMap() {
               activeTab={activeTab}
               visibleLayers={visibleLayers}
               onToggle={handleLayerToggle}
-              soldPricesSince={(mapPois as any)?.sold_prices_since}
+              soldPricesSince={mapPois?.sold_prices_since}
               focusMode={mapFocusMode}
               focusLabel={focusLabel}
               focusReason={focusReason}
@@ -158,7 +158,7 @@ export function ResultsDesktopMap() {
           activeTab={activeTab}
           visibleLayers={visibleLayers}
           onToggle={handleLayerToggle}
-          soldPricesSince={(mapPois as any)?.sold_prices_since}
+          soldPricesSince={mapPois?.sold_prices_since}
           focusMode={mapFocusMode}
           focusLabel={focusLabel}
           focusReason={focusReason}

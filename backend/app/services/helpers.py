@@ -1,10 +1,8 @@
 """Shared helpers for tab services. Bible Part 6 response shape."""
 import hashlib
 import json as _json
-from copy import deepcopy
-
 from app.constants import TABLE_NAMES
-from app.metric_registry import METRIC_REGISTRY, SECTION_IDS
+from app.metric_registry import METRIC_REGISTRY
 
 
 def _normalize_scalar(value, fallback="_"):

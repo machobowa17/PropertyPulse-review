@@ -85,7 +85,10 @@ export function saveArea(entry: Omit<SavedAreaEntry, 'id' | 'savedAt' | 'lastVie
     .sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime())
     .slice(0, MAX_ITEMS_PER_COLLECTION);
 
-  writeRaw([...trimmedCollection, ...otherCollections]);
+  const trimmedOthers = otherCollections
+    .sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime())
+    .slice(0, MAX_ITEMS_PER_COLLECTION);
+  writeRaw([...trimmedCollection, ...trimmedOthers]);
   return nextEntry;
 }
 

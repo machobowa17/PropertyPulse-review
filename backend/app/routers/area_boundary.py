@@ -3,6 +3,7 @@ GET /api/v1/boundary
 Boundary GeoJSON endpoint — returns ward/LSOA, LAD, county, place, or ward boundary.
 """
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -19,6 +20,7 @@ from app.services.session_helpers import (
     require_session,
 )
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -139,8 +141,9 @@ async def get_boundary(
                 {"name": pn, "lad": plad},
             )
             row = res.mappings().first()
-        except Exception:
+        except Exception as e:
             # Table may not exist yet; fall through to live ST_Union
+            log.debug("place_boundaries_union lookup failed (%s), falling back to live ST_Union", e)
             await db.rollback()
 
         if not row or not row.get("geojson"):

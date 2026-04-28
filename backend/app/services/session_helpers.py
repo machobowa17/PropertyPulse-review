@@ -89,7 +89,7 @@ async def require_session(session_key: str | None) -> dict:
 # Cache key builder
 # ---------------------------------------------------------------------------
 
-def area_scope_cache_key(sess: dict, tab: str, cache_version: str = "v8") -> str:
+def area_scope_cache_key(sess: dict, tab: str, cache_version: str = "v26") -> str:
     local_scope = geo_local_scope(sess)
     comparison_scope = geo_comparison_scope(sess)
     display_geometry = geo_display_geometry(sess)

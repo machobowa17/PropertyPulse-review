@@ -96,14 +96,6 @@ export const METRIC_MAP_BINDINGS: Record<string, MetricMapBinding> = {
   median_earnings: { mode: 'layer', layerKey: 'choropleth_median_earnings', label: 'Median earnings heatmap', reason: 'Honest local-authority proxy layer available.' },
 };
 
-/* Derived: metric ID → layer key (for layer-mode bindings only) */
-export const METRIC_TO_MAP_LAYER: Record<string, string> = Object.entries(METRIC_MAP_BINDINGS).reduce((acc, [metricId, binding]) => {
-  if (binding.mode === 'layer' && binding.layerKey) {
-    acc[metricId] = binding.layerKey;
-  }
-  return acc;
-}, {} as Record<string, string>);
-
 /* Derived from MAP_LAYER_PRIORITY — single source of truth for all choropleth keys. */
 export const ALL_CHOROPLETH_KEYS = [
   ...new Set(

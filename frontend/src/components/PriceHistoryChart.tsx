@@ -38,7 +38,7 @@ export default function PriceHistoryChart({ local, regional, regionalName }: Pro
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3">
       <h4 className="text-sm font-semibold text-ink">Price History</h4>
-      <div className="h-[260px]">
+      <div className="h-[260px]" role="img" aria-label="Line chart showing price history over time">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart data={merged} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-divider, #e5e7eb)" />

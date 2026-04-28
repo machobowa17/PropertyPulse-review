@@ -47,27 +47,6 @@ export async function fetchAreaTab(
   return parsed.data as unknown as AreaResponse;
 }
 
-export interface DataFreshnessItem {
-  source_name: string;
-  last_success: string | null;
-  rows: number | null;
-  status: 'running' | 'success' | 'failed' | 'validation_failed' | 'never_run' | string;
-}
-
-export interface DataFreshnessResponse {
-  sources: DataFreshnessItem[];
-}
-
-export async function fetchDataFreshness(): Promise<DataFreshnessResponse | null> {
-  try {
-    const res = await fetchWithRetry(`${BASE}/data-freshness`);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
-}
-
 export type { CoverageMetadata };
 
 export interface Suggestion {
@@ -208,10 +187,12 @@ export async function fetchComparable(sessionKey: string): Promise<ComparableRes
   }
 }
 
+export type MapPoisResponse = GeoJSON.FeatureCollection & { sold_prices_since?: string };
+
 export async function fetchMapPois(
   sessionKey: string,
   tab: string,
-): Promise<GeoJSON.FeatureCollection | null> {
+): Promise<MapPoisResponse | null> {
   try {
     const url = `${BASE}/map-pois?session_key=${encodeURIComponent(sessionKey)}&tab=${encodeURIComponent(tab)}`;
     const res = await fetchWithRetry(url, { cache: 'no-store' });
@@ -220,38 +201,6 @@ export async function fetchMapPois(
   } catch {
     return null;
   }
-}
-
-export interface CommuteMode {
-  mode: string;
-  route_km: number;
-  mins: number;
-  label: string;
-}
-
-export interface CommuteResult {
-  destination: string;
-  straight_km: number;
-  modes: {
-    driving: CommuteMode;
-    transit: CommuteMode;
-    cycling: CommuteMode;
-    walking: CommuteMode;
-  };
-}
-
-export async function fetchCommute(
-  sessionKey: string,
-  destination: string,
-): Promise<CommuteResult> {
-  const res = await fetchWithRetry(
-    `${BASE}/commute?session_key=${encodeURIComponent(sessionKey)}&destination=${encodeURIComponent(destination)}`,
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Destination not found');
-  }
-  return res.json();
 }
 
 export async function fetchBoundary(

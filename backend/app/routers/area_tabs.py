@@ -3,6 +3,8 @@ GET /api/v1/area?session_key=&tab=
 Tab data endpoint — dispatches to the 5 tab service handlers.
 Post-processes flat metrics into the nested Metric contract via enrich_metrics().
 """
+import asyncio
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,6 +83,8 @@ async def get_area_data(
     # Post-process: enrich flat metrics into nested contract
     metrics = enrich_metrics(flat_metrics, parent_name=parent_name)
     result = {"tab": tab, "metrics": metrics}
-    await cache_set(cache_key, result, ttl=3600)
-    await cache_set(scope_cache_key, result, ttl=3600)
+    await asyncio.gather(
+        cache_set(cache_key, result, ttl=3600),
+        cache_set(scope_cache_key, result, ttl=3600),
+    )
     return result

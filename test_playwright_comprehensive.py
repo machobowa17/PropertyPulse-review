@@ -701,7 +701,7 @@ def run_all_tests():
               type_count > 0, f"{type_count} toggle buttons found")
 
         # Click "Detached" type pill if available
-        by_type_btn = page.locator('button:has-text("Detached"), button:has-text("Average by Type")')
+        by_type_btn = page.locator('button:has-text("Detached")')
         if by_type_btn.count() > 0:
             by_type_btn.first.click()
             time.sleep(2)
@@ -709,7 +709,7 @@ def run_all_tests():
             paths = page.locator(".recharts-line-curve, .recharts-area-curve, svg path").count()
             R.add(section, "Per-type chart lines", paths > 0, f"{paths} data paths")
         else:
-            R.add_warn(section, "Average by Type button", "not found")
+            R.add_warn(section, "Detached type button", "not found")
 
         page.close()
         context.close()

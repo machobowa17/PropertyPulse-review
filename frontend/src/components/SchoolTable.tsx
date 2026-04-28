@@ -11,7 +11,7 @@ import { useResultsData } from '../context/ResultsContext';
 import { useResults } from '../context/ResultsContext';
 
 /* ── List-level row (from nearby/by-lsoa endpoint) ── */
-interface SchoolRow {
+export interface SchoolRow {
   urn: number;
   name: string;
   type_code?: string | null;
@@ -229,7 +229,7 @@ interface SchoolDetailData {
   quality_flags?: string[];
 }
 
-interface QualitySummary {
+export interface QualitySummary {
   total_schools?: number;
   primary_count?: number;
   secondary_count?: number;

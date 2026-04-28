@@ -601,7 +601,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       }
 
       // Render other POI markers with distinct icons per category
+      const MAX_POI_MARKERS = 100;
+      let poiCount = 0;
       for (const feature of otherPointFeatures) {
+        if (poiCount >= MAX_POI_MARKERS) break;
         const coords = (feature.geometry as GeoJSON.Point).coordinates;
         if (!coords || coords.length < 2 || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
         const [lng, lt] = coords as [number, number];
@@ -625,6 +628,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           )
           .addTo(map);
         poiMarkersRef.current.push(marker);
+        poiCount++;
       }
 
       // Flood zone polygons
@@ -1056,7 +1060,16 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       if (moveendTimer) clearTimeout(moveendTimer);
       moveendTimer = setTimeout(() => {
         if (clusterIndexRef.current) {
-          renderSoldPriceMarkers(map);
+          // Skip re-render if a sold-price popup is currently open — destroying the marker
+          // mid-popup causes the map to jump (popup loses anchor → flies to [0,0])
+          const hasOpenPopup = soldMarkersRef.current.some(
+            (m) => m.getPopup()?.isOpen(),
+          ) || spiderRef.current.markers.some(
+            (m) => m.getPopup()?.isOpen(),
+          );
+          if (!hasOpenPopup) {
+            renderSoldPriceMarkers(map);
+          }
         }
         // Report viewport to parent for preservation across mount/unmount
         const c = map.getCenter();
@@ -1220,7 +1233,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
   }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 
-  return <div ref={containerRef} className="w-full h-full" role="application" aria-label="Interactive map" tabIndex={0} />;
+  return <div ref={containerRef} className="w-full h-full" role="application" aria-label="Interactive map" />;
 }
 
 /** Extract all coordinate pairs from any GeoJSON geometry */
