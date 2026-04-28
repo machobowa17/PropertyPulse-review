@@ -661,13 +661,12 @@ async def get_property_history(
 async def transaction_epc_detail(
     transaction_id: str,
     session_key: str = Query(...),
-    db: AsyncSession = Depends(get_db),
 ):
     """Fetch full EPC certificate matched to a transaction from Hetzner."""
-    await require_session(db, session_key)
+    await require_session(session_key)
     try:
         from etl_lib import property_api
         result = property_api.epc_by_transaction(transaction_id)
-    except ImportError:
+    except Exception:
         result = None
     return {"epc": result}
