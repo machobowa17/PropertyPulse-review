@@ -49,11 +49,11 @@ export function ResultsMetricsPanel() {
     [tabData],
   );
 
-  // Auto-open first section on tab change + scroll to top
+  // All sections collapsed by default on tab change + scroll to top
   useEffect(() => {
-    setExpandedSections(new Set(sections.length > 0 ? [sections[0].config.id] : []));
+    setExpandedSections(new Set());
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [activeTab, sections]);
+  }, [activeTab]);
 
   const hiddenMetrics = useMemo(() => {
     if (!tabData?.metrics) return [];
