@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 60)
+Last updated: 2026-04-28 (session 61)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -269,7 +269,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P56 | Map fly-to on transaction row click | **DONE** | Session 47. Expanding a row flies map to property at zoom 17. Collapsing row or metric card restores original viewport. `mapFlyToRef` in ResultsContext, populated by MapView `onMapReady` callback. `lat`/`lon` added to `/transactions` response. |
 | P57 | Sold price popup format change | **DONE** | Session 47. Changed from Address → £price (big) → Type · Tenure → Date to: Address → Type · Tenure · Beds · Floor area → "Last sold: Month Year, £price". |
 | P58 | EPC rating distribution — enhanced with type + period toggles | **DONE** (Phase 1) | Session 60. Fixed NULL pct_a-g by switching to populated grouped columns (pct_rating_a_b, pct_rating_c, pct_rating_d, pct_rating_e_g). Classic UK EPC arrow-style band labels. Phase 2 (type toggles, period-built) deferred until M3. |
-| P59 | Property energy & building profile metric | Pending | New metric on Property tab showing area-level EPC-derived building characteristics in a table with type toggles (same pattern as freehold/leasehold, housing stock tables): heating type breakdown (gas/electric/oil/district), fuel type, energy consumption (kWh/yr), CO2 emissions (t/yr), running costs (heating £/yr, hot water £/yr, lighting £/yr), glazing quality, wall construction/insulation, solar adoption, mains gas connectivity. **Fully blocked by M3** — requires EPC re-ingestion with additional columns (D17-D21). All columns exist in raw EPC CSV but are not currently loaded. |
+| P59 | Property energy & building profile metric | **DONE** | Session 61. Aggregated 29.2M EPC certificates from Hetzner → 35,889 LSOA-level building profile stats. Populated 6 existing NULL heating columns + added 13 new columns (energy consumption kWh/m²/yr, CO2 t/yr, running costs, mains gas %, solar %, 7 construction age bands). New `building_profile` metric on Property tab with `BuildingProfileChart.tsx`. Heating moved from EpcRatingChart → BuildingProfileChart. Verified: CR5 1RA (95% gas, 1930s housing), SW1A 1AA (62% gas/34% electric, 41% pre-1900), TA24 8SH (47% electric/41% oil, 1% mains gas). |
 
 #### 7D — Lifestyle tab
 
@@ -334,6 +334,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S60-4 | P54: Bedroom filter on price history charts | **DONE** | Session 60. By Type/By Beds toggle, 1-5+ bed lines. Backend returns `by_bedrooms` for all search types. |
 | S60-5 | P58: EPC rating distribution fix + redesign | **DONE** | Session 60. Switched to grouped columns, classic UK EPC arrow-style bars. |
 | S60-6 | P38: Park cover data audit | **Audited** | Session 60. Data and methodology verified correct. No changes needed. |
+| S61-1 | P59: Building Profile metric | **DONE** | Session 61. Aggregated 29.2M EPC certs from Hetzner → 35,889 LSOA rows. New building_profile metric with BuildingProfileChart: heating fuel, CO2, energy, costs, construction age, solar. Also completed D16-D20. |
 
 ---
 
@@ -404,15 +405,15 @@ ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`,
 
 | # | Proposal | Effort | Impact | Notes |
 |---|----------|--------|--------|-------|
-| D16 | Construction age band distribution | Medium | High | Requires adding `CONSTRUCTION_AGE_BAND` to EPC ETL `_COLUMN_MAP` + new LSOA aggregation. Answers "what era were properties here built?" |
-| D17 | Running costs (heating + hot water + lighting) | Medium | High | Requires adding 3 cost columns to EPC ETL. Powerful for buyers: "how much does it cost to run a home here?" |
-| D18 | CO2 emissions per property | Medium | Medium | Requires `CO2_EMISSIONS_CURRENT`. Environmental metric. Would populate the empty `avg_co2_emissions` in `core_epc_lsoa`. |
-| D19 | Heating fuel type breakdown | Medium | Medium | Requires `MAIN_FUEL`. Would populate the empty `heat_gas_pct` etc. in `core_epc_lsoa`. Tab_property.py already queries these — just needs data. |
-| D20 | Solar/renewable adoption rate | Medium | Medium | Requires `SOLAR_WATER_HEATING_FLAG` + `PHOTO_SUPPLY`. Trending metric for eco-conscious buyers. |
-| D21 | Glazing + insulation quality | Medium | Low | Requires `WINDOWS_DESCRIPTION` + `FLOOR_DESCRIPTION`. Niche but relevant to energy bills. |
-| D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | Requires `BUILT_FORM`. More granular than D/S/T/F. Shows "is this a bungalow area?" |
+| D16 | Construction age band distribution | Medium | High | **DONE** (P59, session 61). 7 age bands aggregated from Hetzner raw EPC → `core_epc_lsoa`. |
+| D17 | Running costs (heating + hot water + lighting) | Medium | High | **DONE** (P59, session 61). avg_heating_cost, avg_hotwater_cost, avg_lighting_cost in `core_epc_lsoa`. |
+| D18 | CO2 emissions per property | Medium | Medium | **DONE** (P59, session 61). avg_co2_emissions populated from Hetzner raw EPC aggregation. |
+| D19 | Heating fuel type breakdown | Medium | Medium | **DONE** (P59, session 61). heat_gas/electric/oil/district/other/none_pct populated. |
+| D20 | Solar/renewable adoption rate | Medium | Medium | **DONE** (P59, session 61). pct_solar (solar water heating OR photovoltaic) in `core_epc_lsoa`. |
+| D21 | Glazing + insulation quality | Medium | Low | Pending. Raw columns exist on Hetzner (windows_description, walls_description, floor_description). Could add to building_profile but text fields need classification/aggregation logic. |
+| D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | Pending. Raw `built_form` exists on Hetzner. Could aggregate to LSOA % distribution. |
 
-All D16–D22 require re-running EPC ETL with additional columns. M3 (EPC table restore) is now DONE — these need new column extraction from raw CSV, not just the table restore.
+D16–D20 completed via P59 (session 61) by aggregating from Hetzner's full 93-column EPC table. D21–D22 remain — need text classification of raw description fields.
 
 #### Proposals — Zero ETL, Census Data Already in `core_census_lsoa`
 
