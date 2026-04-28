@@ -12,6 +12,7 @@ import {
 import type { ResolveResponse, AreaResponse, TabName, PersonaId, Metric } from '../types';
 import type {
   PriceHistoryResponse, AqHistoryResponse, PriceByTypeResponse, ComparableResponse, ChoroplethResponse,
+  MapPoisResponse,
 } from '../api/client';
 import type { DecisionMode } from '../components/DecisionModeSelector';
 import { saveArea, removeSavedArea, isAreaSaved, buildSavedAreaId } from '../utils/savedAreas';
@@ -66,7 +67,7 @@ export interface ResultsDataContextValue {
   boundaryData: GeoJSON.Feature | GeoJSON.FeatureCollection | null | undefined;
   effectiveBoundary: GeoJSON.Feature | null;
   effectiveLsoaBoundary: GeoJSON.Feature | null | undefined;
-  mapPois: GeoJSON.FeatureCollection | undefined | null;
+  mapPois: MapPoisResponse | undefined | null;
   mapPoisLoading: boolean;
   choroplethData: ChoroplethResponse | undefined | null;
   choroplethUrl: string | null;
