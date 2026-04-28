@@ -104,7 +104,8 @@ async def get_price_history(
 
     # Bedroom breakdown — LAD-level (aggregated to local_lads for all search types)
     bedrooms_rows: list = []
-    if local_lads:
+    bed_lads = sess.get("local_lads", [])
+    if bed_lads:
         bedrooms_res = await db.execute(
             text("""
                 SELECT year::text AS year,
@@ -118,7 +119,7 @@ async def get_price_history(
                 GROUP BY year, bedrooms
                 ORDER BY year, bedrooms
             """),
-            {"lads": local_lads, "price_types": list(PRICE_TYPES)},
+            {"lads": bed_lads, "price_types": list(PRICE_TYPES)},
         )
         bedrooms_rows = [dict(r) for r in bedrooms_res.mappings().all()]
 
