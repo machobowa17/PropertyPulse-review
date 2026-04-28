@@ -970,7 +970,23 @@ async def fetch_property_market(
                    SUM(total_certs * age_1950_1966_pct) / NULLIF(SUM(total_certs), 0) AS age_1950_1966_pct,
                    SUM(total_certs * age_1967_1982_pct) / NULLIF(SUM(total_certs), 0) AS age_1967_1982_pct,
                    SUM(total_certs * age_1983_2002_pct) / NULLIF(SUM(total_certs), 0) AS age_1983_2002_pct,
-                   SUM(total_certs * age_post2002_pct) / NULLIF(SUM(total_certs), 0) AS age_post2002_pct
+                   SUM(total_certs * age_post2002_pct) / NULLIF(SUM(total_certs), 0) AS age_post2002_pct,
+                   SUM(total_certs * windows_good_pct) / NULLIF(SUM(total_certs), 0) AS windows_good_pct,
+                   SUM(total_certs * windows_vpoor_pct) / NULLIF(SUM(total_certs), 0) AS windows_vpoor_pct,
+                   SUM(total_certs * windows_poor_pct) / NULLIF(SUM(total_certs), 0) AS windows_poor_pct,
+                   SUM(total_certs * windows_avg_pct) / NULLIF(SUM(total_certs), 0) AS windows_avg_pct,
+                   SUM(total_certs * walls_good_pct) / NULLIF(SUM(total_certs), 0) AS walls_good_pct,
+                   SUM(total_certs * walls_vpoor_pct) / NULLIF(SUM(total_certs), 0) AS walls_vpoor_pct,
+                   SUM(total_certs * roof_good_pct) / NULLIF(SUM(total_certs), 0) AS roof_good_pct,
+                   SUM(total_certs * roof_vpoor_pct) / NULLIF(SUM(total_certs), 0) AS roof_vpoor_pct,
+                   SUM(total_certs * glaze_single_pct) / NULLIF(SUM(total_certs), 0) AS glaze_single_pct,
+                   SUM(total_certs * glaze_double_pct) / NULLIF(SUM(total_certs), 0) AS glaze_double_pct,
+                   SUM(total_certs * glaze_triple_pct) / NULLIF(SUM(total_certs), 0) AS glaze_triple_pct,
+                   SUM(total_certs * avg_multi_glaze_pct) / NULLIF(SUM(total_certs), 0) AS avg_multi_glaze_pct,
+                   SUM(total_certs * form_detached_pct) / NULLIF(SUM(total_certs), 0) AS form_detached_pct,
+                   SUM(total_certs * form_semi_pct) / NULLIF(SUM(total_certs), 0) AS form_semi_pct,
+                   SUM(total_certs * form_terrace_pct) / NULLIF(SUM(total_certs), 0) AS form_terrace_pct,
+                   SUM(total_certs * form_end_terrace_pct) / NULLIF(SUM(total_certs), 0) AS form_end_terrace_pct
             FROM core_epc_lsoa
             WHERE lsoa_code = ANY(:codes)
             """
@@ -1067,6 +1083,22 @@ async def fetch_property_market(
                         "age_1967_1982_pct": _round(epc_row["age_1967_1982_pct"]),
                         "age_1983_2002_pct": _round(epc_row["age_1983_2002_pct"]),
                         "age_post2002_pct": _round(epc_row["age_post2002_pct"]),
+                        "windows_good_pct": _round(epc_row["windows_good_pct"]),
+                        "windows_vpoor_pct": _round(epc_row["windows_vpoor_pct"]),
+                        "windows_poor_pct": _round(epc_row["windows_poor_pct"]),
+                        "windows_avg_pct": _round(epc_row["windows_avg_pct"]),
+                        "walls_good_pct": _round(epc_row["walls_good_pct"]),
+                        "walls_vpoor_pct": _round(epc_row["walls_vpoor_pct"]),
+                        "roof_good_pct": _round(epc_row["roof_good_pct"]),
+                        "roof_vpoor_pct": _round(epc_row["roof_vpoor_pct"]),
+                        "glaze_single_pct": _round(epc_row["glaze_single_pct"]),
+                        "glaze_double_pct": _round(epc_row["glaze_double_pct"]),
+                        "glaze_triple_pct": _round(epc_row["glaze_triple_pct"]),
+                        "avg_multi_glaze_pct": _round(epc_row["avg_multi_glaze_pct"]),
+                        "form_detached_pct": _round(epc_row["form_detached_pct"]),
+                        "form_semi_pct": _round(epc_row["form_semi_pct"]),
+                        "form_terrace_pct": _round(epc_row["form_terrace_pct"]),
+                        "form_end_terrace_pct": _round(epc_row["form_end_terrace_pct"]),
                     },
                 )
             )

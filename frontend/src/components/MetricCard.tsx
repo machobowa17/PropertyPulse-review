@@ -795,6 +795,22 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         age1967_1982Pct={num(details, 'age_1967_1982_pct')}
         age1983_2002Pct={num(details, 'age_1983_2002_pct')}
         agePost2002Pct={num(details, 'age_post2002_pct')}
+        windowsGoodPct={num(details, 'windows_good_pct')}
+        windowsVpoorPct={num(details, 'windows_vpoor_pct')}
+        windowsPoorPct={num(details, 'windows_poor_pct')}
+        windowsAvgPct={num(details, 'windows_avg_pct')}
+        wallsGoodPct={num(details, 'walls_good_pct')}
+        wallsVpoorPct={num(details, 'walls_vpoor_pct')}
+        roofGoodPct={num(details, 'roof_good_pct')}
+        roofVpoorPct={num(details, 'roof_vpoor_pct')}
+        glazeSinglePct={num(details, 'glaze_single_pct')}
+        glazeDoublePct={num(details, 'glaze_double_pct')}
+        glazeTriplePct={num(details, 'glaze_triple_pct')}
+        avgMultiGlazePct={num(details, 'avg_multi_glaze_pct')}
+        formDetachedPct={num(details, 'form_detached_pct')}
+        formSemiPct={num(details, 'form_semi_pct')}
+        formTerracePct={num(details, 'form_terrace_pct')}
+        formEndTerracePct={num(details, 'form_end_terrace_pct')}
       />
     );
   }

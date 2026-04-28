@@ -311,7 +311,7 @@ METRIC_REGISTRY = {
         "section": "Property & Market",
         "label": "Building Profile",
         "short_label": "Building",
-        "description": "Area-level building characteristics from EPC certificates: heating, costs, construction age, CO2",
+        "description": "Area-level building characteristics from EPC certificates: heating, costs, construction age, CO2, glazing, insulation, built form",
         "local_grain": "lsoa",
         "supports_parent": False,
         "supports_trend": False,

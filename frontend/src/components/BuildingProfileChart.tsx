@@ -21,6 +21,24 @@ interface Props {
   age1967_1982Pct?: number | null;
   age1983_2002Pct?: number | null;
   agePost2002Pct?: number | null;
+  // D21: Glazing & insulation
+  windowsGoodPct?: number | null;
+  windowsVpoorPct?: number | null;
+  windowsPoorPct?: number | null;
+  windowsAvgPct?: number | null;
+  wallsGoodPct?: number | null;
+  wallsVpoorPct?: number | null;
+  roofGoodPct?: number | null;
+  roofVpoorPct?: number | null;
+  glazeSinglePct?: number | null;
+  glazeDoublePct?: number | null;
+  glazeTriplePct?: number | null;
+  avgMultiGlazePct?: number | null;
+  // D22: Built form
+  formDetachedPct?: number | null;
+  formSemiPct?: number | null;
+  formTerracePct?: number | null;
+  formEndTerracePct?: number | null;
 }
 
 const HEAT_ITEMS = [
@@ -41,6 +59,12 @@ const AGE_BANDS = [
   { key: 'post2002', label: 'Post-2002', colour: '#22c55e' },
 ] as const;
 
+const FABRIC_ITEMS = [
+  { label: 'Windows', goodKey: 'windows' as const, colour: '#3b82f6' },
+  { label: 'Walls', goodKey: 'walls' as const, colour: '#8b5cf6' },
+  { label: 'Roof', goodKey: 'roof' as const, colour: '#f59e0b' },
+] as const;
+
 function fmt(v: number | null | undefined): string {
   if (v == null) return '—';
   return v.toLocaleString('en-GB', { maximumFractionDigits: 1 });
@@ -58,6 +82,11 @@ export default function BuildingProfileChart({
   pctMainsGas, pctSolar,
   agePre1900Pct, age1900_1929Pct, age1930_1949Pct, age1950_1966Pct,
   age1967_1982Pct, age1983_2002Pct, agePost2002Pct,
+  windowsGoodPct, windowsVpoorPct,
+  wallsGoodPct, wallsVpoorPct,
+  roofGoodPct, roofVpoorPct,
+  glazeSinglePct, glazeDoublePct, glazeTriplePct, avgMultiGlazePct,
+  formDetachedPct, formSemiPct, formTerracePct, formEndTerracePct,
 }: Props) {
   const heatMap: Record<string, number | null | undefined> = {
     gas: heatGasPct, electric: heatElectricPct, oil: heatOilPct,
@@ -77,6 +106,24 @@ export default function BuildingProfileChart({
     .filter((v): v is number => v != null)
     .reduce((a, b) => a + b, 0);
   const hasCosts = avgHeatingCost != null;
+
+  // D22: Built form
+  const hasForm = formDetachedPct != null || formSemiPct != null || formTerracePct != null;
+  const formItems = [
+    { label: 'Detached', pct: formDetachedPct, colour: '#2563eb' },
+    { label: 'Semi-detached', pct: formSemiPct, colour: '#7c3aed' },
+    { label: 'Terraced', pct: formTerracePct, colour: '#ea580c' },
+  ].filter(f => f.pct != null && f.pct >= 0.5) as { label: string; pct: number; colour: string }[];
+
+  // D21: Fabric quality
+  const fabricGoodMap: Record<string, number | null | undefined> = {
+    windows: windowsGoodPct, walls: wallsGoodPct, roof: roofGoodPct,
+  };
+  const fabricVpoorMap: Record<string, number | null | undefined> = {
+    windows: windowsVpoorPct, walls: wallsVpoorPct, roof: roofVpoorPct,
+  };
+  const hasFabric = windowsGoodPct != null || wallsGoodPct != null || roofGoodPct != null;
+  const hasGlazing = glazeDoublePct != null || glazeSinglePct != null;
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-4 mt-2">
@@ -109,6 +156,40 @@ export default function BuildingProfileChart({
           )}
         </div>
       </div>
+
+      {/* ─── Built Form Distribution (D22) ─── */}
+      {hasForm && (
+        <div>
+          <h4 className="text-xs font-semibold text-ink-muted mb-2">Built Form</h4>
+          {/* Stacked bar */}
+          <div className="h-6 rounded-full overflow-hidden flex bg-divider">
+            {formItems.map(({ label, pct, colour }) => (
+              <div
+                key={label}
+                className="h-full flex items-center justify-center text-[10px] font-semibold text-white"
+                style={{ width: `${pct}%`, backgroundColor: colour, minWidth: pct >= 3 ? undefined : 0 }}
+                title={`${label}: ${pct.toFixed(1)}%`}
+              >
+                {pct >= 8 ? `${pct.toFixed(0)}%` : ''}
+              </div>
+            ))}
+          </div>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+            {formItems.map(({ label, pct, colour }) => (
+              <div key={label} className="flex items-center gap-1.5 text-xs text-ink-muted">
+                <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: colour }} />
+                <span>{label} <span className="font-semibold text-ink">{pct.toFixed(1)}%</span></span>
+              </div>
+            ))}
+            {formEndTerracePct != null && formEndTerracePct >= 0.5 && (
+              <div className="text-[10px] text-ink-faint ml-auto">
+                incl. end-terrace {formEndTerracePct.toFixed(1)}%
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ─── Heating Fuel Breakdown ─── */}
       {hasHeating && (
@@ -152,6 +233,64 @@ export default function BuildingProfileChart({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ─── Fabric & Insulation Quality (D21) ─── */}
+      {hasFabric && (
+        <div>
+          <h4 className="text-xs font-semibold text-ink-muted mb-2">Fabric & Insulation</h4>
+          <div className="space-y-2">
+            {FABRIC_ITEMS.map(({ label, goodKey, colour }) => {
+              const good = fabricGoodMap[goodKey];
+              const vpoor = fabricVpoorMap[goodKey];
+              if (good == null) return null;
+              return (
+                <div key={goodKey}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[11px] text-ink-muted">{label}</span>
+                    <div className="flex gap-3 text-[11px]">
+                      <span className="text-emerald-600 font-semibold">{good.toFixed(0)}% good+</span>
+                      {vpoor != null && vpoor >= 0.5 && (
+                        <span className="text-red-500 font-semibold">{vpoor.toFixed(0)}% v.poor</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="h-3 rounded-full overflow-hidden flex bg-divider">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${good}%`, backgroundColor: colour, opacity: 0.8 }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Glazing breakdown */}
+          {hasGlazing && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+              {glazeDoublePct != null && glazeDoublePct >= 0.5 && (
+                <div className="text-xs text-ink-muted">
+                  Double glazed: <span className="font-semibold text-ink">{glazeDoublePct.toFixed(1)}%</span>
+                </div>
+              )}
+              {glazeTriplePct != null && glazeTriplePct >= 0.5 && (
+                <div className="text-xs text-ink-muted">
+                  Triple glazed: <span className="font-semibold text-ink">{glazeTriplePct.toFixed(1)}%</span>
+                </div>
+              )}
+              {glazeSinglePct != null && glazeSinglePct >= 0.5 && (
+                <div className="text-xs text-ink-muted">
+                  Single glazed: <span className="font-semibold text-ink">{glazeSinglePct.toFixed(1)}%</span>
+                </div>
+              )}
+              {avgMultiGlazePct != null && (
+                <div className="text-xs text-ink-muted">
+                  Avg multi-glaze: <span className="font-semibold text-ink">{avgMultiGlazePct.toFixed(0)}%</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
