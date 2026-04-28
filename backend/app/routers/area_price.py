@@ -562,7 +562,7 @@ async def get_transactions(
             "new_build": (r["old_new"] or "").strip() == "Y",
             "price_per_sqft": round(float(r["price_per_sqft"]), 0) if r["price_per_sqft"] else None,
             "ppd_category": (r["ppd_category"] or "").strip() or None,
-            "locality": (r["locality"] or "").strip() or None,
+            "locality": loc if len(loc := (r["locality"] or "").strip()) > 1 else None,
             "habitable_rooms": r["habitable_rooms"],
             "epc_match_score": round(float(r["epc_match_score"]), 2) if r["epc_match_score"] else None,
             "area_avg_price": round(float(r["lsoa_month_avg_price"]), 0) if r["lsoa_month_avg_price"] else None,

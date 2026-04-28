@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 62)
+Last updated: 2026-04-28 (session 63)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -245,7 +245,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| P11 | Map scroll-follow logic — rethink UX | Pending | Buggy and confusing. Layers change as user scrolls/hovers but behaviour is unpredictable. Needs fundamental rethink. Audit across ALL 5 tabs. |
+| P11 | Map scroll-follow logic — rethink UX | **DONE** | Session 63. Widened trigger zone (top 15-45%), auto-follow toggle, context-only metrics no longer blank map, MapPin active indicator on MetricCard. |
 | P12 | Distinct map icons per layer | **DONE** | POI_ICONS in MapView.tsx: 🎓 school, 🚆 station, ⚡ EV charger, 🏪 amenity, 🌳 park, ⚽ sports/rec, 🏥 NHS. Schools also colour-coded by Ofsted rating. |
 | P13 | Map layers showing nothing (parks, sports/rec) | **DONE** | Duplicate park/sports query block removed from Environment & Safety branch in area_map.py. Parks/sports correctly only served under Lifestyle tab. |
 | P14 | Map concentric circles — add legend/explanation | **DONE** | Walk rings legend added to MapLayerControl.tsx under Lifestyle & Connectivity tab — shows 5/10/15 min walk rings as dashed lines with distance labels. |
@@ -336,6 +336,10 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S60-6 | P38: Park cover data audit | **Audited** | Session 60. Data and methodology verified correct. No changes needed. |
 | S61-1 | P59: Building Profile metric | **DONE** | Session 61. Aggregated 29.2M EPC certs from Hetzner → 35,889 LSOA rows. New building_profile metric with BuildingProfileChart: heating fuel, CO2, energy, costs, construction age, solar. Also completed D16-D20. |
 | S62-1 | D21+D22: Glazing, insulation, built form | **DONE** | Session 62. Aggregated windows/walls/roof energy efficiency ratings + glazing type + built form from Hetzner (35,748 LSOAs). 16 new columns on core_epc_lsoa. Two new BuildingProfileChart sections: "Built Form" stacked bar + "Fabric & Insulation" quality bars with glazing breakdown. Cache v29. |
+| S63-1 | D29: LLC land designations | **DONE** | Session 63. New `land_designations` metric on Environment tab. ST_Intersects query for Protected_Sites + Area_Management from core_llc_charges. |
+| S63-2 | D31: EPC coverage footnote | **DONE** | Session 63. Hetzner Property API returns total_txn/txn_with_area counts. Backend adds data_note to price_per_sqft quality_flags. |
+| S63-3 | D27: Transaction table Tier 1 columns | **DONE** | Session 63. Locality sub-text, habitable_rooms, sqft conversion, epc_match_score indicator, area context in expanded rows. |
+| S63-4 | P11: Map scroll-follow rethink | **DONE** | Session 63. Auto-follow toggle, widened trigger zone (-15%/0/-55%/0), context-only metrics preserve layers, MapPin indicator on active metric. Cache v30. |
 
 ---
 
@@ -427,24 +431,11 @@ D16–D22 all completed by aggregating from Hetzner's full 93-column EPC table (
 
 All D23–D26 were found to be **already implemented** in sessions prior to the audit (session 50 verification).
 
-#### D29 — Surface INSPIRE + LLC at Area Level (current portal)
+#### D29 — Surface INSPIRE + LLC at Area Level (current portal) — **DONE** (session 63)
 
-Both `core_inspire_parcels` (24.3M rows) and `core_llc_charges` (7.7M rows) were ingested in Phase 1 but **zero backend queries exist** for either table. They sit completely idle today.
+**Implemented:** `land_designations` metric on Environment & Safety tab. Queries `core_llc_charges` for `Protected_Sites` + `Area_Management` charges intersecting local LSOAs via `ST_Intersects`. Shows Yes/No with detail breakdown (protected count, management zones, LSOA coverage %). Parent comparison via EXISTS check for performance. INSPIRE parcels deferred to P53.
 
-**LLC — `Area_Management` charges (6,037 rows across 116 authorities):**
-
-| Metric | Tab | Query approach | Notes |
-|--------|-----|---------------|-------|
-| **Conservation area coverage** | Environment & Safety or Local Governance | `ST_Intersects` of LSOA/LAD boundary with `Area_Management` charge polygons | "This area includes a conservation area" / "X% of the area is within a conservation zone" |
-| **Active land charges count** | Local Governance | Count `LU_Residential` charges per LSOA/LAD | Total registered charges — shows legal activity density |
-
-**INSPIRE — marginal at area level:**
-
-| Metric | Tab | Query approach | Notes |
-|--------|-----|---------------|-------|
-| **Avg land parcel size** | Property & Market | `AVG(ST_Area(geom::geography))` per LSOA | "Average plot size: 280 sqm" — niche, mildly interesting |
-
-**Verdict:** LLC `Area_Management` (conservation areas) is the clear win for the current portal. INSPIRE parcels and LLC `LU_Residential` are per-property datasets that belong in P53.
+~~Both `core_inspire_parcels` (24.3M rows) and `core_llc_charges` (7.7M rows) were ingested in Phase 1 but **zero backend queries exist** for either table.~~
 
 #### D30 — Surface INSPIRE + LLC at Property Level (feeds P53)
 
@@ -458,7 +449,9 @@ For the address-level search feature, these become high-value:
 
 Already covered under D28-3 and D28-4 but noting here that the data is **already ingested and indexed** — no ETL needed, just property-level query endpoints.
 
-#### D27 — Enrich Transaction Table with Additional Columns
+#### D27 — Enrich Transaction Table with Additional Columns — **Tier 1 DONE** (session 63)
+
+**Done (Tier 1):** locality sub-text, habitable_rooms "(X rooms)", sqft conversion, epc_match_score low-confidence indicator, area context in expanded rows (avg price, median, sales count). No new table columns — uses sub-text and expanded rows.
 
 Expand the sales history table beyond the current 8 columns. Three tiers based on effort required.
 
@@ -587,13 +580,9 @@ The address search would resolve to a specific UPRN (via D28-15), then fan out q
 
 ---
 
-#### D31 — Add EPC coverage footnote to price_per_sqm metrics
+#### D31 — Add EPC coverage footnote to price_per_sqm metrics — **DONE** (session 63)
 
-Metrics computed from EPC-matched data (price_per_sqm, price_per_sqft, floor area averages, LSOA avg ppsm/ppsft) currently report aggregates without disclosing what proportion of transactions contributed. E.g. if an LSOA has 100 transactions but only 60 have floor area, the "average price per sqm" is based on 60 — user has no idea.
-
-**Fix:** Add a quality_flag or footnote like "Based on N of M transactions with floor area data" to any metric derived from EPC-matched columns. Use the existing `quality_flags` system in `build_metric_contract()`.
-
-**Priority:** Medium. Coverage jumped from 42% → 81% with Hetzner matching (session 53), so the issue is less severe now, but still worth transparency. Generic quality_notes already exists in metric registry ("Depends on availability of matched floor-area records from EPC data."). Specific N/M counts require Hetzner property API to return `with_area_count` / `total_count` — not a quick backend-only fix.
+**Implemented:** Hetzner Property API `/aggregate` and `/aggregate-by-lad` now return `total_txn` and `txn_with_area` counts. EC2 backend computes `data_note` (e.g. "Based on 97.3% of sales with EPC floor area (36 of 37)") and adds to `price_per_sqft` metric details. Auto-picked up by `build_metric_contract()` → `quality_flags` → rendered as footnote by MetricCard.
 
 ---
 
