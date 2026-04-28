@@ -95,7 +95,7 @@ export default function BuildingProfileChart({
             <div className="bg-white border border-divider rounded-lg p-3">
               <div className="text-[10px] text-ink-faint uppercase tracking-wide">Energy use</div>
               <div className="text-lg font-bold text-ink mt-0.5">{fmt(avgEnergyKwh)}</div>
-              <div className="text-[10px] text-ink-faint">kWh/yr</div>
+              <div className="text-[10px] text-ink-faint">kWh/m²/yr</div>
             </div>
           )}
           {hasCosts && (
