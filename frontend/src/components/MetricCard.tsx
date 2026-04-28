@@ -1,20 +1,15 @@
 import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import {
-  ChevronRight, TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
-  PoundSterling, BarChart3, Activity, Scale, Building2, Home,
-  Percent, Building, MapPin, Train, Zap, Wifi, Droplets, Wind,
-  Cloud, Volume2, TreePine, Flame, Users, Clock, Heart, Key,
-  LayoutGrid, GraduationCap, School, BarChart2, Stethoscope,
-  Receipt, Landmark, Ruler, Wallet, Award, Sprout, Timer,
-  TrainFront, Bike, Smartphone, Sparkles, Vote, Droplet,
-  ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe, Dumbbell, Baby,
+  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
+  Stethoscope, Coffee, TrainFront, TreePine, Dumbbell,
 } from 'lucide-react';
 import type { Metric, PersonaId } from '../types';
 import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
 import type { SchoolRow, QualitySummary } from './SchoolTable';
 import type { NurseryRow, NurserySummary } from './NurseryTable';
-import { formatValue, METRIC_ICONS } from '../utils/tabs';
+import { formatValue } from '../utils/tabs';
 import { getTakeaway } from '../utils/personas';
+import { REDESIGNED_METRIC_IDS, renderRedesignedDetail } from './RedesignedDetails';
 // R3: lazy-load detail components — only parsed when the metric card is expanded
 const NewBuildTrendChart      = lazy(() => import('./NewBuildTrendChart'));
 const AmenityRadarChart       = lazy(() => import('./AmenityRadarChart'));
@@ -55,16 +50,6 @@ function fmtTxnVol(absolute: number | null, perLsoa: number | null): string {
   return `${abs} sales (${rate}/LSOA)`;
 }
 
-const ICON_MAP: Record<string, React.ElementType> = {
-  PoundSterling, BarChart3, Activity, Scale, Building2, Home,
-  Percent, Building, MapPin, Train, Zap, Wifi, Droplets, Wind,
-  Cloud, Volume2, TreePine, Flame, Users, Clock, Heart, Key,
-  LayoutGrid, GraduationCap, School, BarChart2, Stethoscope,
-  Receipt, Landmark, TrendingUp, TrendingDown, Ruler, Wallet,
-  Award, Sprout, Timer, TrainFront, Bike, Smartphone, Sparkles,
-  Vote, Droplet, ShieldCheck, ShieldAlert, Coffee, Banknote, Briefcase, Car, Globe,
-  Dumbbell, Baby,
-};
 
 /** Per-metric data source badge: label + licence */
 const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
@@ -201,8 +186,6 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
     : null;
   const trend: Trend | undefined = trendNested ?? (metric.details ? rec<Trend>(metric.details, 'trend') ?? undefined : undefined);
   const colours = COLOUR_STYLES[takeaway.colour];
-  const iconName = METRIC_ICONS[metric.id] || 'BarChart3';
-  const Icon = ICON_MAP[iconName] || BarChart3;
   const hasDetails = metric.details && Object.keys(metric.details).length > 0;
   const handleToggle = useCallback(() => {
     if (!hasDetails) return;
@@ -247,45 +230,33 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         ${expanded ? 'shadow-md ring-1 ring-brand-200/50 bg-brand-50/30 border-l-2 border-l-brand-500' : 'shadow-sm hover:shadow-md hover:-translate-y-px'}
       `}
     >
-      {/* ═══ DESKTOP: Table Row (Bible 6.2.1: Metric | Local | Parent | So What | Watch Out) ═══ */}
+      {/* ═══ Metric Row (prototype inline style) ═══ */}
       <button
         onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full text-left group hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:items-center lg:gap-4 lg:px-5 lg:py-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-4 px-5 py-3.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl hover:bg-surface-warm/50 transition-colors ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        {/* Metric */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${colours.bg}`}>
-            <Icon className={`w-[18px] h-[18px] ${colours.text}`} />
-          </div>
-          <div className="min-w-0">
-            <span className="text-sm font-semibold text-ink truncate block">{metric.name}</span>
-            {metric.decision_question && (
-              <span className="text-[10px] text-ink-muted truncate block">{metric.decision_question}</span>
-            )}
-          </div>
+        {/* Metric name + decision question */}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
+          {metric.decision_question && <div className="text-[11px] text-ink-faint truncate">{metric.decision_question}</div>}
         </div>
 
-        {/* Local */}
-        <div className="flex flex-col gap-0.5">
-          <span className="text-lg font-bold font-mono text-ink tracking-tight">
+        {/* Local value + trend */}
+        <div className="text-right shrink-0">
+          <div className="text-lg font-bold font-mono text-ink tabular-nums">
             {metric.id === 'transaction_volume' && metric.details
               ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
               : formatValue(metric.local_value, metric.unit)}
-          </span>
+          </div>
           {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} direction={metric.interpretation_direction} />}
         </div>
 
-        {/* Parent */}
-        <div className={`flex items-center gap-1.5 text-sm ${compColourClass}`}>
-          {metric.parent_value !== null ? (
-            <span
-              className="inline-flex items-center gap-1.5"
-              title={metric.comparison?.difference_pct != null
-                ? `${metric.comparison.difference_pct > 0 ? '+' : ''}${metric.comparison.difference_pct.toFixed(1)}% vs ${metric.comparison.scope_label || parentName}`
-                : undefined}
-            >
+        {/* Parent comparison */}
+        <div className="w-28 text-right shrink-0 hidden sm:block">
+          {metric.parent_value != null ? (
+            <span className={`inline-flex items-center gap-1.5 text-sm ${compColourClass}`}>
               <ComparisonIcon className="w-3.5 h-3.5 shrink-0" />
               {metric.id === 'transaction_volume' && metric.details
                 ? fmtTxnVol(num(metric.details, 'parent_absolute'), metric.parent_value as number | null)
@@ -294,92 +265,51 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           ) : metric.comparison_status === 'not_modelled_yet' ? (
             <span className="text-[11px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
           ) : (
-            <span className="text-ink-faint/50">&mdash;</span>
+            <span className="text-ink-faint">—</span>
           )}
         </div>
 
-        {/* So What */}
-        <div>
+        {/* So What pill */}
+        <div className="w-32 shrink-0 hidden lg:block">
           {takeaway.soWhat ? (
             <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
-              {takeaway.soWhat}
+              {takeaway.soWhat.length > 25 ? takeaway.soWhat.slice(0, 22) + '...' : takeaway.soWhat}
             </span>
-          ) : (
-            <span className="text-ink-faint/50">&mdash;</span>
-          )}
+          ) : null}
         </div>
 
-        {/* Watch Out */}
-        <div>
+        {/* Watch Out pill */}
+        <div className="w-28 shrink-0 hidden lg:block">
           {takeaway.watchOut && takeaway.watchOut !== 'None' ? (
             <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-ink-muted border border-divider">
-              {takeaway.watchOut}
+              {takeaway.watchOut.length > 25 ? takeaway.watchOut.slice(0, 22) + '...' : takeaway.watchOut}
             </span>
-          ) : (
-            <span className="text-xs text-ink-faint/50">&mdash;</span>
-          )}
+          ) : null}
         </div>
 
         {/* Chevron */}
-        {hasDetails ? (
-          <ChevronRight
-            className={`w-4 h-4 text-ink-faint shrink-0 transition-transform duration-200
-                        ${expanded ? 'rotate-90' : '[@media(hover:hover)]:group-hover:translate-x-0.5'}`}
-          />
-        ) : <div className="w-4" />}
+        <svg className={`w-4 h-4 text-ink-faint shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
       </button>
 
-      {/* ═══ MOBILE: Card Layout ═══ */}
-      <button
-        onClick={handleToggle}
-        aria-expanded={hasDetails ? expanded : undefined}
-        aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full flex items-center gap-3 p-4 text-left group lg:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
-      >
-        <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${colours.bg}`}>
-          <Icon className={`w-5 h-5 ${colours.text}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
-          {metric.decision_question && (
-            <div className="text-[10px] text-ink-muted truncate">{metric.decision_question}</div>
-          )}
-          <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
-            <span className="text-xl font-bold font-mono text-ink tracking-tight">
-              {metric.id === 'transaction_volume' && metric.details
-                ? fmtTxnVol(num(metric.details, 'local_absolute'), metric.local_value as number | null)
-                : formatValue(metric.local_value, metric.unit)}
+      {/* Mobile-only: parent comparison + takeaway pills below the row */}
+      {(metric.parent_value != null || takeaway.soWhat) && (
+        <div className="sm:hidden flex flex-wrap gap-2 px-5 pb-3 -mt-1">
+          {metric.parent_value != null && (
+            <span className={`inline-flex items-center gap-1 text-xs ${compColourClass}`}>
+              <ComparisonIcon className="w-3 h-3" />
+              {formatValue(metric.parent_value, metric.unit)}
+              <span className="opacity-60">({parentName})</span>
             </span>
-            {trend && metric.id !== 'avg_price' && metric.id !== 'transaction_volume' && <TrendBadge trend={trend} direction={metric.interpretation_direction} />}
-            {metric.parent_value !== null ? (
-              <span className={`flex items-center gap-1 text-xs ${compColourClass}`}>
-                <ComparisonIcon className="w-3 h-3" />
-                {metric.id === 'transaction_volume' && metric.details
-                  ? fmtTxnVol(num(metric.details, 'parent_absolute'), metric.parent_value as number | null)
-                  : formatValue(metric.parent_value, metric.unit)}
-                <span className="hidden sm:inline opacity-60">({parentName})</span>
-              </span>
-            ) : metric.comparison_status === 'not_modelled_yet' ? (
-              <span className="text-[10px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
-            ) : null}
-          </div>
+          )}
         </div>
-        {hasDetails && (
-          <ChevronRight
-            className={`w-4 h-4 text-ink-faint shrink-0 transition-transform duration-200
-                        ${expanded ? 'rotate-90' : '[@media(hover:hover)]:group-hover:translate-x-0.5'}`}
-          />
-        )}
-      </button>
-
-      {/* Mobile takeaway pills */}
+      )}
       {takeaway.soWhat && (
-        <div className="lg:hidden flex flex-wrap gap-2 px-4 pb-3 -mt-1">
-          <div className={`px-3 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
+        <div className="lg:hidden flex flex-wrap gap-2 px-5 pb-3 -mt-1">
+          <div className={`px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
             {takeaway.soWhat}
           </div>
           {takeaway.watchOut && takeaway.watchOut !== 'None' && (
-            <div className="px-3 py-1 rounded-lg text-xs font-medium bg-surface text-ink-muted border border-divider">
+            <div className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-ink-muted border border-divider">
               {takeaway.watchOut}
             </div>
           )}
@@ -395,7 +325,10 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         <div className="overflow-hidden">
           {detailsReady && <Suspense fallback={null}>
             <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
-              {priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
+              {/* Priority 1: Redesigned detail renderers (prototype-approved) */}
+              {REDESIGNED_METRIC_IDS.has(metric.id) && renderRedesignedDetail(metric)}
+              {/* Priority 2: Price charts for price metrics */}
+              {!REDESIGNED_METRIC_IDS.has(metric.id) && priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
                 <DistrictPriceHistoryChart
                   data={priceByTypeData}
                   overallLocal={priceHistoryData?.local}
@@ -405,7 +338,8 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
                 />
               )}
-              {!(priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0) && (
+              {/* Priority 3: Existing detail renderers (SchoolTable, StationTable, etc.) */}
+              {!REDESIGNED_METRIC_IDS.has(metric.id) && !(priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0) && (
                 <DetailsRenderer
                   details={metric.details ?? {}}
                   unit={metric.unit}

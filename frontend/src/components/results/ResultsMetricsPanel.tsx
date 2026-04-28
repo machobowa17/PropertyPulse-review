@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { CirclePlus, CircleMinus } from 'lucide-react';
 import MetricCard from '../MetricCard';
 import { MetricErrorBoundary } from '../ErrorBoundary';
-import AirQualityChart from '../AirQualityChart';
 import ComparableAreas from '../ComparableAreas';
 import CommuteEstimator from '../CommuteEstimator';
 import PersonaScoreCard from '../PersonaScoreCard';
@@ -35,7 +34,6 @@ export function ResultsMetricsPanel() {
     tabData,
     tabLoading,
     priceHistory,
-    aqHistory,
     priceByType,
     comparable,
     decisionMode,
@@ -154,18 +152,9 @@ export function ResultsMetricsPanel() {
                   );
                 })()}
 
-                {/* Expanded: full metric cards */}
+                {/* Expanded: metric cards (prototype inline style) */}
                 {isOpen && (
                   <div id={`section-panel-${section.config.id}`} role="region" aria-label={section.config.label} className="divide-y divide-divider/50 border-t border-divider/50">
-                    {/* Desktop header row */}
-                    <div className="hidden lg:grid lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_28px] lg:gap-4 lg:px-5 lg:py-2 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-wider lg:text-ink-faint">
-                      <span>Metric</span>
-                      <span>Local</span>
-                      <span>{parentName}</span>
-                      <span>So What</span>
-                      <span>Watch Out</span>
-                      <span />
-                    </div>
                     {section.metrics.map((m) => (
                       <div key={m.id}>
                         <div id={`metric-${m.id}`} ref={(node) => setMetricElementRef(m.id, node)}>
@@ -181,16 +170,6 @@ export function ResultsMetricsPanel() {
                             />
                           </MetricErrorBoundary>
                         </div>
-                        {m.id === 'air_quality_pm25' && aqHistory != null && aqHistory.local.length > 1 && (
-                          <div className="mt-2">
-                            <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="pm25" />
-                          </div>
-                        )}
-                        {m.id === 'air_quality_no2' && aqHistory != null && aqHistory.local.length > 1 && (
-                          <div className="mt-2">
-                            <AirQualityChart local={aqHistory.local} national={aqHistory.national} ladName={aqHistory.lad_name} pollutant="no2" />
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
