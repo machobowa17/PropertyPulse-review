@@ -399,17 +399,25 @@ export default function TransactionTable({ sessionKey }: Props) {
                       <td className="px-3 py-2 text-ink-muted whitespace-nowrap">{txn.date}</td>
                       <td className="px-3 py-2 text-ink max-w-[200px] truncate" title={txn.address}>{txn.address || '—'}</td>
                       <td className="px-3 py-2 text-ink font-mono text-right whitespace-nowrap">
-                        £{txn.price?.toLocaleString('en-GB') ?? '—'}
-                        {mainRowChange && (
-                          <span className={`ml-1.5 text-[10px] font-medium ${mainRowChange.positive ? 'text-green-600' : 'text-red-500'}`}>
-                            ({mainRowChange.text})
-                          </span>
+                        <div>
+                          £{txn.price?.toLocaleString('en-GB') ?? '—'}
+                          {mainRowChange && (
+                            <span className={`ml-1.5 text-[10px] font-medium ${mainRowChange.positive ? 'text-green-600' : 'text-red-500'}`}>
+                              ({mainRowChange.text})
+                            </span>
+                          )}
+                        </div>
+                        {txn.price_per_sqft != null && (
+                          <div className="text-[10px] text-ink-faint font-normal">£{txn.price_per_sqft.toLocaleString('en-GB')}/sqft</div>
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
                         <span className="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-surface border border-divider">
                           {txn.property_type_label}
                         </span>
+                        {txn.new_build && (
+                          <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">New</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-center text-ink-muted">{txn.beds ?? '—'}</td>
                       <td className="px-3 py-2 text-right text-ink-muted whitespace-nowrap">

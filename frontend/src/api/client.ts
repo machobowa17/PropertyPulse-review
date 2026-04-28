@@ -296,6 +296,9 @@ export interface Transaction {
   epc: string | null;
   lat: number | null;
   lon: number | null;
+  new_build?: boolean;
+  price_per_sqft?: number | null;
+  ppd_category?: string | null;
 }
 
 export interface PropertyHistoryEntry {

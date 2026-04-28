@@ -870,8 +870,44 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
     const rows = details.breakdown as { label: string; count: number | null; pct: number | null; parent_pct: number | null; avg_price?: number | null }[];
     const countLabel = str(details, 'count_label') || '#';
     const hasAvgPrice = rows.some((r) => r.avg_price != null);
+    const freeholdPremium = typeof details.freehold_premium === 'number' ? details.freehold_premium : null;
+    // Stacked bar colours — up to 6 segments
+    const BAR_COLOURS = ['#2563eb', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#6b7280'];
+    const barSegments = rows.filter((r) => r.pct != null && r.pct > 0);
     return (
       <div className="space-y-3 mt-2">
+        {/* Visual stacked bar */}
+        {barSegments.length > 0 && (
+          <div>
+            <div className="flex h-5 rounded-full overflow-hidden">
+              {barSegments.map((row, i) => (
+                <div
+                  key={row.label}
+                  style={{ width: `${row.pct}%`, backgroundColor: BAR_COLOURS[i % BAR_COLOURS.length] }}
+                  className="flex items-center justify-center text-[10px] font-semibold text-white min-w-[28px] transition-all"
+                  title={`${row.label}: ${row.pct?.toFixed(1)}%`}
+                >
+                  {(row.pct ?? 0) >= 12 ? `${row.pct?.toFixed(0)}%` : ''}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-1.5 flex-wrap">
+              {barSegments.map((row, i) => (
+                <div key={row.label} className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: BAR_COLOURS[i % BAR_COLOURS.length] }} />
+                  {row.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Freehold premium callout */}
+        {freeholdPremium != null && freeholdPremium > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200/60 text-xs">
+            <span className="font-semibold text-amber-800">{freeholdPremium.toFixed(1)}×</span>
+            <span className="text-amber-700">freehold premium — freehold properties cost {freeholdPremium.toFixed(1)}× more than leasehold on average</span>
+          </div>
+        )}
         <div className="overflow-x-auto rounded-xl border border-divider">
           <table className="w-full text-xs">
             <thead>

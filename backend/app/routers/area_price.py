@@ -514,7 +514,10 @@ async def get_transactions(
                    floor_area_sqm,
                    epc_rating,
                    latitude,
-                   longitude
+                   longitude,
+                   old_new,
+                   price_per_sqft,
+                   ppd_category
             FROM core_property_transactions
             {where}
             ORDER BY {sort_col} {sort_dir} {nulls}
@@ -549,6 +552,9 @@ async def get_transactions(
             "epc": (r["epc_rating"] or "").strip() or None,
             "lat": float(r["latitude"]) if r["latitude"] else None,
             "lon": float(r["longitude"]) if r["longitude"] else None,
+            "new_build": (r["old_new"] or "").strip() == "Y",
+            "price_per_sqft": round(float(r["price_per_sqft"]), 0) if r["price_per_sqft"] else None,
+            "ppd_category": (r["ppd_category"] or "").strip() or None,
         })
 
     return {

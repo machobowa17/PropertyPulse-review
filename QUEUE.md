@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-25 (session 55)
+Last updated: 2026-04-28 (session 59)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -133,7 +133,7 @@ Source: Sessions 37-38. EC2 t4g.small (eu-west-2), 80 GB gp3 EBS, Elastic IP 16.
 | 16 | AWS: `pg_dump` → upload → `pg_restore` on EC2 | DONE | 18 GB dump, all 30.4M transactions + indexes + MVs restored. `imresamu/postgis:16-3.4` (ARM64) |
 | 17 | AWS: Docker Compose (API + frontend/nginx + Redis + PG) | DONE | `docker-compose.ssl.yml` override. No S3/CloudFront — nginx serves frontend directly |
 | 18 | AWS: DNS + TLS (Let's Encrypt) | DONE | `simusimi.com` via Cloudflare DNS. Let's Encrypt cert (expires 2026-07-16) |
-| 19 | AWS: GitHub Actions CI/CD | Pending | Not yet needed — deploying via rsync + rebuild |
+| 19 | AWS: GitHub Actions CI/CD | Parked | Git-based deploy via `deploy.sh` (session 56). CI removed (token lacks workflow scope). |
 
 ---
 
@@ -210,7 +210,7 @@ Source: Session 41. Gemini AI Studio full audit (15-section report in `Gemini_Re
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | R15 | Isochrone school catchments — Outstanding schools within 15-min walk | Pending | Family persona "holy grail". 90% infra exists. |
-| M1 | Choropleth: widen scope to full LAD (not just ward) | Pending | ~10-line backend change in `area_map.py`. Postcode search currently scopes to ward (~30-80 LSOAs). Widen to `lad_code` (~300-500 LSOAs). Geometry simplification already handles >200 LSOAs. GeoJSON grows from ~100KB to ~500KB-1MB, Redis 24hr TTL cache absorbs it. Zero frontend changes. Covers 95% use case (whole borough fills in). |
+| M1 | Choropleth: widen scope to full LAD (not just ward) | **DONE** | Session 59. Removed ward-scoped branch from `area_map.py` choropleth endpoint — postcode searches now use full LAD scope (~300-500 LSOAs). CR5 1RA: 229 LSOAs (was ~15). SW1A 1AA: 123 LSOAs. Cache version bumped to v6. |
 | M2 | Choropleth: national coverage via PMTiles (vector tiles) | Pending | Pre-generate PMTiles per choropleth layer using `tippecanoe` from `core_lsoa_boundaries` + pre-joined metric values. ~35k polygons/layer → ~10-50MB per file. Host on S3/CloudFront (free tier). Frontend: swap `type: 'geojson'` for `type: 'vector'` + PMTiles protocol. Quantiles baked at generation time (no flicker). ~30 layers × ~20MB = ~600MB on S3. Best UX: instant pan/zoom, full national coverage, no API calls. Requires ETL pipeline addition. Do after M1 proves demand. |
 | M3 | EC2: Ingest `core_epc_domestic` + re-run EPC backfill | **DONE** | Session 50. (1) Restored `core_epc_domestic` (29,214,082 rows) from `gdrive:PropertyPulse/core_epc_domestic.dump` via rclone + pg_restore. (2) Ran `backfill_epc_matching.py` to populate `bedrooms_estimated`, `floor_area_sqm`, `epc_rating` on `core_property_transactions`. Coverage went from ~17% to ~80%+. Also dropped `tmp_postcode_bng` (252 MB) and `_epc_staging` (empty). |
 | M4 | EC2: Full data integrity audit | **DONE** | Session 50. Comprehensive audit: all tables verified. Key findings: `core_epc_domestic` restored (was 0), `core_connectivity_lsoa` empty (planned data never loaded — not blocking), EPC population now ~80%+ after backfill. Disk at ~79% usage. All materialized views populated. All indexes present. |
@@ -233,24 +233,24 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | Pending | Across all tabs. Simpler, easier to tune per persona. **To be discussed.** |
 | P6 | Shortlisted vs Watch buttons — rethink UX | Pending | Unclear what each does, where saved, what the difference is. Sort out or simplify. |
 | P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Pending | User can't see what changes when toggling. Need evidence of effect. **To be discussed.** |
-| P8 | Download report button broken | Pending | PDF generation not working on live site. Investigate and fix. |
+| P8 | Download report button broken | **DONE** | Fixed in session 57 (commit `2b6150f`). Report endpoint returns valid PDF (reportlab on EC2). Verified session 59: 200 OK, 18KB PDF for CR5 1RA. |
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
 | P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
 | P51 | Saved areas — clarify persistence model | Pending | Where does it save? How does it remember the user? Currently localStorage only — no cross-device sync, no account system. Clarify UX and consider if this is sufficient. |
 | P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
-| P54 | Add bedroom layer to price history charts | Pending | After EPC re-ingestion (M3) brings bedroom coverage from ~20% to ~80%+, add bedroom breakdown (1-bed, 2-bed, 3-bed, 4-bed, 5+) as an additional filter toggle on DistrictPriceHistoryChart and HpiTrendChart. Same multi-select pattern as property type. Blocked by M3. |
+| P54 | Add bedroom layer to price history charts | Pending | M3 done but bedroom coverage is ~50% post-2020 (not 80%+ as hoped). Still viable with quality_flag. Add bedroom breakdown (1-bed, 2-bed, 3-bed, 4-bed, 5+) as filter toggle on price history charts. No longer blocked. |
 
 #### 7B — Map
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | P11 | Map scroll-follow logic — rethink UX | Pending | Buggy and confusing. Layers change as user scrolls/hovers but behaviour is unpredictable. Needs fundamental rethink. Audit across ALL 5 tabs. |
-| P12 | Distinct map icons per layer | Pending | All POI layers (schools, NHS, stations, etc.) use identical icons. Need unique icons for each layer type. |
+| P12 | Distinct map icons per layer | **DONE** | POI_ICONS in MapView.tsx: 🎓 school, 🚆 station, ⚡ EV charger, 🏪 amenity, 🌳 park, ⚽ sports/rec, 🏥 NHS. Schools also colour-coded by Ofsted rating. |
 | P13 | Map layers showing nothing (parks, sports/rec) | **DONE** | Duplicate park/sports query block removed from Environment & Safety branch in area_map.py. Parks/sports correctly only served under Lifestyle tab. |
 | P14 | Map concentric circles — add legend/explanation | **DONE** | Walk rings legend added to MapLayerControl.tsx under Lifestyle & Connectivity tab — shows 5/10/15 min walk rings as dashed lines with distance labels. |
 | P15 | Metric vs map count mismatch | **DONE** | EV charger LIMIT raised from 20/30 → 200 in area_map.py for both postcode and area modes. |
-| P16 | Bus stops on map + in transport table | Partial (S48) | Bus stops now in station detail table with type toggle (rail/metro/tram/bus/ferry). Map layer icons still pending (P12). |
+| P16 | Bus stops on map + in transport table | **DONE** (table) | Bus stops in StationTable with type toggle pills (Rail/Metro-DLR/Tram/Bus/Ferry). Fully deployed. Map distinct icons still pending (P12). |
 | P17 | Median earnings choropleth on Governance tab | **DONE** | Moved choropleth_median_earnings to Property & Market. Also moved choropleth_housing_tenure, choropleth_housing_type. Removed dead choropleth layers (full_fibre, superfast_broadband, mobile_4g_indoor, mobile_5g_outdoor, wfh). |
 
 #### 7C — Property tab
@@ -278,7 +278,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P26 | 15-minute amenities — rethink | Pending | Current implementation needs rethink. **To be discussed.** |
 | P27 | Nearest station — drop chart, keep table only | **DONE** | Removed TransportModeChart from station details in MetricCard.tsx. Added scrollable container with bus/train icon differentiation (Coffee=bus, TrainFront=train). |
 | P28 | Transport table: bus vs train icons + bus stops | **DONE (S48)** | Full redesign: StationTable component with type toggle pills (Rail/Metro-DLR/Tram/Bus/Ferry), TransactionTable-matching style (rounded-xl, bg-surface header, alternating rows). Shows: name, lines served, operator, zone, location, distance, step-free/facilities icons. Backend returns all stop types with 8 new NaPTAN columns + enrichment columns (crs, lines, operator, zone, step_free, facilities via TfL API). |
-| P60 | Station enrichment — TfL + NR data | **In Deploy** | S48: Created `station_enrichment.py` ETL + `rail_references.csv` (ATCO↔CRS↔TIPLOC). TfL API provides lines/zones/step-free/facilities for London stations. NR Knowledgebase deferred to next phase. **Needs:** run migration (`sql/migrate_transport_stops.sql`), re-run NaPTAN ETL, run station_enrichment ETL on EC2. |
+| P60 | Station enrichment — TfL + NR data | **DONE** | S48 code, deployed by S51. EC2 `core_transport_stops` has all 22 columns (crs_code, tiploc_code, lines, operator, zone, step_free, facilities). Migration, NaPTAN re-run, and enrichment all completed. |
 | P29 | Sports/recreation — tabulate details, scrollable | **DONE** | Added sports/recreation renderer in MetricCard.tsx with type count badges and scrollable max-h-[220px] list. |
 | P30 | Broadband: remove separate fibre + superfast metrics | **DONE** | Removed full_fibre + superfast_broadband metric emissions from tab_lifestyle.py. Cleaned up choropleth layers in area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
 | P31 | Mobile: remove separate 4G + 5G metrics | **DONE** | Removed mobile_4g_indoor + mobile_5g_outdoor from tab_lifestyle.py, area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
@@ -316,6 +316,18 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 |---|------|--------|-------|
 | P49 | Enrich governance tab content | Pending | Currently thin. Add more: council performance, factual info, non-comparative text summaries. Research what's available. |
 | P50 | Utility providers — add electricity/gas alongside water | Pending | Water company is shown but no other utilities. Research available data sources for electricity/gas distribution companies by postcode. |
+
+---
+
+### Sessions 56–59: UX Redesign + Bug Fixes (not in original queue)
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| S56 | Section accordion UX + prototype pages | **DONE** | Session 56. Metrics grouped into collapsible sections with icons, summary pills, badges. `sectionGrouping.ts` utility. |
+| S57 | 19-fix audit — perf, map, UX, accessibility, data | **DONE** | Session 57. Includes report endpoint fix, badge styling, pill alignment, map width 40%. |
+| S58 | Prototype-style metric rendering restored to main portal | **DONE** | Session 58. 14 redesigned detail renderers in RedesignedDetails.tsx, inline row-style MetricCard, section accordion with all sections collapsed by default. |
+| S59-1 | Fix map double-creation causing fly-away effect | **DONE** | Session 59. Root cause: `boundary` prop in MapView useEffect deps caused full map destroy+recreate on boundary API response. Fixed with boundaryRef pattern. |
+| S59-2 | M1: Choropleth scope widened to full LAD | **DONE** | Session 59. See M1 above. |
 
 ---
 
@@ -571,7 +583,7 @@ Metrics computed from EPC-matched data (price_per_sqm, price_per_sqft, floor are
 
 **Fix:** Add a quality_flag or footnote like "Based on N of M transactions with floor area data" to any metric derived from EPC-matched columns. Use the existing `quality_flags` system in `build_metric_contract()`.
 
-**Priority:** Medium. Coverage jumped from 42% → 81% with Hetzner matching (session 53), so the issue is less severe now, but still worth transparency.
+**Priority:** Medium. Coverage jumped from 42% → 81% with Hetzner matching (session 53), so the issue is less severe now, but still worth transparency. Generic quality_notes already exists in metric registry ("Depends on availability of matched floor-area records from EPC data."). Specific N/M counts require Hetzner property API to return `with_area_count` / `total_count` — not a quick backend-only fix.
 
 ---
 
