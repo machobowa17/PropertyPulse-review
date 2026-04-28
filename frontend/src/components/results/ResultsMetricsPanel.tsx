@@ -201,12 +201,12 @@ export function ResultsMetricsPanel() {
 
           {/* Comparable areas */}
           {activeTab === 'Property & Market' && comparable != null && comparable.comparable.length > 0 && (
-            <CollapsibleSection title="Comparable Areas">
+            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
               <ComparableAreas target={comparable.target} comparable={comparable.comparable} />
             </CollapsibleSection>
           )}
           {activeTab === 'Property & Market' && comparable != null && !!(comparable as unknown as Record<string, unknown>).unsupported_scope && (
-            <CollapsibleSection title="Comparable Areas">
+            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
               <div className="px-3 py-4 text-center">
                 <p className="text-sm text-ink-muted">{String((comparable as unknown as Record<string, unknown>).reason || 'Comparable areas require a single local authority. Try a specific borough.')}</p>
               </div>
@@ -214,7 +214,7 @@ export function ResultsMetricsPanel() {
           )}
           {/* Commute estimator (Lifestyle tab) */}
           {activeTab === 'Lifestyle & Connectivity' && resolved?.coordinates?.lat != null && (tabData?.metrics?.length ?? 0) > 0 && (
-            <CollapsibleSection title="Commute Estimator">
+            <CollapsibleSection title="Commute Estimator" defaultOpen={false}>
               <CommuteEstimator
                 metrics={tabData!.metrics}
                 originLabel={areaName}
