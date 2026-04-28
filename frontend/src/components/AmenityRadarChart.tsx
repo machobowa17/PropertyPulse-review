@@ -21,6 +21,13 @@ const AMENITY_LABELS: Record<string, string> = {
   doctors: 'GPs',
 };
 
+// Essential daily-life amenities highlighted in summary badges
+const ESSENTIAL_TYPES = ['supermarket', 'doctors', 'pharmacy', 'park'];
+
+function walkMinutes(distanceM: number): number {
+  return Math.ceil(distanceM / 80); // ~80m/min walking speed
+}
+
 interface Props {
   counts: Record<string, number>;
   nearest?: Array<{ type: string; name: string; distance_m?: number }>;
@@ -34,26 +41,53 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const typesPresent = data.filter((d) => d.count > 0).length;
-  const score = typesPresent * 10;
+
+  // Summary badges: nearest essential amenity with walk time
+  const essentialBadges = nearest
+    ? ESSENTIAL_TYPES
+        .map((type) => nearest.find((n) => n.type === type))
+        .filter((n): n is NonNullable<typeof n> => !!n && n.distance_m != null)
+        .map((n) => ({
+          label: AMENITY_LABELS[n.type] || n.type,
+          name: n.name || 'Nearest',
+          walkMin: walkMinutes(n.distance_m!),
+          distanceM: n.distance_m!,
+        }))
+    : [];
 
   return (
     <div className="space-y-4 mt-2">
-      {/* Score header */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <div className="text-3xl font-extrabold text-brand-600">{score}</div>
-          <div className="text-xs text-ink-faint font-medium leading-tight">
-            <span className="block">/100</span>
-            <span className="block">score</span>
-          </div>
-        </div>
+      {/* Summary header */}
+      <div className="flex items-baseline gap-3 flex-wrap">
         <div className="text-sm text-ink-muted">
-          {total} amenities within 1km &middot; {typesPresent}/10 types found
+          <span className="text-2xl font-bold text-ink tabular-nums">{total}</span>{' '}
+          amenities within 1 km
+          <span className="text-ink-faint"> &middot; {typesPresent}/10 types</span>
         </div>
       </div>
 
+      {/* Essential amenity badges */}
+      {essentialBadges.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {essentialBadges.map((b) => (
+            <span
+              key={b.label}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                b.walkMin <= 5
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : b.walkMin <= 10
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-surface text-ink-muted border-divider'
+              }`}
+            >
+              {b.label}: {b.walkMin} min walk
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Radar chart */}
-      <div className="h-[260px] w-full" role="img" aria-label="Radar chart showing local amenity scores">
+      <div className="h-[260px] w-full" role="img" aria-label="Radar chart showing local amenity density by type">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <RadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
             <PolarGrid stroke="#e5e7eb" />
@@ -85,7 +119,7 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
         </ResponsiveContainer>
       </div>
 
-      {/* Nearest amenities list */}
+      {/* Nearest amenities list with walk times */}
       {nearest && nearest.length > 0 && (
         <div className="space-y-1.5">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
@@ -97,15 +131,16 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
                 key={n.type}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface"
               >
-                <span className="text-xs font-medium text-brand-600 w-20 shrink-0 capitalize">
+                <span className="text-xs font-medium text-brand-600 w-20 shrink-0">
                   {AMENITY_LABELS[n.type] || n.type}
                 </span>
                 <span className="text-sm text-ink truncate flex-1">
                   {n.name || 'Unnamed'}
                 </span>
                 {n.distance_m != null && (
-                  <span className="text-xs text-ink-faint shrink-0">
-                    {n.distance_m.toLocaleString()}m
+                  <span className="text-xs text-ink-faint shrink-0 tabular-nums">
+                    {walkMinutes(n.distance_m)} min
+                    <span className="text-ink-faint/50 ml-0.5">({n.distance_m.toLocaleString()}m)</span>
                   </span>
                 )}
               </div>

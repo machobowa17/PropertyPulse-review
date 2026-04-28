@@ -142,7 +142,7 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     parent_amenity_row = parent_avg_result.mappings().first()
     parent_amenity_avg = round(float(parent_amenity_row["avg_count"]), 1) if parent_amenity_row and parent_amenity_row["avg_count"] else None
 
-    amenity_label = "Amenities in Area" if is_area else "15-Minute Amenities (1km)"
+    amenity_label = "Amenities in Area" if is_area else "Local Amenities (within 1 km)"
     metrics.append(metric(
         "amenities_15min", amenity_label,
         total_local, parent_amenity_avg, "count",

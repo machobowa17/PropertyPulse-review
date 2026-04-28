@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Leaf, Heart } from 'lucide-react';
+import { ArrowLeft, Leaf, Bookmark } from 'lucide-react';
 import SearchBox from '../SearchBox';
 import DecisionModeSelector from '../DecisionModeSelector';
 import PersonaSelector from '../PersonaSelector';
@@ -31,7 +31,7 @@ export function ResultsHeader() {
           aria-label="Saved areas"
           title="Saved areas"
         >
-          <Heart className="w-5 h-5 text-ink-muted" aria-hidden="true" />
+          <Bookmark className="w-5 h-5 text-ink-muted" aria-hidden="true" />
         </Link>
       </div>
     </header>

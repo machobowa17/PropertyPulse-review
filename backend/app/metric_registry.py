@@ -349,8 +349,8 @@ METRIC_REGISTRY = {
     },
     "amenities_15min": {
         "section": "Lifestyle & Connectivity",
-        "label": "15-Minute Amenities (1km)",
-        "description": "Count of amenities within 1km or area boundary",
+        "label": "Local Amenities (within 1 km)",
+        "description": "Count of amenities within 1 km or area boundary",
         "local_grain": "lsoa",
         "supports_parent": True,
         "supports_trend": False,

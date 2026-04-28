@@ -1,4 +1,4 @@
-export type SavedAreaCollection = 'shortlist' | 'watchlist';
+export type SavedAreaCollection = 'saved';
 
 export interface SavedAreaEntry {
   id: string;
@@ -14,8 +14,9 @@ export interface SavedAreaEntry {
   lastViewedAt: string;
 }
 
-const STORAGE_KEY = 'propertypulse_saved_areas_v1';
-const MAX_ITEMS_PER_COLLECTION = 24;
+const STORAGE_KEY = 'propertypulse_saved_areas_v2';
+const STORAGE_KEY_V1 = 'propertypulse_saved_areas_v1';
+const MAX_ITEMS = 48;
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -24,15 +25,53 @@ function canUseStorage(): boolean {
 function readRaw(): SavedAreaEntry[] {
   if (!canUseStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    // Try v2 first
+    let raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      // Migrate from v1 if present
+      raw = window.localStorage.getItem(STORAGE_KEY_V1);
+      if (raw) {
+        // Migrate: normalize all entries to collection='saved', deduplicate by area+mode
+        const v1 = JSON.parse(raw) as Array<Record<string, unknown>>;
+        if (Array.isArray(v1)) {
+          const seen = new Set<string>();
+          const migrated: SavedAreaEntry[] = [];
+          for (const item of v1) {
+            if (!item || typeof item !== 'object') continue;
+            const areaName = String(item.areaName ?? '');
+            const decisionMode = String(item.decisionMode ?? 'buy');
+            const dedup = `${decisionMode}::${areaName.trim().toLowerCase()}`;
+            if (seen.has(dedup)) continue;
+            seen.add(dedup);
+            migrated.push({
+              id: buildSavedAreaId(areaName, decisionMode),
+              collection: 'saved',
+              query: String(item.query ?? ''),
+              areaName,
+              parentName: String(item.parentName ?? ''),
+              sessionKey: typeof item.sessionKey === 'string' ? item.sessionKey : null,
+              decisionMode: decisionMode as 'buy' | 'rent' | 'invest',
+              persona: String(item.persona ?? ''),
+              notes: Array.isArray(item.notes) ? item.notes as string[] : [],
+              savedAt: String(item.savedAt ?? new Date().toISOString()),
+              lastViewedAt: String(item.lastViewedAt ?? new Date().toISOString()),
+            });
+          }
+          writeRaw(migrated);
+          // Clean up v1 key
+          try { window.localStorage.removeItem(STORAGE_KEY_V1); } catch { /* ignore */ }
+          return migrated;
+        }
+      }
+      return [];
+    }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((item): item is SavedAreaEntry => {
       return !!item
         && typeof item === 'object'
         && typeof item.id === 'string'
-        && (item.collection === 'shortlist' || item.collection === 'watchlist')
+        && item.collection === 'saved'
         && typeof item.query === 'string'
         && typeof item.areaName === 'string'
         && typeof item.parentName === 'string'
@@ -55,40 +94,32 @@ function writeRaw(entries: SavedAreaEntry[]): void {
   } catch { /* Safari private browsing or quota exceeded — safe to ignore */ }
 }
 
-export function buildSavedAreaId(areaName: string, collection: SavedAreaCollection, decisionMode: string): string {
-  return `${collection}::${decisionMode}::${areaName.trim().toLowerCase()}`;
+export function buildSavedAreaId(areaName: string, decisionMode: string): string {
+  return `saved::${decisionMode}::${areaName.trim().toLowerCase()}`;
 }
 
 export function getSavedAreas(): SavedAreaEntry[] {
   return readRaw().sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime());
 }
 
-export function getSavedAreasByCollection(collection: SavedAreaCollection): SavedAreaEntry[] {
-  return getSavedAreas().filter((item) => item.collection === collection);
-}
-
-export function saveArea(entry: Omit<SavedAreaEntry, 'id' | 'savedAt' | 'lastViewedAt'>): SavedAreaEntry {
+export function saveArea(entry: Omit<SavedAreaEntry, 'id' | 'collection' | 'savedAt' | 'lastViewedAt'>): SavedAreaEntry {
   const now = new Date().toISOString();
-  const id = buildSavedAreaId(entry.areaName, entry.collection, entry.decisionMode);
+  const id = buildSavedAreaId(entry.areaName, entry.decisionMode);
   const existing = readRaw();
   const nextEntry: SavedAreaEntry = {
     ...entry,
     id,
+    collection: 'saved',
     savedAt: existing.find((item) => item.id === id)?.savedAt || now,
     lastViewedAt: now,
   };
 
   const filtered = existing.filter((item) => item.id !== id);
-  const sameCollection = filtered.filter((item) => item.collection === entry.collection);
-  const otherCollections = filtered.filter((item) => item.collection !== entry.collection);
-  const trimmedCollection = [nextEntry, ...sameCollection]
+  const all = [nextEntry, ...filtered]
     .sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime())
-    .slice(0, MAX_ITEMS_PER_COLLECTION);
+    .slice(0, MAX_ITEMS);
 
-  const trimmedOthers = otherCollections
-    .sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime())
-    .slice(0, MAX_ITEMS_PER_COLLECTION);
-  writeRaw([...trimmedCollection, ...trimmedOthers]);
+  writeRaw(all);
   return nextEntry;
 }
 
@@ -97,13 +128,13 @@ export function removeSavedArea(id: string): void {
   writeRaw(existing.filter((item) => item.id !== id));
 }
 
-export function isAreaSaved(areaName: string, collection: SavedAreaCollection, decisionMode: string): boolean {
-  const id = buildSavedAreaId(areaName, collection, decisionMode);
+export function isAreaSaved(areaName: string, decisionMode: string): boolean {
+  const id = buildSavedAreaId(areaName, decisionMode);
   return readRaw().some((item) => item.id === id);
 }
 
-export function touchSavedArea(areaName: string, collection: SavedAreaCollection, decisionMode: string): void {
-  const id = buildSavedAreaId(areaName, collection, decisionMode);
+export function touchSavedArea(areaName: string, decisionMode: string): void {
+  const id = buildSavedAreaId(areaName, decisionMode);
   const existing = readRaw();
   const index = existing.findIndex((item) => item.id === id);
   if (index === -1) return;

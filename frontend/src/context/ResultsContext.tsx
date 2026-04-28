@@ -16,7 +16,6 @@ import type {
 } from '../api/client';
 import type { DecisionMode } from '../components/DecisionModeSelector';
 import { saveArea, removeSavedArea, isAreaSaved, buildSavedAreaId } from '../utils/savedAreas';
-import type { SavedAreaCollection } from '../utils/savedAreas';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 export const ALL_TABS: TabName[] = [
@@ -73,8 +72,8 @@ export interface ResultsDataContextValue {
   choroplethUrl: string | null;
 
   // ── Saved areas ───────────────────────────────────────────────────────────
-  savedCollections: Record<SavedAreaCollection, boolean>;
-  toggleSave: (collection: SavedAreaCollection) => void;
+  isSaved: boolean;
+  toggleSave: () => void;
 
   // ── Viewport ──────────────────────────────────────────────────────────────
   isDesktop: boolean;
@@ -144,10 +143,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
       return next;
     }, { replace: true });
   };
-  const [savedCollections, setSavedCollections] = useState<Record<SavedAreaCollection, boolean>>({
-    shortlist: false,
-    watchlist: false,
-  });
+  const [isSaved, setIsSaved] = useState(false);
 
   const isDesktop = useIsDesktop();
 
@@ -167,33 +163,26 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   // Refresh saved-area state when area or decision mode changes
   useEffect(() => {
     if (!areaName) return;
-    setSavedCollections({
-      shortlist: isAreaSaved(areaName, 'shortlist', decisionMode),
-      watchlist: isAreaSaved(areaName, 'watchlist', decisionMode),
-    });
+    setIsSaved(isAreaSaved(areaName, decisionMode));
   }, [areaName, decisionMode]);
 
   // Sync saved-area state across browser tabs via storage events
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'propertypulse_saved_areas_v1' && areaName) {
-        setSavedCollections({
-          shortlist: isAreaSaved(areaName, 'shortlist', decisionMode),
-          watchlist: isAreaSaved(areaName, 'watchlist', decisionMode),
-        });
+      if (e.key === 'propertypulse_saved_areas_v2' && areaName) {
+        setIsSaved(isAreaSaved(areaName, decisionMode));
       }
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, [areaName, decisionMode]);
 
-  const toggleSave = (collection: SavedAreaCollection) => {
+  const toggleSave = () => {
     if (!areaName) return;
-    if (savedCollections[collection]) {
-      removeSavedArea(buildSavedAreaId(areaName, collection, decisionMode));
+    if (isSaved) {
+      removeSavedArea(buildSavedAreaId(areaName, decisionMode));
     } else {
       saveArea({
-        collection,
         query: q,
         areaName,
         parentName,
@@ -203,7 +192,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
         notes: [],
       });
     }
-    setSavedCollections((prev) => ({ ...prev, [collection]: !prev[collection] }));
+    setIsSaved((prev) => !prev);
   };
 
   // Pre-fetch remaining tabs with staggered delays to avoid a 4-request burst.
@@ -358,7 +347,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     mapPoisLoading,
     choroplethData,
     choroplethUrl,
-    savedCollections,
+    isSaved,
     toggleSave,
     isDesktop,
   }), [
@@ -366,7 +355,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     activeTab, setActiveTab, persona, setPersona, decisionMode, handleDecisionModeChange,
     tabData, tabLoading, allMetrics, priceHistory, aqHistory, priceByType, comparable,
     boundaryData, effectiveBoundary, effectiveLsoaBoundary, mapPois, mapPoisLoading,
-    choroplethData, choroplethUrl, savedCollections, toggleSave, isDesktop,
+    choroplethData, choroplethUrl, isSaved, toggleSave, isDesktop,
   ]);
 
   const uiValue: ResultsUIContextValue = useMemo(

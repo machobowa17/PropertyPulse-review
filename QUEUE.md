@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 63)
+Last updated: 2026-04-28 (session 65)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -209,7 +209,7 @@ Source: Session 41. Gemini AI Studio full audit (15-section report in `Gemini_Re
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| R15 | Isochrone school catchments — Outstanding schools within 15-min walk | Pending | Family persona "holy grail". 90% infra exists. |
+| R15 | Outstanding schools within 15-min walk | **DONE** | Session 64. New `outstanding_schools_walk` metric on Community tab. Haversine 1500m radius proxy for ~15 min walk. Skipped for area-mode searches. |
 | M1 | Choropleth: widen scope to full LAD (not just ward) | **DONE** | Session 59. Removed ward-scoped branch from `area_map.py` choropleth endpoint — postcode searches now use full LAD scope (~300-500 LSOAs). CR5 1RA: 229 LSOAs (was ~15). SW1A 1AA: 123 LSOAs. Cache version bumped to v6. |
 | M2 | Choropleth: national coverage via PMTiles (vector tiles) | Pending | Pre-generate PMTiles per choropleth layer using `tippecanoe` from `core_lsoa_boundaries` + pre-joined metric values. ~35k polygons/layer → ~10-50MB per file. Host on S3/CloudFront (free tier). Frontend: swap `type: 'geojson'` for `type: 'vector'` + PMTiles protocol. Quantiles baked at generation time (no flicker). ~30 layers × ~20MB = ~600MB on S3. Best UX: instant pan/zoom, full national coverage, no API calls. Requires ETL pipeline addition. Do after M1 proves demand. |
 | M3 | EC2: Ingest `core_epc_domestic` + re-run EPC backfill | **DONE** | Session 50. (1) Restored `core_epc_domestic` (29,214,082 rows) from `gdrive:PropertyPulse/core_epc_domestic.dump` via rclone + pg_restore. (2) Ran `backfill_epc_matching.py` to populate `bedrooms_estimated`, `floor_area_sqm`, `epc_rating` on `core_property_transactions`. Coverage went from ~17% to ~80%+. Also dropped `tmp_postcode_bng` (252 MB) and `_epc_staging` (empty). |
@@ -230,13 +230,13 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P2 | Mini overview at top of each tab | Pending | Consider a summary/overview strip at the top of every tab (like demographics overview but without metric comparison indicators). Design TBD. |
 | P3 | Move useful resources to Overview tab | Pending | Currently duplicated across multiple tabs. Move to P1's Overview tab. |
 | P4 | Move comparable areas to Overview tab | Pending | Currently per-tab. Rearchitect to use cross-tab metrics for comparison. |
-| P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | Pending | Across all tabs. Simpler, easier to tune per persona. **To be discussed.** |
-| P6 | Shortlisted vs Watch buttons — rethink UX | Pending | Unclear what each does, where saved, what the difference is. Sort out or simplify. |
-| P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Partial | C1 (session 34) added `DECISION_MODE_MULTIPLIERS` that change persona scoring. But impact is invisible to user — no visual indicator shows what changed. UX clarity still needed. |
+| P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | **DONE** | Session 65. Combined two pills into single coloured takeaway pill: "soWhat — watchOut". Simpler, less visual clutter. MetricCard desktop: one w-44 column. Mobile: one pill. personalization.ts capsule also combined. |
+| P6 | Shortlisted vs Watch buttons → single Save button | **DONE** | Session 65. Merged shortlist+watchlist into single "Save"/"Saved" toggle (Bookmark icon). localStorage v2 migration with v1 auto-import. SavedAreas page simplified to single list (48 item cap). ResultsContext: `isSaved` boolean + `toggleSave()`. |
+| P7 | Decision mode (Buy/Rent/Invest) — make impact visible | **DONE** | Session 64. "Prioritised" (green) and "Lower priority" (amber) badges on MetricCard. PersonaScoreCard shows mode-aware label. |
 | P8 | Download report button broken | **DONE** | Fixed in session 57 (commit `2b6150f`). Report endpoint returns valid PDF (reportlab on EC2). Verified session 59: 200 OK, 18KB PDF for CR5 1RA. |
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
 | P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
-| P51 | Saved areas — clarify persistence model | Pending | Where does it save? How does it remember the user? Currently localStorage only — no cross-device sync, no account system. Clarify UX and consider if this is sufficient. |
+| P51 | Saved areas — clarify persistence model | **DONE** | Session 65. Addressed alongside P6. localStorage v2 with clear "Saved to this browser" copy. Single collection, 48-item limit, auto-migration from v1. No cross-device sync needed for MVP. |
 | P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
 | P54 | Add bedroom layer to price history charts | **DONE** | Session 60. "By Type" / "By Beds" dimension toggle in DistrictPriceHistoryChart. 1-5+ bed lines with colour-coded toggles. Backend now returns `by_bedrooms` for all search types (not just LAD). |
@@ -275,15 +275,15 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| P26 | 15-minute amenities — rethink | Pending | Current implementation needs rethink. **To be discussed.** |
+| P26 | 15-minute amenities — rethink | **DONE** | Session 65. Renamed "15-Minute Amenities" → "Local Amenities (within 1 km)". AmenityRadarChart: removed crude /100 score, added walk-time estimates (min) per amenity, coloured essential-amenity badges (supermarket/GP/pharmacy/park with green/amber walk-time), cleaner header. |
 | P27 | Nearest station — drop chart, keep table only | **DONE** | Removed TransportModeChart from station details in MetricCard.tsx. Added scrollable container with bus/train icon differentiation (Coffee=bus, TrainFront=train). |
 | P28 | Transport table: bus vs train icons + bus stops | **DONE (S48)** | Full redesign: StationTable component with type toggle pills (Rail/Metro-DLR/Tram/Bus/Ferry), TransactionTable-matching style (rounded-xl, bg-surface header, alternating rows). Shows: name, lines served, operator, zone, location, distance, step-free/facilities icons. Backend returns all stop types with 8 new NaPTAN columns + enrichment columns (crs, lines, operator, zone, step_free, facilities via TfL API). |
 | P60 | Station enrichment — TfL + NR data | **DONE** | S48 code, deployed by S51. EC2 `core_transport_stops` has all 22 columns (crs_code, tiploc_code, lines, operator, zone, step_free, facilities). Migration, NaPTAN re-run, and enrichment all completed. |
 | P29 | Sports/recreation — tabulate details, scrollable | **DONE** | Added sports/recreation renderer in MetricCard.tsx with type count badges and scrollable max-h-[220px] list. |
 | P30 | Broadband: remove separate fibre + superfast metrics | **DONE** | Removed full_fibre + superfast_broadband metric emissions from tab_lifestyle.py. Cleaned up choropleth layers in area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
 | P31 | Mobile: remove separate 4G + 5G metrics | **DONE** | Removed mobile_4g_indoor + mobile_5g_outdoor from tab_lifestyle.py, area_map.py, MapView.tsx, MapLayerControl.tsx, resultsConstants.ts. |
-| P32 | Cycling to work — rethink | Pending | Current presentation needs rethink. **To be discussed.** |
-| P33 | Community connectivity — compute travel to named hubs | Pending | Needs actual computed travel times to named major hubs (airports, city centres) relative to the search location. Not a generic metric. |
+| P32 | Cycling to work — rethink | **DONE** | Session 64. Added national percentile, pct_no_car context, cycling_count/total_workers breakdown, context_note. Expanded details now rich instead of blank. |
+| P33 | Surface hub destinations in frontend | **DONE** | Session 64. Verified — backend already computes and returns hub destinations attached to stations. Frontend StationTable already renders via DestinationSubTable on row expand. |
 
 #### 7E — Environment tab
 
@@ -314,8 +314,8 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| P49 | Enrich governance tab content | Pending | Currently thin. Add more: council performance, factual info, non-comparative text summaries. Research what's available. |
-| P50 | Utility providers — add electricity/gas alongside water | Pending | Water company is shown but no other utilities. Research available data sources for electricity/gas distribution companies by postcode. |
+| P49 | Enrich governance tab content | **DONE** | Session 64. Re-enabled S114 financial health notices from `core_s114_notices` table. Council tax band composition already present. Now 5-7 governance metrics (council tax, local authority, controlling party, water company, S114, electricity DNO, gas GDN). |
+| P50 | Utility providers — add electricity/gas alongside water | **DONE** | Session 64. ETL: `etl/sources/electricity_gas.py` using NESO DNO licence area GeoJSON (14 polygons, EPSG:27700). Spatial join with LAD boundaries. GDN derived from DNO region code via static mapping. SQL: `sql/migrate_utilities.sql`. Backend: try/except queries in `tab_governance.py`. Registry entries. 350 LADs populated for both tables. |
 
 ---
 
@@ -340,6 +340,16 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S63-2 | D31: EPC coverage footnote | **DONE** | Session 63. Hetzner Property API returns total_txn/txn_with_area counts. Backend adds data_note to price_per_sqft quality_flags. |
 | S63-3 | D27: Transaction table Tier 1 columns | **DONE** | Session 63. Locality sub-text, habitable_rooms, sqft conversion, epc_match_score indicator, area context in expanded rows. |
 | S63-4 | P11: Map scroll-follow rethink | **DONE** | Session 63. Auto-follow toggle, widened trigger zone (-15%/0/-55%/0), context-only metrics preserve layers, MapPin indicator on active metric. Cache v30. |
+| S64-1 | P49: Enrich Governance tab | **DONE** | Session 64. S114 financial health notices re-enabled. Council tax band composition. |
+| S64-2 | P32: Cycling metric rethink | **DONE** | Session 64. National percentile, pct_no_car context, cycling_count/total_workers. |
+| S64-3 | P33: Hub destinations verified | **DONE** | Session 64. Already working — backend sends, frontend renders. |
+| S64-4 | P7: Decision mode visibility | **DONE** | Session 64. "Prioritised" / "Lower priority" badges on MetricCard. PersonaScoreCard mode-aware label. |
+| S64-5 | R15: Outstanding schools walkable | **DONE** | Session 64. 1500m radius proxy. Postcode-only. |
+| S64-6 | D27 T2-3: Per-transaction EPC details | **DONE** | Session 64. Hetzner → EC2 proxy → frontend EpcDetailPanel. 25 EPC fields on row expand. |
+| S64-7 | P50: Electricity & gas providers | **DONE** | Session 64. NESO DNO GeoJSON ETL + GDN derived. 350 LADs. |
+| S65-1 | P5: Takeaway merge | **DONE** | Session 65. Merged "So what?" + "Watch out for" into single coloured pill. |
+| S65-2 | P6+P51: Save button simplification | **DONE** | Session 65. Shortlist + Watchlist → single "Save" button. localStorage v2 with v1 migration. |
+| S65-3 | P26: Amenities rethink | **DONE** | Session 65. Renamed to "Local Amenities", walk-time estimates, essential-amenity badges. Cache v32. |
 
 ---
 
@@ -508,7 +518,7 @@ Expand the sales history table beyond the current 8 columns. Three tiers based o
 
 **Implementation:** Tier 1 can be done immediately. Tiers 2-3 blocked by M3 (EPC re-ingestion). Frontend table needs horizontal scroll for wider layout.
 
-**Status:** Tier 1 **DONE** across sessions 60+63. Session 60: `new_build` badge, `price_per_sqft` sub-text, `ppd_category`. Session 63: locality, habitable_rooms, sqft conversion, epc_match_score, area context (lsoa_month_*). Tiers 2-3 remain (per-transaction EPC columns from Hetzner).
+**Status:** All tiers **DONE**. Tier 1: sessions 60+63. Tiers 2-3: session 64. Hetzner endpoint `/transactions/epc/by-transaction/{id}` → EC2 proxy `/transactions/{id}/epc` → frontend `EpcDetailPanel` (lazy-loaded on row expand). Shows: construction age, built form, heating, fuel, energy kWh/yr, CO2 t/yr, running costs, glazing, walls, roof, floor, solar, mains gas, heated rooms, floor level, tenure, EPC current+potential ratings.
 
 #### D28 — Per-Property Data Sources for Address-Level Search (feeds P53)
 

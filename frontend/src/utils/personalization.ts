@@ -211,7 +211,11 @@ function buildSignal(metric: Metric, persona: PersonaId, decisionMode: DecisionM
     colour,
     weight,
     score: (COLOUR_SCORE[colour] ?? 50) * weight,
-    capsule: takeaway.soWhat || 'Needs review',
+    capsule: takeaway.soWhat
+      ? takeaway.watchOut && takeaway.watchOut !== 'None'
+        ? `${takeaway.soWhat} — ${takeaway.watchOut.charAt(0).toLowerCase()}${takeaway.watchOut.slice(1)}`
+        : takeaway.soWhat
+      : 'Needs review',
     section: METRIC_TAB[metric.id] || 'Property & Market',
     metric,
   };

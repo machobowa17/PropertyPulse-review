@@ -184,6 +184,11 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
   const takeaway = getTakeaway(metric, persona);
+  const takeawayText = takeaway.soWhat
+    ? takeaway.watchOut && takeaway.watchOut !== 'None'
+      ? `${takeaway.soWhat} — ${takeaway.watchOut.charAt(0).toLowerCase()}${takeaway.watchOut.slice(1)}`
+      : takeaway.soWhat
+    : '';
   // Prefer nested trend object from contract; fall back to details.trend for backward compat
   const trendNested = metric.trend?.status === 'trended' && metric.trend.direction
     ? { direction: metric.trend.direction, pct: typeof metric.trend.value === 'number' ? metric.trend.value : 0 }
@@ -282,20 +287,11 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           )}
         </div>
 
-        {/* So What pill */}
-        <div className="w-32 shrink-0 hidden lg:block">
-          {takeaway.soWhat ? (
-            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
-              {takeaway.soWhat.length > 25 ? takeaway.soWhat.slice(0, 22) + '...' : takeaway.soWhat}
-            </span>
-          ) : null}
-        </div>
-
-        {/* Watch Out pill */}
-        <div className="w-28 shrink-0 hidden lg:block">
-          {takeaway.watchOut && takeaway.watchOut !== 'None' ? (
-            <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-ink-muted border border-divider">
-              {takeaway.watchOut.length > 25 ? takeaway.watchOut.slice(0, 22) + '...' : takeaway.watchOut}
+        {/* Takeaway pill (merged So What + Watch Out) */}
+        <div className="w-44 shrink-0 hidden lg:block">
+          {takeawayText ? (
+            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border} max-w-full truncate`}>
+              {takeawayText}
             </span>
           ) : null}
         </div>
@@ -304,8 +300,8 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         <svg className={`w-4 h-4 text-ink-faint shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
       </button>
 
-      {/* Mobile-only: parent comparison + takeaway pills below the row */}
-      {(metric.parent_value != null || takeaway.soWhat) && (
+      {/* Mobile-only: parent comparison + takeaway pill below the row */}
+      {(metric.parent_value != null || takeawayText) && (
         <div className="sm:hidden flex flex-wrap gap-2 px-5 pb-3 -mt-1">
           {metric.parent_value != null && (
             <span className={`inline-flex items-center gap-1 text-xs ${compColourClass}`}>
@@ -316,16 +312,11 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           )}
         </div>
       )}
-      {takeaway.soWhat && (
+      {takeawayText && (
         <div className="lg:hidden flex flex-wrap gap-2 px-5 pb-3 -mt-1">
           <div className={`px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
-            {takeaway.soWhat}
+            {takeawayText}
           </div>
-          {takeaway.watchOut && takeaway.watchOut !== 'None' && (
-            <div className="px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-ink-muted border border-divider">
-              {takeaway.watchOut}
-            </div>
-          )}
         </div>
       )}
 

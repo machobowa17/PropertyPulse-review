@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Heart, BellRing, FileDown, Loader2 } from 'lucide-react';
+import { Bookmark, FileDown, Loader2 } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import { LSOA_SUFFIX } from '../../utils/resultsConstants';
 
@@ -45,7 +45,7 @@ function LsoaContextBlurb({ resolved, areaName }: { resolved: any; areaName: str
 }
 
 export function ResultsHero() {
-  const { areaName, parentName, savedCollections, toggleSave, sessionKey, resolved } = useResults();
+  const { areaName, parentName, isSaved, toggleSave, sessionKey, resolved } = useResults();
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -87,29 +87,16 @@ export function ResultsHero() {
           <div className="flex items-center gap-2 self-start">
             <button
               type="button"
-              onClick={() => toggleSave('shortlist')}
-              aria-label={savedCollections.shortlist ? 'Remove from shortlist' : 'Save to shortlist'}
+              onClick={toggleSave}
+              aria-label={isSaved ? 'Remove from saved areas' : 'Save this area'}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold active:scale-95 transition-all backdrop-blur-sm border self-start ${
-                savedCollections.shortlist
+                isSaved
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
                   : 'bg-white/10 text-white hover:bg-white/15 border-white/10'
               }`}
             >
-              <Heart className={`w-4 h-4 ${savedCollections.shortlist ? 'fill-current' : ''}`} aria-hidden="true" />
-              {savedCollections.shortlist ? 'Shortlisted' : 'Shortlist'}
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleSave('watchlist')}
-              aria-label={savedCollections.watchlist ? 'Remove from watchlist' : 'Save to watchlist'}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold active:scale-95 transition-all backdrop-blur-sm border self-start ${
-                savedCollections.watchlist
-                  ? 'bg-sky-500/20 text-sky-300 border-sky-400/30'
-                  : 'bg-white/10 text-white hover:bg-white/15 border-white/10'
-              }`}
-            >
-              <BellRing className={`w-4 h-4`} aria-hidden="true" />
-              {savedCollections.watchlist ? 'Watching' : 'Watch'}
+              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-current' : ''}`} aria-hidden="true" />
+              {isSaved ? 'Saved' : 'Save'}
             </button>
             {sessionKey && (
               <button
