@@ -159,12 +159,12 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
   }, [layers]);
 
   return (
-    <div ref={containerRef} className="absolute top-2 left-2 z-10 max-w-[280px]">
+    <div ref={containerRef} className="absolute top-2 left-2 z-10 max-w-[280px] pointer-events-none">
       <button
         onClick={() => setOpen((prev) => !prev)}
         aria-label={open ? 'Close map layers' : 'Open map layers'}
         aria-expanded={open}
-        className="flex h-9 items-center gap-2 rounded-xl bg-white/95 px-3 shadow-md backdrop-blur hover:bg-gray-50 transition-colors cursor-pointer border border-divider/60"
+        className="flex h-9 items-center gap-2 rounded-xl bg-white/95 px-3 shadow-md backdrop-blur hover:bg-gray-50 transition-colors cursor-pointer border border-divider/60 pointer-events-auto"
         title="Map layers"
       >
         <Layers2 className="w-4 h-4 text-ink" />
@@ -172,13 +172,13 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
       </button>
 
       {focusMode && focusMode !== 'manual' && focusLabel && (
-        <div className="mt-1.5 rounded-lg bg-brand-50/80 border border-brand-200/40 px-2.5 py-1.5 backdrop-blur" title={focusReason ?? undefined}>
+        <div className="mt-1.5 rounded-lg bg-brand-50/80 border border-brand-200/40 px-2.5 py-1.5 backdrop-blur pointer-events-auto" title={focusReason ?? undefined}>
           <span className="text-[10px] font-medium text-brand-700 line-clamp-2">{focusLabel}</span>
         </div>
       )}
 
       {open && (
-        <div className="mt-2 rounded-2xl border border-divider/60 bg-white shadow-lg overflow-hidden">
+        <div className="mt-2 rounded-2xl border border-divider/60 bg-white shadow-lg overflow-hidden pointer-events-auto">
           <div className="max-h-[480px] overflow-y-auto px-3 py-3 space-y-3">
             {groupedLayers.map(({ group, layers: items }) => (
               <section key={group}>
