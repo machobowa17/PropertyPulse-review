@@ -1094,7 +1094,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     const mapCenter: [number, number] = useViewport ? restoredViewport.center : [lon, lat];
     const mapZoom = useViewport ? restoredViewport.zoom : 14;
 
-    console.log('[MapView] Creating new Map instance', { lat, lon, useViewport, restoredViewport });
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
@@ -1122,8 +1121,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     // Re-render sold price clusters on zoom/pan change (debounced to avoid churn during pinch-zoom)
     let moveendTimer: ReturnType<typeof setTimeout> | null = null;
     map.on('moveend', () => {
-      const mc = map.getCenter();
-      console.log('[MapView] moveend:', { lng: mc.lng.toFixed(4), lat: mc.lat.toFixed(4), zoom: map.getZoom().toFixed(1) });
       if (moveendTimer) clearTimeout(moveendTimer);
       moveendTimer = setTimeout(() => {
         if (clusterIndexRef.current) {
@@ -1136,8 +1133,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           );
           if (!hasOpenPopup) {
             renderSoldPriceMarkers(map);
-          } else {
-            console.log('[MapView] moveend: skipped re-render (popup open)');
           }
         }
         // Report viewport to parent for preservation across mount/unmount
@@ -1246,7 +1241,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
       // Expose flyTo callback to parent
       onMapReadyRef.current?.((lng, lat, zoom) => {
-        console.log('[MapView] flyTo called:', { lng, lat, zoom, stack: new Error().stack?.split('\n').slice(1, 4).join(' ← ') });
         map.flyTo({ center: [lng, lat], zoom: zoom ?? 17, duration: 1000 });
       });
 
@@ -1297,7 +1291,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
     mapRef.current = map;
     return () => {
-      console.log('[MapView] Destroying map instance');
       highlightMarkerRef.current?.remove();
       ro.disconnect(); map.remove(); mapRef.current = null;
       onMapReadyRef.current?.(null); onHighlightReadyRef.current?.(null);
