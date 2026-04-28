@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 61)
+Last updated: 2026-04-28 (session 62)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -335,6 +335,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S60-5 | P58: EPC rating distribution fix + redesign | **DONE** | Session 60. Switched to grouped columns, classic UK EPC arrow-style bars. |
 | S60-6 | P38: Park cover data audit | **Audited** | Session 60. Data and methodology verified correct. No changes needed. |
 | S61-1 | P59: Building Profile metric | **DONE** | Session 61. Aggregated 29.2M EPC certs from Hetzner → 35,889 LSOA rows. New building_profile metric with BuildingProfileChart: heating fuel, CO2, energy, costs, construction age, solar. Also completed D16-D20. |
+| S62-1 | D21+D22: Glazing, insulation, built form | **DONE** | Session 62. Aggregated windows/walls/roof energy efficiency ratings + glazing type + built form from Hetzner (35,748 LSOAs). 16 new columns on core_epc_lsoa. Two new BuildingProfileChart sections: "Built Form" stacked bar + "Fabric & Insulation" quality bars with glazing breakdown. Cache v29. |
 
 ---
 
@@ -410,10 +411,10 @@ ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`,
 | D18 | CO2 emissions per property | Medium | Medium | **DONE** (P59, session 61). avg_co2_emissions populated from Hetzner raw EPC aggregation. |
 | D19 | Heating fuel type breakdown | Medium | Medium | **DONE** (P59, session 61). heat_gas/electric/oil/district/other/none_pct populated. |
 | D20 | Solar/renewable adoption rate | Medium | Medium | **DONE** (P59, session 61). pct_solar (solar water heating OR photovoltaic) in `core_epc_lsoa`. |
-| D21 | Glazing + insulation quality | Medium | Low | Pending. Raw columns exist on Hetzner (windows_description, walls_description, floor_description). Could add to building_profile but text fields need classification/aggregation logic. |
-| D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | Pending. Raw `built_form` exists on Hetzner. Could aggregate to LSOA % distribution. |
+| D21 | Glazing + insulation quality | Medium | Low | **DONE** (session 62). Used `windows_energy_eff`, `walls_energy_eff`, `roof_energy_eff` (5-level ratings), `glazed_type` (single/double/triple %), `multi_glaze_proportion`. 16 new columns on `core_epc_lsoa`. BuildingProfileChart "Fabric & Insulation" section with quality bars + glazing breakdown. |
+| D22 | Built form distribution (bungalow/maisonette/end-terrace) | Medium | Medium | **DONE** (session 62). Aggregated `built_form` from Hetzner (6 clean categories) → detached/semi/terrace % per LSOA. BuildingProfileChart "Built Form" stacked bar with legend. |
 
-D16–D20 completed via P59 (session 61) by aggregating from Hetzner's full 93-column EPC table. D21–D22 remain — need text classification of raw description fields.
+D16–D22 all completed by aggregating from Hetzner's full 93-column EPC table (29.2M rows → 35,748 LSOAs).
 
 #### Proposals — Zero ETL, Census Data Already in `core_census_lsoa`
 
