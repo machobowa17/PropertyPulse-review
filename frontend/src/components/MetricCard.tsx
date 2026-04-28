@@ -752,17 +752,14 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
     );
   }
 
-  // EPC rating chart
-  if (details.pct_a != null || details.pct_b != null || details.pct_c != null) {
+  // EPC rating chart (grouped bands: A-B, C, D, E-G)
+  if (details.pct_ab != null || details.pct_c != null || details.avg_energy_score != null) {
     return (
       <EpcRatingChart
-        pctA={num(details, 'pct_a')}
-        pctB={num(details, 'pct_b')}
+        pctAb={num(details, 'pct_ab')}
         pctC={num(details, 'pct_c')}
         pctD={num(details, 'pct_d')}
-        pctE={num(details, 'pct_e')}
-        pctF={num(details, 'pct_f')}
-        pctG={num(details, 'pct_g')}
+        pctEg={num(details, 'pct_eg')}
         avgScore={num(details, 'avg_energy_score')}
         parentAvgScore={num(details, 'parent_avg_score')}
         parentRatings={rec<Record<string, number | null>>(details, 'parent_ratings')}

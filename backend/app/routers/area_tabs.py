@@ -28,7 +28,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v26"  # bumped: LAD pre-aggregation MVs for county/LAD searches
+AREA_CACHE_VERSION = "v27"  # bumped: EPC grouped bands (pct_ab, pct_eg instead of individual pct_a-g)
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

@@ -1,16 +1,13 @@
 import { Flame, Zap, Droplet, Building2, Wind } from 'lucide-react';
 
 interface Props {
-  pctA?: number | null;
-  pctB?: number | null;
+  pctAb?: number | null;
   pctC?: number | null;
   pctD?: number | null;
-  pctE?: number | null;
-  pctF?: number | null;
-  pctG?: number | null;
+  pctEg?: number | null;
   avgScore?: number | null;
   parentAvgScore?: number | null;
-  parentRatings?: { a?: number | null; b?: number | null; c?: number | null; d?: number | null; e?: number | null; f?: number | null; g?: number | null } | null;
+  parentRatings?: { ab?: number | null; c?: number | null; d?: number | null; eg?: number | null } | null;
   heatGasPct?: number | null;
   heatElectricPct?: number | null;
   heatOilPct?: number | null;
@@ -21,15 +18,24 @@ interface Props {
   parentCPlusPct?: number | null;
 }
 
-const BAND_COLOURS: Record<string, string> = {
-  A: '#22c55e',
-  B: '#84cc16',
-  C: '#a3e635',
-  D: '#facc15',
-  E: '#fb923c',
-  F: '#f87171',
-  G: '#ef4444',
-};
+// Classic UK EPC colour bands
+const BANDS = [
+  { label: 'A–B', key: 'ab' as const, colour: '#22c55e', range: '81–100' },
+  { label: 'C', key: 'c' as const, colour: '#a3e635', range: '69–80' },
+  { label: 'D', key: 'd' as const, colour: '#facc15', range: '55–68' },
+  { label: 'E–G', key: 'eg' as const, colour: '#ef4444', range: '1–54' },
+];
+
+// Score → band label for the pointer
+function scoreToBand(score: number): string {
+  if (score >= 92) return 'A';
+  if (score >= 81) return 'B';
+  if (score >= 69) return 'C';
+  if (score >= 55) return 'D';
+  if (score >= 39) return 'E';
+  if (score >= 21) return 'F';
+  return 'G';
+}
 
 const HEAT_ITEMS = [
   { key: 'gas', label: 'Gas', icon: Flame, colour: '#2563eb' },
@@ -40,37 +46,45 @@ const HEAT_ITEMS = [
 ] as const;
 
 export default function EpcRatingChart({
-  pctA, pctB, pctC, pctD, pctE, pctF, pctG,
+  pctAb, pctC, pctD, pctEg,
   avgScore, parentAvgScore,
   parentRatings,
   heatGasPct, heatElectricPct, heatOilPct, heatDistrictPct, heatOtherPct, heatNonePct,
   cPlusPct, parentCPlusPct,
 }: Props) {
-  const bands: { label: string; local: number; parent: number | null }[] = [
-    { label: 'A', local: pctA ?? 0, parent: parentRatings?.a ?? null },
-    { label: 'B', local: pctB ?? 0, parent: parentRatings?.b ?? null },
-    { label: 'C', local: pctC ?? 0, parent: parentRatings?.c ?? null },
-    { label: 'D', local: pctD ?? 0, parent: parentRatings?.d ?? null },
-    { label: 'E', local: pctE ?? 0, parent: parentRatings?.e ?? null },
-    { label: 'F', local: pctF ?? 0, parent: parentRatings?.f ?? null },
-    { label: 'G', local: pctG ?? 0, parent: parentRatings?.g ?? null },
-  ].filter((b) => b.local > 0 || (b.parent ?? 0) > 0);
+  const bands: { label: string; local: number; parent: number | null; colour: string; range: string }[] = BANDS.map(b => ({
+    label: b.label,
+    colour: b.colour,
+    range: b.range,
+    local: (b.key === 'ab' ? pctAb : b.key === 'c' ? pctC : b.key === 'd' ? pctD : pctEg) ?? 0,
+    parent: parentRatings ? (parentRatings[b.key] ?? null) : null,
+  })).filter(b => b.local > 0 || (b.parent ?? 0) > 0);
 
   const hasHeating = heatGasPct != null || heatElectricPct != null;
+  const band = avgScore != null ? scoreToBand(avgScore) : null;
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-4 mt-2">
-      {/* ─── Header stats ─── */}
+      {/* ─── Header: score + band + C+ pct ─── */}
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex-1 min-w-[120px]">
-          <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Avg energy score</div>
-          <div className="flex items-baseline gap-2 mt-0.5">
-            <span className="text-2xl font-bold text-ink">{avgScore != null ? Math.round(avgScore) : '—'}</span>
-            {parentAvgScore != null && (
-              <span className="text-xs text-ink-faint">area avg {Math.round(parentAvgScore)}</span>
-            )}
+        {avgScore != null && (
+          <div className="flex items-center gap-3">
+            {/* EPC arrow badge */}
+            <div className="relative w-14 h-14 rounded-xl flex items-center justify-center shadow-sm"
+              style={{ backgroundColor: band === 'A' || band === 'B' ? '#22c55e' : band === 'C' ? '#a3e635' : band === 'D' ? '#facc15' : band === 'E' ? '#fb923c' : '#ef4444' }}>
+              <span className="text-2xl font-black text-white leading-none">{band}</span>
+            </div>
+            <div>
+              <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Avg energy score</div>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-2xl font-bold text-ink">{Math.round(avgScore)}</span>
+                {parentAvgScore != null && (
+                  <span className="text-xs text-ink-faint">area avg {Math.round(parentAvgScore)}</span>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
         {cPlusPct != null && (
           <div className="flex-1 min-w-[120px]">
             <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Rated C or above</div>
@@ -84,42 +98,56 @@ export default function EpcRatingChart({
         )}
       </div>
 
-      {/* ─── A–G rating bars ─── */}
-      <div>
-        <h4 className="text-xs font-semibold text-ink-muted mb-2">EPC Rating Distribution</h4>
-        <div className="space-y-1.5">
-          {bands.map(({ label, local, parent }) => (
-            <div key={label} className="flex items-center gap-2">
-              <div
-                className="w-6 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white shrink-0"
-                style={{ backgroundColor: BAND_COLOURS[label] }}
-              >
-                {label}
-              </div>
-              <div className="flex-1 relative h-4 bg-divider rounded-full overflow-hidden">
-                <div
-                  className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(local, 100)}%`, backgroundColor: BAND_COLOURS[label], opacity: 0.85 }}
-                />
-                {/* Parent comparison tick */}
-                {parent != null && parent > 0 && (
+      {/* ─── Rating distribution bars (classic EPC arrow style) ─── */}
+      {bands.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-ink-muted mb-2">EPC Rating Distribution</h4>
+          <div className="space-y-1.5">
+            {bands.map(({ label, local, parent, colour, range }) => (
+              <div key={label} className="flex items-center gap-2">
+                {/* Arrow-style band label */}
+                <div className="flex items-center shrink-0" style={{ width: 70 }}>
                   <div
-                    className="absolute top-0 h-full w-0.5 bg-ink-muted opacity-40"
-                    style={{ left: `${Math.min(parent, 100)}%` }}
-                    title={`Area avg: ${parent.toFixed(1)}%`}
+                    className="h-6 rounded-l-md flex items-center px-2 text-[10px] font-bold text-white"
+                    style={{ backgroundColor: colour, width: 42 }}
+                  >
+                    {label}
+                  </div>
+                  <div
+                    className="w-0 h-0"
+                    style={{
+                      borderTop: '12px solid transparent',
+                      borderBottom: '12px solid transparent',
+                      borderLeft: `8px solid ${colour}`,
+                    }}
                   />
-                )}
+                  <span className="text-[9px] text-ink-faint ml-1">{range}</span>
+                </div>
+                {/* Bar */}
+                <div className="flex-1 relative h-5 bg-divider rounded-full overflow-hidden">
+                  <div
+                    className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(local, 100)}%`, backgroundColor: colour, opacity: 0.85 }}
+                  />
+                  {parent != null && parent > 0 && (
+                    <div
+                      className="absolute top-0 h-full w-0.5 bg-ink-muted opacity-40"
+                      style={{ left: `${Math.min(parent, 100)}%` }}
+                      title={`Area avg: ${parent.toFixed(1)}%`}
+                    />
+                  )}
+                </div>
+                <div className="w-12 text-right text-xs font-medium text-ink tabular-nums shrink-0">
+                  {local.toFixed(1)}%
+                </div>
               </div>
-              <div className="w-10 text-right text-xs font-medium text-ink tabular-nums shrink-0">
-                {local.toFixed(1)}%
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {parentRatings && (
+            <p className="text-[10px] text-ink-faint mt-1.5">Grey tick = area average</p>
+          )}
         </div>
-        {parentRatings && (
-          <p className="text-[10px] text-ink-faint mt-1.5">Grey tick = area average</p>
-        )}
-      </div>
+      )}
 
       {/* ─── Heating breakdown ─── */}
       {hasHeating && (

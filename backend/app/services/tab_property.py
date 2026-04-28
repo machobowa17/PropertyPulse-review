@@ -947,13 +947,10 @@ async def fetch_property_market(
         text(
             """
             SELECT SUM(total_certs * avg_energy_score) / NULLIF(SUM(total_certs), 0) AS avg_energy_score,
-                   SUM(total_certs * pct_a) / NULLIF(SUM(total_certs), 0) AS pct_a,
-                   SUM(total_certs * pct_b) / NULLIF(SUM(total_certs), 0) AS pct_b,
-                   SUM(total_certs * pct_c) / NULLIF(SUM(total_certs), 0) AS pct_c,
-                   SUM(total_certs * pct_d) / NULLIF(SUM(total_certs), 0) AS pct_d,
-                   SUM(total_certs * pct_e) / NULLIF(SUM(total_certs), 0) AS pct_e,
-                   SUM(total_certs * pct_f) / NULLIF(SUM(total_certs), 0) AS pct_f,
-                   SUM(total_certs * pct_g) / NULLIF(SUM(total_certs), 0) AS pct_g,
+                   SUM(total_certs * pct_rating_a_b) / NULLIF(SUM(total_certs), 0) AS pct_ab,
+                   SUM(total_certs * pct_rating_c) / NULLIF(SUM(total_certs), 0) AS pct_c,
+                   SUM(total_certs * pct_rating_d) / NULLIF(SUM(total_certs), 0) AS pct_d,
+                   SUM(total_certs * pct_rating_e_g) / NULLIF(SUM(total_certs), 0) AS pct_eg,
                    SUM(total_certs * heat_gas_pct) / NULLIF(SUM(total_certs), 0) AS heat_gas_pct,
                    SUM(total_certs * heat_electric_pct) / NULLIF(SUM(total_certs), 0) AS heat_electric_pct,
                    SUM(total_certs * heat_oil_pct) / NULLIF(SUM(total_certs), 0) AS heat_oil_pct,
@@ -972,13 +969,10 @@ async def fetch_property_market(
         text(
             """
             SELECT SUM(e.total_certs * e.avg_energy_score) / NULLIF(SUM(e.total_certs), 0) AS avg_score,
-                   SUM(e.total_certs * e.pct_a) / NULLIF(SUM(e.total_certs), 0) AS pct_a,
-                   SUM(e.total_certs * e.pct_b) / NULLIF(SUM(e.total_certs), 0) AS pct_b,
-                   SUM(e.total_certs * e.pct_c) / NULLIF(SUM(e.total_certs), 0) AS pct_c,
-                   SUM(e.total_certs * e.pct_d) / NULLIF(SUM(e.total_certs), 0) AS pct_d,
-                   SUM(e.total_certs * e.pct_e) / NULLIF(SUM(e.total_certs), 0) AS pct_e,
-                   SUM(e.total_certs * e.pct_f) / NULLIF(SUM(e.total_certs), 0) AS pct_f,
-                   SUM(e.total_certs * e.pct_g) / NULLIF(SUM(e.total_certs), 0) AS pct_g
+                   SUM(e.total_certs * e.pct_rating_a_b) / NULLIF(SUM(e.total_certs), 0) AS pct_ab,
+                   SUM(e.total_certs * e.pct_rating_c) / NULLIF(SUM(e.total_certs), 0) AS pct_c,
+                   SUM(e.total_certs * e.pct_rating_d) / NULLIF(SUM(e.total_certs), 0) AS pct_d,
+                   SUM(e.total_certs * e.pct_rating_e_g) / NULLIF(SUM(e.total_certs), 0) AS pct_eg
             FROM core_epc_lsoa e
             JOIN core_lsoa_boundaries l ON l.lsoa_code = e.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
@@ -989,26 +983,22 @@ async def fetch_property_market(
     epc_parent_row = epc_parent.mappings().first()
 
     if epc_row and epc_row["avg_energy_score"] is not None:
-        local_c_plus = float(epc_row["pct_a"] or 0) + float(epc_row["pct_b"] or 0) + float(epc_row["pct_c"] or 0)
+        local_c_plus = float(epc_row["pct_ab"] or 0) + float(epc_row["pct_c"] or 0)
         parent_c_plus = None
         parent_avg_score = None
         parent_ratings = None
         if epc_parent_row and epc_parent_row["avg_score"] is not None:
             parent_avg_score = _round(epc_parent_row["avg_score"])
             parent_c_plus = round(
-                float(epc_parent_row["pct_a"] or 0)
-                + float(epc_parent_row["pct_b"] or 0)
+                float(epc_parent_row["pct_ab"] or 0)
                 + float(epc_parent_row["pct_c"] or 0),
                 2,
             )
             parent_ratings = {
-                "a": _round(epc_parent_row["pct_a"]),
-                "b": _round(epc_parent_row["pct_b"]),
+                "ab": _round(epc_parent_row["pct_ab"]),
                 "c": _round(epc_parent_row["pct_c"]),
                 "d": _round(epc_parent_row["pct_d"]),
-                "e": _round(epc_parent_row["pct_e"]),
-                "f": _round(epc_parent_row["pct_f"]),
-                "g": _round(epc_parent_row["pct_g"]),
+                "eg": _round(epc_parent_row["pct_eg"]),
             }
 
         metrics.append(
@@ -1021,13 +1011,10 @@ async def fetch_property_market(
                 details={
                     "avg_energy_score": _round(epc_row["avg_energy_score"]),
                     "parent_avg_score": parent_avg_score,
-                    "pct_a": _round(epc_row["pct_a"]),
-                    "pct_b": _round(epc_row["pct_b"]),
+                    "pct_ab": _round(epc_row["pct_ab"]),
                     "pct_c": _round(epc_row["pct_c"]),
                     "pct_d": _round(epc_row["pct_d"]),
-                    "pct_e": _round(epc_row["pct_e"]),
-                    "pct_f": _round(epc_row["pct_f"]),
-                    "pct_g": _round(epc_row["pct_g"]),
+                    "pct_eg": _round(epc_row["pct_eg"]),
                     "heat_gas_pct": _round(epc_row["heat_gas_pct"]),
                     "heat_electric_pct": _round(epc_row["heat_electric_pct"]),
                     "heat_oil_pct": _round(epc_row["heat_oil_pct"]),
