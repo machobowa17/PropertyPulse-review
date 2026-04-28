@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 59)
+Last updated: 2026-04-28 (session 60)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -263,7 +263,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P21 | Remove EPC C+ metric (redundant) | **DONE** | Removed from tab_property.py, tab_environment.py, resultsConstants.ts, personalization.ts, personas.ts, tabs.ts, MetricCard.tsx METRIC_SOURCES. |
 | P22 | Remove property calculators section | **DONE** | Removed MortgageCalculator + RentalYieldCalculator imports and CollapsibleSection from ResultsMetricsPanel.tsx. Test updated. |
 | P23 | Move housing tenure + housing stock from Community → Property | **DONE** | Moved queries + metric emission from tab_community.py → tab_property.py. Moved choropleth bindings in resultsConstants.ts. Updated METRIC_TAB in personalization.ts. Human-readable detail keys. |
-| P24 | Freehold vs leasehold — redesign expanded details | Pending | Current key-value dump layout doesn't work. Figure out better grouping/presentation. |
+| P24 | Freehold vs leasehold — redesign expanded details | **DONE** | Session 60. Added stacked bar chart (coloured segments for freehold/leasehold/tenure splits) + freehold premium callout (amber box: "2.7× freehold premium"). Applied to all `tenure_table` breakdown types. |
 | P25 | Move EPC chart from Environment → Property | **DONE** | EPC chart already lives in Property tab via `epc_energy_score` metric. P35 removed all EPC metrics from Environment tab. Verified — no action needed. |
 | P55 | Expandable transaction rows — previous sales | **DONE** | Session 47. Click row → sub-rows show previous sales of same property. Backend `/transactions/history` endpoint matches by `postcode + paon + street`. SAON handling: empty=match all (houses), specific=exact match (flats). +/− indicator, % change vs older sale, main row shows % in brackets. |
 | P56 | Map fly-to on transaction row click | **DONE** | Session 47. Expanding a row flies map to property at zoom 17. Collapsing row or metric card restores original viewport. `mapFlyToRef` in ResultsContext, populated by MapView `onMapReady` callback. `lat`/`lon` added to `/transactions` response. |
@@ -307,7 +307,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P44 | Religion metric — label the headline religion | **DONE** | Dynamic dominant religion detection in tab_community.py. Unit changes to "% {dominant_name}". Human-readable detail keys. |
 | P45 | Primary school + school quality → combined metric | **DONE** | Merged in tab_community.py (both area-mode + postcode-mode). local_value = total count, details includes quality_pct, parent_quality_pct, good_count, total_in_area. Frontend MetricCard shows quality summary bar above school list. Removed separate primary_school_quality emission. |
 | P46 | Secondary school + school quality → combined metric | **DONE** | Same pattern as P45. Removed secondary_school_quality emission. Cleaned up resultsConstants.ts METRIC_MAP_BINDINGS and tabs.ts METRIC_ICONS. |
-| P47 | Consolidate all deprivation indices | Pending | IMD, education, health, etc. — combine into a single view, possibly a chart (spider/radar?). Design TBD. |
+| P47 | Consolidate all deprivation indices | **DONE** | Session 60. Hid 7 sub-domain deprivation_* MetricCards (they were redundant — data already in main card). Added Recharts RadarChart to ImdDeprivationBlock showing all 7 domains normalised 0–100. Compact score table below radar. |
 | P48 | NHS facilities — tabulate + type filter toggles | **DONE** | Added NhsFacilitiesDetail component in MetricCard.tsx with type filter toggle buttons (pill-shaped, brand-600 active state) and scrollable max-h-[260px] facility list. |
 
 #### 7G — Governance tab
@@ -328,6 +328,9 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S58 | Prototype-style metric rendering restored to main portal | **DONE** | Session 58. 14 redesigned detail renderers in RedesignedDetails.tsx, inline row-style MetricCard, section accordion with all sections collapsed by default. |
 | S59-1 | Fix map double-creation causing fly-away effect | **DONE** | Session 59. Root cause: `boundary` prop in MapView useEffect deps caused full map destroy+recreate on boundary API response. Fixed with boundaryRef pattern. |
 | S59-2 | M1: Choropleth scope widened to full LAD | **DONE** | Session 59. See M1 above. |
+| S60-1 | P24: Tenure visual stacked bar + freehold premium | **DONE** | Session 60. Stacked coloured bar for freehold/leasehold splits, amber premium callout. |
+| S60-2 | D27-T1: Transaction table extra columns | **DONE** | Session 60. `new_build` green badge, `price_per_sqft` sub-text, `ppd_category` in API. |
+| S60-3 | P47: Deprivation radar chart consolidation | **DONE** | Session 60. Hid 7 sub-domain cards, added Recharts RadarChart to main IMD block. |
 
 ---
 
@@ -525,6 +528,8 @@ Expand the sales history table beyond the current 8 columns. Three tiers based o
 | `MULTI_GLAZE_PROPORTION` | % double/triple glazed |
 
 **Implementation:** Tier 1 can be done immediately. Tiers 2-3 blocked by M3 (EPC re-ingestion). Frontend table needs horizontal scroll for wider layout.
+
+**Status:** Tier 1 partial — **DONE** (session 60). Added `new_build` (green "New" badge), `price_per_sqft` (£/sqft sub-text under price), `ppd_category` to API response. Remaining Tier 1 columns (locality, rooms, sqft conversion, epc_match_score, lsoa_month_*) deferred.
 
 #### D28 — Per-Property Data Sources for Address-Level Search (feeds P53)
 
