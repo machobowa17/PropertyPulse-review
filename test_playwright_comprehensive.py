@@ -321,14 +321,27 @@ def run_all_tests():
         page.goto(results_url("SW1A 1AA"))
         wait_for_results(page)
         switch_tab(page, "Property")  # Map tests need Property tab for sold prices markers
-        time.sleep(5)  # Let map fully render
+        time.sleep(3)  # Wait for tab data + map pois to start loading
 
         # Map canvas should exist
         has_canvas = has_map_canvas(page)
         R.add(section, "Map canvas present", has_canvas)
 
         # Map markers should appear (sold prices on Property tab)
-        marker_count = count_markers(page)
+        # Poll for up to 20s — markers render after property data + map pois fetch
+        marker_count = 0
+        for _ in range(20):
+            marker_count = count_markers(page)
+            if marker_count > 0:
+                break
+            time.sleep(1)
+        # If still 0, try a second approach: switch away and back to re-trigger
+        if marker_count == 0:
+            switch_tab(page, "Lifestyle")
+            time.sleep(2)
+            switch_tab(page, "Property")
+            time.sleep(5)
+            marker_count = count_markers(page)
         R.add(section, "Map markers present",
               marker_count > 0, f"{marker_count} markers")
 
@@ -749,7 +762,9 @@ def run_all_tests():
         R.add(section, "Commute Estimator section",
               commute_section.count() > 0)
 
-        # Check for Useful Resources
+        # Check for Useful Resources (moved to Overview tab in P3)
+        switch_tab(page, "Overview")
+        time.sleep(3)
         resources = page.locator('text="Useful Resources"')
         R.add(section, "Useful Resources section",
               resources.count() > 0)
