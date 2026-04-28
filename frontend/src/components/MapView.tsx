@@ -305,6 +305,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
   const initialViewportRef = useRef(initialViewport);
   useEffect(() => { initialViewportRef.current = initialViewport; }, [initialViewport]);
+  const boundaryRef = useRef(boundary);
+  useEffect(() => { boundaryRef.current = boundary; }, [boundary]);
   const lsoaBoundaryRef = useRef(lsoaBoundary);
   useEffect(() => { lsoaBoundaryRef.current = lsoaBoundary; }, [lsoaBoundary]);
 
@@ -703,6 +705,68 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     }
     applyLsoaBoundary();
   }, [lsoaBoundary]);
+
+  // Update ward boundary layer when boundary arrives or changes (avoids re-creating the map)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const applyBoundary = () => {
+      const WARD_SOURCE = 'ward-boundary';
+      const RADIUS_SOURCE = 'radius';
+
+      if (map.getSource(WARD_SOURCE)) {
+        // Source already exists — update its data
+        (map.getSource(WARD_SOURCE) as maplibregl.GeoJSONSource).setData(
+          boundary ?? { type: 'FeatureCollection', features: [] }
+        );
+        if (boundary && boundary.geometry) {
+          const coords = getAllCoords(boundary.geometry);
+          if (coords.length > 0) {
+            const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
+            coords.forEach((c) => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
+          }
+        }
+      } else if (boundary && boundary.geometry) {
+        // Source doesn't exist yet — boundary arrived after map creation
+        // Remove fallback radius circle if present
+        if (map.getLayer('radius-fill')) map.removeLayer('radius-fill');
+        if (map.getLayer('radius-line')) map.removeLayer('radius-line');
+        if (map.getSource(RADIUS_SOURCE)) map.removeSource(RADIUS_SOURCE);
+
+        map.addSource(WARD_SOURCE, { type: 'geojson', data: boundary });
+        map.addLayer({
+          id: 'ward-boundary-fill',
+          type: 'fill',
+          source: WARD_SOURCE,
+          paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.06 },
+        });
+        map.addLayer({
+          id: 'ward-boundary-line',
+          type: 'line',
+          source: WARD_SOURCE,
+          paint: { 'line-color': '#2563eb', 'line-width': 2.5, 'line-opacity': 0.7 },
+        });
+
+        // Fit to boundary (only on first arrival, not when restoring viewport)
+        if (!initialViewportRef.current) {
+          const coords = getAllCoords(boundary.geometry);
+          if (coords.length > 0) {
+            const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
+            coords.forEach((c) => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
+          }
+        }
+      }
+    };
+
+    if (!map.isStyleLoaded()) {
+      map.once('load', applyBoundary);
+      return () => { map.off('load', applyBoundary); };
+    }
+    applyBoundary();
+  }, [boundary]);
 
   // Update POI markers + flood zone polygons when pois, visibility, searchLsoa, or tab change
   useEffect(() => {
@@ -1121,11 +1185,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         });
       }
 
-      // Ward boundary polygon
-      if (boundary && boundary.geometry) {
+      // Ward boundary polygon (reads from ref so boundary can arrive later without re-creating the map)
+      const liveBoundary = boundaryRef.current;
+      if (liveBoundary && liveBoundary.geometry) {
         map.addSource('ward-boundary', {
           type: 'geojson',
-          data: boundary,
+          data: liveBoundary,
         });
         map.addLayer({
           id: 'ward-boundary-fill',
@@ -1149,7 +1214,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
         // Fit map to boundary bounds (skip if restoring a saved viewport)
         if (!useViewport) {
-          const coords = getAllCoords(boundary.geometry);
+          const coords = getAllCoords(liveBoundary.geometry);
           if (coords.length > 0) {
             const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
             coords.forEach((c) => bounds.extend(c));
@@ -1237,8 +1302,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       ro.disconnect(); map.remove(); mapRef.current = null;
       onMapReadyRef.current?.(null); onHighlightReadyRef.current?.(null);
     };
-  // lsoaBoundary handled by its own effect; exclude from deps to avoid map recreation
-  }, [applyIsochronesToMap, boundary, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
+  // boundary + lsoaBoundary handled by their own effects; exclude from deps to avoid map recreation
+  }, [applyIsochronesToMap, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
 
   return <div ref={containerRef} className="w-full h-full" role="application" aria-label="Interactive map" />;
 }
