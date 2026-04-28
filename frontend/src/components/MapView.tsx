@@ -773,17 +773,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     const map = mapRef.current;
     if (!map) return;
 
-    const styleOk = map.isStyleLoaded();
-    const tabChanged = prevTabRef.current !== activeTab;
-    const hasPois = !!pois?.features;
-    const featureCount = pois?.features?.length ?? 0;
-    console.log(`[MapView POI] tab=${activeTab} prevTab=${prevTabRef.current} tabChanged=${tabChanged} styleOk=${styleOk} hasPois=${hasPois} features=${featureCount}`);
-
     // If style not loaded yet, defer until it is (prevents race when pois arrive from cache
     // before map tiles finish loading — the effect would silently exit with no retry)
-    if (!styleOk) {
+    if (!map.isStyleLoaded()) {
       const onLoad = () => {
-        console.log(`[MapView POI] deferred onLoad fired, tab=${activeTab}`);
         const tc = prevTabRef.current !== activeTab;
         prevTabRef.current = activeTab;
         if (tc || searchLsoa !== lastRenderedLsoaRef.current || visibleLayers !== lastRenderedLayersRef.current) {
@@ -796,6 +789,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
       return () => { map.off('load', onLoad); };
     }
 
+    const tabChanged = prevTabRef.current !== activeTab;
     prevTabRef.current = activeTab;
 
     // R10: reset pois guard when non-pois inputs change so rebuild still happens
@@ -818,7 +812,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
     // If tab doesn't fetch POIs (Local Governance), clear everything
     if (!POI_TABS.includes(activeTab || '')) {
-      console.log('[MapView POI] → clearAll (non-POI tab)');
       clearAll();
       return;
     }
@@ -826,12 +819,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     // If tab changed but new data hasn't arrived yet, clear stale markers from old tab
     // (prevents flood zones / old POIs lingering during loading gap)
     if (tabChanged && !pois?.features) {
-      console.log('[MapView POI] → clearAll (tab changed, no pois yet)');
       clearAll();
       return;
     }
 
-    console.log(`[MapView POI] → renderPoisOnMap (features=${featureCount}, lastRendered=${lastRenderedPoisRef.current === pois ? 'SAME' : 'DIFF'})`);
     renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
   }, [activeTab, clearSpider, pois, renderPoisOnMap, searchLsoa, visibleLayers]);
 
