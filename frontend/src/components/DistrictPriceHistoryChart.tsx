@@ -9,13 +9,21 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from 'recharts';
-import type { PriceByTypeResponse, PriceHistoryPoint } from '../api/client';
+import type { PriceByTypeResponse, PriceHistoryPoint, BedroomBreakdownPoint } from '../api/client';
 
 const TYPE_LINES = [
   { key: 'Detached',       label: 'Detached',       colour: '#2563eb' },
   { key: 'Semi-Detached',  label: 'Semi-Detached',  colour: '#7c3aed' },
   { key: 'Terraced',       label: 'Terraced',       colour: '#059669' },
   { key: 'Flat',           label: 'Flat',           colour: '#ea580c' },
+] as const;
+
+const BED_LINES = [
+  { key: '1', label: '1 bed', colour: '#8b5cf6' },
+  { key: '2', label: '2 bed', colour: '#2563eb' },
+  { key: '3', label: '3 bed', colour: '#059669' },
+  { key: '4', label: '4 bed', colour: '#ea580c' },
+  { key: '5', label: '5+ bed', colour: '#dc2626' },
 ] as const;
 
 const TYPE_COLOUR_MAP: Record<string, string> = Object.fromEntries(
@@ -71,6 +79,8 @@ function isCalendarYear(y: string): boolean {
   return /^\d{4}$/.test(y);
 }
 
+type Dimension = 'type' | 'bedrooms';
+
 interface Props {
   data: PriceByTypeResponse;
   overallLocal?: PriceHistoryPoint[];
@@ -78,6 +88,7 @@ interface Props {
   regionalName?: string;
   areaName?: string;
   priceField?: 'avg_price' | 'median_price' | 'avg_ppsf';
+  byBedrooms?: BedroomBreakdownPoint[];
 }
 
 function CustomTooltip({ active, payload, label, activeKey, mode, fmtGBP }: {
@@ -139,14 +150,19 @@ export default function DistrictPriceHistoryChart({
   regionalName,
   areaName,
   priceField = 'avg_price',
+  byBedrooms,
 }: Props) {
   const localLabel = areaName ?? 'Local';
   const parentLabel = regionalName ?? 'Parent';
 
   const [showParent, setShowParent] = useState(false);
   const [mode, setMode] = useState<ViewMode>('price');
+  const [dimension, setDimension] = useState<Dimension>('type');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['__all']));
+  const [activeBeds, setActiveBeds] = useState<Set<string>>(new Set(['__all_beds']));
   const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  const hasBedrooms = !!byBedrooms && byBedrooms.length > 0;
 
   const toggleType = (key: string) => {
     setActiveTypes((prev) => {
@@ -165,6 +181,58 @@ export default function DistrictPriceHistoryChart({
       return next;
     });
   };
+
+  const toggleBed = (key: string) => {
+    setActiveBeds((prev) => {
+      const next = new Set(prev);
+      if (key === '__all_beds') {
+        if (next.has('__all_beds') && next.size === 1) return next;
+        return new Set(['__all_beds']);
+      }
+      next.delete('__all_beds');
+      if (next.has(key)) {
+        next.delete(key);
+        if (next.size === 0) next.add('__all_beds');
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Build bedroom price data keyed by year
+  const bedroomPriceData = useMemo((): Row[] => {
+    if (!byBedrooms?.length) return [];
+    const byYear: Record<string, Record<string, number>> = {};
+    for (const point of byBedrooms) {
+      if (!isCalendarYear(point.year)) continue;
+      if (!byYear[point.year]) byYear[point.year] = {};
+      const bedKey = `bed_${point.bedrooms}`;
+      byYear[point.year][bedKey] = point.avg_price;
+      byYear[point.year][`__txn_${bedKey}`] = point.transaction_count;
+    }
+    // Also add __all_beds from overallLocal
+    if (overallLocal) {
+      for (const point of overallLocal) {
+        if (!isCalendarYear(point.year)) continue;
+        if (!byYear[point.year]) byYear[point.year] = {};
+        const v = point[priceField];
+        if (v) {
+          byYear[point.year]['__all_beds'] = v;
+          byYear[point.year]['__txn___all_beds'] = point.transactions;
+        }
+      }
+    }
+    return Object.entries(byYear)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([year, values]): Row => ({ year, ...values }));
+  }, [byBedrooms, overallLocal, priceField]);
+
+  const bedroomYoyData = useMemo(() => {
+    if (!bedroomPriceData.length) return [];
+    const keys = ['__all_beds', ...BED_LINES.map(b => `bed_${b.key}`)];
+    return computeYoy(bedroomPriceData, keys);
+  }, [bedroomPriceData]);
 
   // Measure DOM for proximity detection
   const containerRef = useRef<HTMLDivElement>(null);
@@ -257,19 +325,25 @@ export default function DistrictPriceHistoryChart({
   // (rather than toggling), axes don't need to be stable across geo.
   const visibleKeys = useMemo(() => {
     const keys: string[] = [];
-    for (const typeKey of activeTypes) {
-      // Local keys (always shown)
-      keys.push(typeKey === '__all' ? '__all' : typeKey);
-      // Parent keys (when toggled on)
-      if (showParent) {
-        keys.push(typeKey === '__all' ? '__p___all' : `__p_${typeKey}`);
+    if (dimension === 'bedrooms') {
+      for (const bedKey of activeBeds) {
+        keys.push(bedKey === '__all_beds' ? '__all_beds' : `bed_${bedKey}`);
+      }
+    } else {
+      for (const typeKey of activeTypes) {
+        keys.push(typeKey === '__all' ? '__all' : typeKey);
+        if (showParent) {
+          keys.push(typeKey === '__all' ? '__p___all' : `__p_${typeKey}`);
+        }
       }
     }
     return keys;
-  }, [activeTypes, showParent]);
+  }, [dimension, activeTypes, activeBeds, showParent]);
 
   const stableScale = useMemo(() => {
-    const source = mode === 'price' ? priceData : yoyData;
+    const source = dimension === 'bedrooms'
+      ? (mode === 'price' ? bedroomPriceData : bedroomYoyData)
+      : (mode === 'price' ? priceData : yoyData);
     const vals: number[] = [];
     for (const row of source) {
       for (const key of visibleKeys) {
@@ -281,16 +355,26 @@ export default function DistrictPriceHistoryChart({
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
     return niceScale(mode === 'price' ? Math.max(0, lo) : lo, hi, 5);
-  }, [mode, priceData, yoyData, visibleKeys]);
+  }, [mode, dimension, priceData, yoyData, bedroomPriceData, bedroomYoyData, visibleKeys]);
 
-  // Select active data based on mode + active type keys.
-  // Local is always included; parent is added when showParent is true.
+  // Select active data based on mode + active type/bed keys.
   const chartData = useMemo(() => {
+    if (dimension === 'bedrooms') {
+      const source = mode === 'price' ? bedroomPriceData : bedroomYoyData;
+      return source.map((row) => {
+        const filtered: Row = { year: row.year };
+        for (const bedKey of activeBeds) {
+          const dk = bedKey === '__all_beds' ? '__all_beds' : `bed_${bedKey}`;
+          if (row[dk] != null) filtered[dk] = row[dk];
+          if (row[`__txn_${dk}`] != null) filtered[`__txn_${dk}`] = row[`__txn_${dk}`];
+        }
+        return filtered;
+      });
+    }
     const source = mode === 'price' ? priceData : yoyData;
     return source.map((row) => {
       const filtered: Row = { year: row.year };
       for (const typeKey of activeTypes) {
-        // Always include local
         if (typeKey === '__all') {
           if (row['__all'] != null) filtered['__all'] = row['__all'];
           if (row['__txn___all'] != null) filtered['__txn___all'] = row['__txn___all'];
@@ -298,7 +382,6 @@ export default function DistrictPriceHistoryChart({
           if (row[typeKey] != null) filtered[typeKey] = row[typeKey];
           if (row[`__txn_${typeKey}`] != null) filtered[`__txn_${typeKey}`] = row[`__txn_${typeKey}`];
         }
-        // Include parent when toggled on
         if (showParent) {
           if (typeKey === '__all') {
             if (row['__p___all'] != null) {
@@ -316,7 +399,7 @@ export default function DistrictPriceHistoryChart({
       }
       return filtered;
     });
-  }, [priceData, yoyData, mode, showParent, activeTypes]);
+  }, [dimension, priceData, yoyData, bedroomPriceData, bedroomYoyData, mode, showParent, activeTypes, activeBeds]);
 
   const yAxisW = mode === 'price' ? Y_AXIS_W : Y_AXIS_W_PCT;
   const yDomain: [number, number] = [stableScale.min, stableScale.max];
@@ -364,21 +447,30 @@ export default function DistrictPriceHistoryChart({
 
   const metricLabel = priceField === 'median_price' ? 'Median' : priceField === 'avg_ppsf' ? 'Avg Price/Sqft' : 'Average';
 
-  // Build lines for chart — local always, parent when toggled on
+  // Build lines for chart
   const lines: Array<{ dataKey: string; name: string; colour: string; dashed?: boolean }> = [];
-  for (const typeKey of activeTypes) {
-    // Local lines (always shown)
-    if (typeKey === '__all') {
-      lines.push({ dataKey: '__all', name: `${localLabel}: All Types`, colour: '#374151' });
-    } else if (localTypes.includes(typeKey)) {
-      lines.push({ dataKey: typeKey, name: `${localLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280' });
+  if (dimension === 'bedrooms') {
+    for (const bedKey of activeBeds) {
+      if (bedKey === '__all_beds') {
+        lines.push({ dataKey: '__all_beds', name: `${localLabel}: All Beds`, colour: '#374151' });
+      } else {
+        const cfg = BED_LINES.find(b => b.key === bedKey);
+        lines.push({ dataKey: `bed_${bedKey}`, name: `${localLabel}: ${cfg?.label ?? bedKey}`, colour: cfg?.colour ?? '#6b7280' });
+      }
     }
-    // Parent lines (when showParent)
-    if (showParent) {
-      if (typeKey === '__all' && hasParentAvg) {
-        lines.push({ dataKey: '__p___all', name: `${parentLabel}: All Types`, colour: '#374151', dashed: true });
-      } else if (typeKey !== '__all' && parentTypes.includes(typeKey)) {
-        lines.push({ dataKey: `__p_${typeKey}`, name: `${parentLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280', dashed: true });
+  } else {
+    for (const typeKey of activeTypes) {
+      if (typeKey === '__all') {
+        lines.push({ dataKey: '__all', name: `${localLabel}: All Types`, colour: '#374151' });
+      } else if (localTypes.includes(typeKey)) {
+        lines.push({ dataKey: typeKey, name: `${localLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280' });
+      }
+      if (showParent) {
+        if (typeKey === '__all' && hasParentAvg) {
+          lines.push({ dataKey: '__p___all', name: `${parentLabel}: All Types`, colour: '#374151', dashed: true });
+        } else if (typeKey !== '__all' && parentTypes.includes(typeKey)) {
+          lines.push({ dataKey: `__p_${typeKey}`, name: `${parentLabel}: ${typeKey}`, colour: TYPE_COLOUR_MAP[typeKey] ?? '#6b7280', dashed: true });
+        }
       }
     }
   }
@@ -394,8 +486,8 @@ export default function DistrictPriceHistoryChart({
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* Geography toggle (multi-select) */}
-        {hasParent && (
+        {/* Geography toggle — only in type dimension */}
+        {dimension === 'type' && hasParent && (
           <div className="flex rounded-lg border border-divider overflow-hidden">
             <span className="px-2.5 py-1 text-[11px] font-medium bg-brand-600 text-white">
               {localLabel}
@@ -437,33 +529,91 @@ export default function DistrictPriceHistoryChart({
           </button>
         </div>
 
-        {/* Type filter toggle (multi-select) */}
-        <div className="flex rounded-lg border border-divider overflow-hidden">
-          <button
-            onClick={() => toggleType('__all')}
-            className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
-              activeTypes.has('__all')
-                ? 'bg-brand-600 text-white'
-                : 'bg-surface text-ink-muted hover:bg-surface-warm'
-            }`}
-          >
-            All Types
-          </button>
-          {TYPE_LINES.map(({ key, label, colour }) => (
+        {/* Dimension toggle: Type vs Bedrooms */}
+        {hasBedrooms && (
+          <div className="flex rounded-lg border border-divider overflow-hidden">
             <button
-              key={key}
-              onClick={() => toggleType(key)}
-              className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
-                activeTypes.has(key)
-                  ? 'text-white'
+              onClick={() => setDimension('type')}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                dimension === 'type'
+                  ? 'bg-brand-600 text-white'
                   : 'bg-surface text-ink-muted hover:bg-surface-warm'
               }`}
-              style={activeTypes.has(key) ? { backgroundColor: colour } : undefined}
             >
-              {label}
+              By Type
             </button>
-          ))}
-        </div>
+            <button
+              onClick={() => setDimension('bedrooms')}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+                dimension === 'bedrooms'
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-surface text-ink-muted hover:bg-surface-warm'
+              }`}
+            >
+              By Beds
+            </button>
+          </div>
+        )}
+
+        {/* Type filter toggle (multi-select) — shown in type dimension */}
+        {dimension === 'type' && (
+          <div className="flex rounded-lg border border-divider overflow-hidden">
+            <button
+              onClick={() => toggleType('__all')}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                activeTypes.has('__all')
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-surface text-ink-muted hover:bg-surface-warm'
+              }`}
+            >
+              All Types
+            </button>
+            {TYPE_LINES.map(({ key, label, colour }) => (
+              <button
+                key={key}
+                onClick={() => toggleType(key)}
+                className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+                  activeTypes.has(key)
+                    ? 'text-white'
+                    : 'bg-surface text-ink-muted hover:bg-surface-warm'
+                }`}
+                style={activeTypes.has(key) ? { backgroundColor: colour } : undefined}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Bedroom filter toggle (multi-select) — shown in bedrooms dimension */}
+        {dimension === 'bedrooms' && (
+          <div className="flex rounded-lg border border-divider overflow-hidden">
+            <button
+              onClick={() => toggleBed('__all_beds')}
+              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                activeBeds.has('__all_beds')
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-surface text-ink-muted hover:bg-surface-warm'
+              }`}
+            >
+              All Beds
+            </button>
+            {BED_LINES.map(({ key, label, colour }) => (
+              <button
+                key={key}
+                onClick={() => toggleBed(key)}
+                className={`px-2.5 py-1 text-[11px] font-medium transition-colors border-l border-divider ${
+                  activeBeds.has(key)
+                    ? 'text-white'
+                    : 'bg-surface text-ink-muted hover:bg-surface-warm'
+                }`}
+                style={activeBeds.has(key) ? { backgroundColor: colour } : undefined}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Chart */}

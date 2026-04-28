@@ -102,9 +102,9 @@ async def get_price_history(
     for row in parent_rows:
         row["year"] = str(row["year"].year) if hasattr(row["year"], "year") else str(row["year"])[:4]
 
-    # Bedroom breakdown — LAD-level only (core_price_by_bedrooms_lad is LAD-granularity)
+    # Bedroom breakdown — LAD-level (aggregated to local_lads for all search types)
     bedrooms_rows: list = []
-    if boundary_source in ("lad", "county"):
+    if local_lads:
         bedrooms_res = await db.execute(
             text("""
                 SELECT year::text AS year,

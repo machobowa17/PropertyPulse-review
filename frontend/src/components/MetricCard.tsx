@@ -336,6 +336,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   regionalName={priceHistoryData?.regional_name}
                   areaName={areaName}
                   priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
+                  byBedrooms={priceHistoryData?.by_bedrooms}
                 />
               )}
               {/* Priority 3: Existing detail renderers (SchoolTable, StationTable, etc.) */}
