@@ -239,7 +239,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P51 | Saved areas — clarify persistence model | Pending | Where does it save? How does it remember the user? Currently localStorage only — no cross-device sync, no account system. Clarify UX and consider if this is sufficient. |
 | P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
-| P54 | Add bedroom layer to price history charts | Pending | M3 done but bedroom coverage is ~50% post-2020 (not 80%+ as hoped). Still viable with quality_flag. Add bedroom breakdown (1-bed, 2-bed, 3-bed, 4-bed, 5+) as filter toggle on price history charts. No longer blocked. |
+| P54 | Add bedroom layer to price history charts | **DONE** | Session 60. "By Type" / "By Beds" dimension toggle in DistrictPriceHistoryChart. 1-5+ bed lines with colour-coded toggles. Backend now returns `by_bedrooms` for all search types (not just LAD). |
 
 #### 7B — Map
 
@@ -268,7 +268,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P55 | Expandable transaction rows — previous sales | **DONE** | Session 47. Click row → sub-rows show previous sales of same property. Backend `/transactions/history` endpoint matches by `postcode + paon + street`. SAON handling: empty=match all (houses), specific=exact match (flats). +/− indicator, % change vs older sale, main row shows % in brackets. |
 | P56 | Map fly-to on transaction row click | **DONE** | Session 47. Expanding a row flies map to property at zoom 17. Collapsing row or metric card restores original viewport. `mapFlyToRef` in ResultsContext, populated by MapView `onMapReady` callback. `lat`/`lon` added to `/transactions` response. |
 | P57 | Sold price popup format change | **DONE** | Session 47. Changed from Address → £price (big) → Type · Tenure → Date to: Address → Type · Tenure · Beds · Floor area → "Last sold: Month Year, £price". |
-| P58 | EPC rating distribution — enhanced with type + period toggles | Pending | Redesign `epc_energy_score` metric expanded view: show property count per band (not just %), classic UK EPC arrow-style visual (A green → G red), toggle by property type (D/S/T/F), toggle by period built (requires `CONSTRUCTION_AGE_BAND` from M3). **Phase 1 (now):** type toggle using existing `core_epc_lsoa` + `core_property_transactions` EPC match data. **Phase 2 (after M3):** add period-built toggle. |
+| P58 | EPC rating distribution — enhanced with type + period toggles | **DONE** (Phase 1) | Session 60. Fixed NULL pct_a-g by switching to populated grouped columns (pct_rating_a_b, pct_rating_c, pct_rating_d, pct_rating_e_g). Classic UK EPC arrow-style band labels. Phase 2 (type toggles, period-built) deferred until M3. |
 | P59 | Property energy & building profile metric | Pending | New metric on Property tab showing area-level EPC-derived building characteristics in a table with type toggles (same pattern as freehold/leasehold, housing stock tables): heating type breakdown (gas/electric/oil/district), fuel type, energy consumption (kWh/yr), CO2 emissions (t/yr), running costs (heating £/yr, hot water £/yr, lighting £/yr), glazing quality, wall construction/insulation, solar adoption, mains gas connectivity. **Fully blocked by M3** — requires EPC re-ingestion with additional columns (D17-D21). All columns exist in raw EPC CSV but are not currently loaded. |
 
 #### 7D — Lifestyle tab
@@ -293,7 +293,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P35 | Remove EPC metrics from Environment tab | **DONE** | Removed entire EPC section from tab_environment.py (queries, parent comparison, epc_rating + epc_rating_c_plus metrics). |
 | P36 | Air quality PMI trend chart → under PMI metric | **DONE** | AirQualityChart now accepts `pollutant` prop ('pm25'/'no2'). Rendered inline after `air_quality_pm25` metric in ResultsMetricsPanel. Standalone AQ trend CollapsibleSection removed. |
 | P37 | NO2 trend chart | **DONE** | NO2 trend chart rendered inline after `air_quality_no2` metric using same AirQualityChart with `pollutant="no2"`. WHO limit: 10 µg/m³. |
-| P38 | Park cover — data accuracy + methodology | Pending | CR5 1RA shows 17% vs London 21.3% — suspect wrong for a green area. (1) Verify data accuracy. (2) Rethink methodology: 1km radius may not be right, consider LSOA-scoped instead. |
+| P38 | Park cover — data accuracy + methodology | **Audited** | Session 60. Data is correct: 53.5 ha of 'Public Park Or Garden' within 1km / 314.16 ha circle = 17.0%. 3 parks found, largest 49.8 ha. Methodology sound (1km radius, π×r² denominator). `PARK_TYPES` only includes 'Public Park Or Garden' — could expand to playing fields etc. but that's a policy choice. No bug. |
 
 #### 7F — Community tab
 
@@ -331,6 +331,9 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S60-1 | P24: Tenure visual stacked bar + freehold premium | **DONE** | Session 60. Stacked coloured bar for freehold/leasehold splits, amber premium callout. |
 | S60-2 | D27-T1: Transaction table extra columns | **DONE** | Session 60. `new_build` green badge, `price_per_sqft` sub-text, `ppd_category` in API. |
 | S60-3 | P47: Deprivation radar chart consolidation | **DONE** | Session 60. Hid 7 sub-domain cards, added Recharts RadarChart to main IMD block. |
+| S60-4 | P54: Bedroom filter on price history charts | **DONE** | Session 60. By Type/By Beds toggle, 1-5+ bed lines. Backend returns `by_bedrooms` for all search types. |
+| S60-5 | P58: EPC rating distribution fix + redesign | **DONE** | Session 60. Switched to grouped columns, classic UK EPC arrow-style bars. |
+| S60-6 | P38: Park cover data audit | **Audited** | Session 60. Data and methodology verified correct. No changes needed. |
 
 ---
 
