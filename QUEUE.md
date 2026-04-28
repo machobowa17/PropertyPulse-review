@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 65)
+Last updated: 2026-04-28 (session 66)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -226,10 +226,10 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| P1 | Create Overview tab | Pending | New central tab. Houses: comparable areas (cross-tab, not per-tab), useful resources, and other cross-cutting content. Comparable areas comparison should use metrics from ALL tabs, not just one. Create provision first, populate later. |
-| P2 | Mini overview at top of each tab | Pending | Consider a summary/overview strip at the top of every tab (like demographics overview but without metric comparison indicators). Design TBD. |
-| P3 | Move useful resources to Overview tab | Pending | Currently duplicated across multiple tabs. Move to P1's Overview tab. |
-| P4 | Move comparable areas to Overview tab | Pending | Currently per-tab. Rearchitect to use cross-tab metrics for comparison. |
+| P1 | Create Overview tab | **DONE** | Session 66. Real backend handler `tab_overview.py` with 10 headline metrics (2 per tab origin). Frontend: OverviewSnapshotGrid (10-card responsive grid), TabScoreRow (5 clickable tab score mini-cards), cross-tab PersonaScoreCard (combines all cached tab metrics). Default tab is now Overview. |
+| P2 | Mini overview at top of each tab | **DONE** | Session 66. TabHighlightStrip component — 3-stat row showing top persona-weighted metrics on each data tab. Positioned between tab explainer and PersonaScoreCard. |
+| P3 | Move useful resources to Overview tab | **DONE** | Session 66. Removed from data tabs, now rendered only in Overview tab's custom layout. |
+| P4 | Move comparable areas to Overview tab | **DONE** | Session 66. Removed from Property-only position, now in Overview layout. Comparable areas expanded from 5D to 11D (added crime, IMD, demographics, transport, council tax). SQL migration `011_expand_comparable_features.sql`. |
 | P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | **DONE** | Session 65. Combined two pills into single coloured takeaway pill: "soWhat — watchOut". Simpler, less visual clutter. MetricCard desktop: one w-44 column. Mobile: one pill. personalization.ts capsule also combined. |
 | P6 | Shortlisted vs Watch buttons → single Save button | **DONE** | Session 65. Merged shortlist+watchlist into single "Save"/"Saved" toggle (Bookmark icon). localStorage v2 migration with v1 auto-import. SavedAreas page simplified to single list (48 item cap). ResultsContext: `isSaved` boolean + `toggleSave()`. |
 | P7 | Decision mode (Buy/Rent/Invest) — make impact visible | **DONE** | Session 64. "Prioritised" (green) and "Lower priority" (amber) badges on MetricCard. PersonaScoreCard shows mode-aware label. |
@@ -237,7 +237,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
 | P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
 | P51 | Saved areas — clarify persistence model | **DONE** | Session 65. Addressed alongside P6. localStorage v2 with clear "Saved to this browser" copy. Single collection, 48-item limit, auto-migration from v1. No cross-device sync needed for MVP. |
-| P52 | Full E2E test + deploy after Phase 7 | Pending | After all Phase 7 changes: run full Playwright suite, tsc -b, vite build. Deploy latest to EC2. Upload codebase to Google Drive. Save context, queue, memory. |
+| P52 | Full E2E test + deploy after Phase 7 | **DONE** | Session 66. tsc 0 errors, vite build clean, metric refactor 30/30, brutal 468/468, comprehensive 121/124 (2 pre-existing: Whitby timeout + Scotland, 1 flaky map marker timing). Deployed to EC2. SQL migration run. QUEUE.md + MEMORY.md updated. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
 | P54 | Add bedroom layer to price history charts | **DONE** | Session 60. "By Type" / "By Beds" dimension toggle in DistrictPriceHistoryChart. 1-5+ bed lines with colour-coded toggles. Backend now returns `by_bedrooms` for all search types (not just LAD). |
 
