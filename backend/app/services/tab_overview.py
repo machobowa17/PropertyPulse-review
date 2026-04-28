@@ -1,10 +1,8 @@
 """Tab 0: Overview — Cross-tab headline metrics.
 Aggregates 10 key metrics (2 per existing tab) from lightweight queries.
 All queries use pre-computed tables or simple aggregations — no spatial joins,
-no external API calls. Total execution ~100-200ms via asyncio.gather().
+no external API calls. Run sequentially on the shared async session.
 """
-import asyncio
-
 from sqlalchemy import text
 
 from app.services.helpers import metric
@@ -29,14 +27,14 @@ async def fetch_overview(
     if parent_lads is None:
         parent_lads = []
 
-    results = await asyncio.gather(
-        _overview_property(db, lsoa_codes, local_lads, parent_lads),
-        _overview_lifestyle(db, lsoa_codes, local_lads, parent_lads),
-        _overview_safety(db, lsoa_codes, local_lads, parent_lads),
-        _overview_community(db, lsoa_codes, parent_lads),
-        _overview_people(db, lsoa_codes, parent_lads),
-    )
-    return [m for group in results for m in group]
+    # Run sequentially — SQLAlchemy async session is not safe for concurrent use
+    all_metrics = []
+    all_metrics.extend(await _overview_property(db, lsoa_codes, local_lads, parent_lads))
+    all_metrics.extend(await _overview_lifestyle(db, lsoa_codes, local_lads, parent_lads))
+    all_metrics.extend(await _overview_safety(db, lsoa_codes, local_lads, parent_lads))
+    all_metrics.extend(await _overview_community(db, lsoa_codes, parent_lads))
+    all_metrics.extend(await _overview_people(db, lsoa_codes, parent_lads))
+    return all_metrics
 
 
 # ---------------------------------------------------------------------------
