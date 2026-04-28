@@ -1,5 +1,3 @@
-import { Flame, Zap, Droplet, Building2, Wind } from 'lucide-react';
-
 interface Props {
   pctAb?: number | null;
   pctC?: number | null;
@@ -8,12 +6,6 @@ interface Props {
   avgScore?: number | null;
   parentAvgScore?: number | null;
   parentRatings?: { ab?: number | null; c?: number | null; d?: number | null; eg?: number | null } | null;
-  heatGasPct?: number | null;
-  heatElectricPct?: number | null;
-  heatOilPct?: number | null;
-  heatDistrictPct?: number | null;
-  heatOtherPct?: number | null;
-  heatNonePct?: number | null;
   cPlusPct?: number | null;
   parentCPlusPct?: number | null;
 }
@@ -37,19 +29,10 @@ function scoreToBand(score: number): string {
   return 'G';
 }
 
-const HEAT_ITEMS = [
-  { key: 'gas', label: 'Gas', icon: Flame, colour: '#2563eb' },
-  { key: 'electric', label: 'Electric', icon: Zap, colour: '#7c3aed' },
-  { key: 'oil', label: 'Oil', icon: Droplet, colour: '#ea580c' },
-  { key: 'district', label: 'District', icon: Building2, colour: '#0891b2' },
-  { key: 'other', label: 'Other', icon: Wind, colour: '#6b7280' },
-] as const;
-
 export default function EpcRatingChart({
   pctAb, pctC, pctD, pctEg,
   avgScore, parentAvgScore,
   parentRatings,
-  heatGasPct, heatElectricPct, heatOilPct, heatDistrictPct, heatOtherPct, heatNonePct,
   cPlusPct, parentCPlusPct,
 }: Props) {
   const bands: { label: string; local: number; parent: number | null; colour: string; range: string }[] = BANDS.map(b => ({
@@ -60,7 +43,6 @@ export default function EpcRatingChart({
     parent: parentRatings ? (parentRatings[b.key] ?? null) : null,
   })).filter(b => b.local > 0 || (b.parent ?? 0) > 0);
 
-  const hasHeating = heatGasPct != null || heatElectricPct != null;
   const band = avgScore != null ? scoreToBand(avgScore) : null;
 
   return (
@@ -146,41 +128,6 @@ export default function EpcRatingChart({
           {parentRatings && (
             <p className="text-[10px] text-ink-faint mt-1.5">Grey tick = area average</p>
           )}
-        </div>
-      )}
-
-      {/* ─── Heating breakdown ─── */}
-      {hasHeating && (
-        <div>
-          <h4 className="text-xs font-semibold text-ink-muted mb-2">Heating Type</h4>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {HEAT_ITEMS.map(({ key, label, icon: Icon, colour }) => {
-              const pct = key === 'gas' ? heatGasPct
-                : key === 'electric' ? heatElectricPct
-                : key === 'oil' ? heatOilPct
-                : key === 'district' ? heatDistrictPct
-                : heatOtherPct;
-              if (pct == null || pct < 0.5) return null;
-              return (
-                <div key={key} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-divider">
-                  <Icon className="w-4 h-4 shrink-0" style={{ color: colour }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] text-ink-faint">{label}</div>
-                    <div className="text-sm font-semibold text-ink">{pct.toFixed(1)}%</div>
-                  </div>
-                </div>
-              );
-            })}
-            {heatNonePct != null && heatNonePct >= 0.5 && (
-              <div className="flex items-center gap-2 p-2 bg-white rounded-lg border border-divider">
-                <div className="w-4 h-4 shrink-0 rounded-full bg-divider" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] text-ink-faint">No heating</div>
-                  <div className="text-sm font-semibold text-ink">{heatNonePct.toFixed(1)}%</div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>

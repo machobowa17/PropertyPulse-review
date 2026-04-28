@@ -28,7 +28,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v27"  # bumped: EPC grouped bands (pct_ab, pct_eg instead of individual pct_a-g)
+AREA_CACHE_VERSION = "v28"  # bumped: P59 building_profile metric (heating, CO2, costs, age bands)
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

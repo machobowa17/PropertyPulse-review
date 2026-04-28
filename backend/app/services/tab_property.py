@@ -956,7 +956,21 @@ async def fetch_property_market(
                    SUM(total_certs * heat_oil_pct) / NULLIF(SUM(total_certs), 0) AS heat_oil_pct,
                    SUM(total_certs * heat_district_pct) / NULLIF(SUM(total_certs), 0) AS heat_district_pct,
                    SUM(total_certs * heat_other_pct) / NULLIF(SUM(total_certs), 0) AS heat_other_pct,
-                   SUM(total_certs * heat_none_pct) / NULLIF(SUM(total_certs), 0) AS heat_none_pct
+                   SUM(total_certs * heat_none_pct) / NULLIF(SUM(total_certs), 0) AS heat_none_pct,
+                   SUM(total_certs * avg_co2_emissions) / NULLIF(SUM(total_certs), 0) AS avg_co2,
+                   SUM(total_certs * avg_energy_consumption) / NULLIF(SUM(total_certs), 0) AS avg_energy_kwh,
+                   SUM(total_certs * avg_heating_cost) / NULLIF(SUM(total_certs), 0) AS avg_heating_cost,
+                   SUM(total_certs * avg_hotwater_cost) / NULLIF(SUM(total_certs), 0) AS avg_hotwater_cost,
+                   SUM(total_certs * avg_lighting_cost) / NULLIF(SUM(total_certs), 0) AS avg_lighting_cost,
+                   SUM(total_certs * pct_mains_gas) / NULLIF(SUM(total_certs), 0) AS pct_mains_gas,
+                   SUM(total_certs * pct_solar) / NULLIF(SUM(total_certs), 0) AS pct_solar,
+                   SUM(total_certs * age_pre1900_pct) / NULLIF(SUM(total_certs), 0) AS age_pre1900_pct,
+                   SUM(total_certs * age_1900_1929_pct) / NULLIF(SUM(total_certs), 0) AS age_1900_1929_pct,
+                   SUM(total_certs * age_1930_1949_pct) / NULLIF(SUM(total_certs), 0) AS age_1930_1949_pct,
+                   SUM(total_certs * age_1950_1966_pct) / NULLIF(SUM(total_certs), 0) AS age_1950_1966_pct,
+                   SUM(total_certs * age_1967_1982_pct) / NULLIF(SUM(total_certs), 0) AS age_1967_1982_pct,
+                   SUM(total_certs * age_1983_2002_pct) / NULLIF(SUM(total_certs), 0) AS age_1983_2002_pct,
+                   SUM(total_certs * age_post2002_pct) / NULLIF(SUM(total_certs), 0) AS age_post2002_pct
             FROM core_epc_lsoa
             WHERE lsoa_code = ANY(:codes)
             """
@@ -1015,18 +1029,47 @@ async def fetch_property_market(
                     "pct_c": _round(epc_row["pct_c"]),
                     "pct_d": _round(epc_row["pct_d"]),
                     "pct_eg": _round(epc_row["pct_eg"]),
-                    "heat_gas_pct": _round(epc_row["heat_gas_pct"]),
-                    "heat_electric_pct": _round(epc_row["heat_electric_pct"]),
-                    "heat_oil_pct": _round(epc_row["heat_oil_pct"]),
-                    "heat_district_pct": _round(epc_row["heat_district_pct"]),
-                    "heat_other_pct": _round(epc_row["heat_other_pct"]),
-                    "heat_none_pct": _round(epc_row["heat_none_pct"]),
                     "parent_ratings": parent_ratings,
                     "c_plus_pct": round(local_c_plus, 2),
                     "parent_c_plus_pct": parent_c_plus,
                 },
             )
         )
+
+        # Building Profile — heating, CO2, costs, age bands, renewables
+        bp_co2 = _round(epc_row["avg_co2"])
+        if bp_co2 is not None:
+            metrics.append(
+                metric(
+                    "building_profile",
+                    "Building Profile",
+                    bp_co2,
+                    None,
+                    "tCO2/yr",
+                    details={
+                        "avg_co2": bp_co2,
+                        "avg_energy_kwh": _round(epc_row["avg_energy_kwh"]),
+                        "avg_heating_cost": _round(epc_row["avg_heating_cost"]),
+                        "avg_hotwater_cost": _round(epc_row["avg_hotwater_cost"]),
+                        "avg_lighting_cost": _round(epc_row["avg_lighting_cost"]),
+                        "heat_gas_pct": _round(epc_row["heat_gas_pct"]),
+                        "heat_electric_pct": _round(epc_row["heat_electric_pct"]),
+                        "heat_oil_pct": _round(epc_row["heat_oil_pct"]),
+                        "heat_district_pct": _round(epc_row["heat_district_pct"]),
+                        "heat_other_pct": _round(epc_row["heat_other_pct"]),
+                        "heat_none_pct": _round(epc_row["heat_none_pct"]),
+                        "pct_mains_gas": _round(epc_row["pct_mains_gas"]),
+                        "pct_solar": _round(epc_row["pct_solar"]),
+                        "age_pre1900_pct": _round(epc_row["age_pre1900_pct"]),
+                        "age_1900_1929_pct": _round(epc_row["age_1900_1929_pct"]),
+                        "age_1930_1949_pct": _round(epc_row["age_1930_1949_pct"]),
+                        "age_1950_1966_pct": _round(epc_row["age_1950_1966_pct"]),
+                        "age_1967_1982_pct": _round(epc_row["age_1967_1982_pct"]),
+                        "age_1983_2002_pct": _round(epc_row["age_1983_2002_pct"]),
+                        "age_post2002_pct": _round(epc_row["age_post2002_pct"]),
+                    },
+                )
+            )
 
     # ------------------------------------------------------------------
     # Housing Tenure & Housing Stock (Census 2021, stays on EC2)

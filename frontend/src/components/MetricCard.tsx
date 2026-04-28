@@ -27,6 +27,7 @@ const StationTable            = lazy(() => import('./StationTable'));
 const SchoolTable             = lazy(() => import('./SchoolTable'));
 const NurseryTable            = lazy(() => import('./NurseryTable'));
 const TransactionTable        = lazy(() => import('./TransactionTable'));
+const BuildingProfileChart    = lazy(() => import('./BuildingProfileChart'));
 
 // Runtime-safe accessors for details: Record<string, unknown>
 // Replaces 40+ unsafe `as` casts with type-checked reads.
@@ -68,6 +69,7 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   investment_grade:       { label: 'HM Land Registry / ONS', licence: 'OGL v3' },
   epc_rating:             { label: 'MHCLG EPC Register', licence: 'OGL v3' },
   epc_energy_score:       { label: 'MHCLG EPC Register', licence: 'OGL v3' },
+  building_profile:       { label: 'MHCLG EPC Register', licence: 'OGL v3' },
   // Lifestyle & Connectivity
   nearest_station:        { label: 'NaPTAN / Network Rail', licence: 'OGL v3' },
   ptal:                   { label: 'TfL / NaPTAN', licence: 'OGL v3' },
@@ -763,14 +765,36 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         avgScore={num(details, 'avg_energy_score')}
         parentAvgScore={num(details, 'parent_avg_score')}
         parentRatings={rec<Record<string, number | null>>(details, 'parent_ratings')}
+        cPlusPct={num(details, 'c_plus_pct')}
+        parentCPlusPct={num(details, 'parent_c_plus_pct')}
+      />
+    );
+  }
+
+  // Building Profile — heating, CO2, costs, construction age, renewables
+  if (details.avg_co2 != null || details.avg_energy_kwh != null) {
+    return (
+      <BuildingProfileChart
+        avgCo2={num(details, 'avg_co2')}
+        avgEnergyKwh={num(details, 'avg_energy_kwh')}
+        avgHeatingCost={num(details, 'avg_heating_cost')}
+        avgHotwaterCost={num(details, 'avg_hotwater_cost')}
+        avgLightingCost={num(details, 'avg_lighting_cost')}
         heatGasPct={num(details, 'heat_gas_pct')}
         heatElectricPct={num(details, 'heat_electric_pct')}
         heatOilPct={num(details, 'heat_oil_pct')}
         heatDistrictPct={num(details, 'heat_district_pct')}
         heatOtherPct={num(details, 'heat_other_pct')}
         heatNonePct={num(details, 'heat_none_pct')}
-        cPlusPct={num(details, 'c_plus_pct')}
-        parentCPlusPct={num(details, 'parent_c_plus_pct')}
+        pctMainsGas={num(details, 'pct_mains_gas')}
+        pctSolar={num(details, 'pct_solar')}
+        agePre1900Pct={num(details, 'age_pre1900_pct')}
+        age1900_1929Pct={num(details, 'age_1900_1929_pct')}
+        age1930_1949Pct={num(details, 'age_1930_1949_pct')}
+        age1950_1966Pct={num(details, 'age_1950_1966_pct')}
+        age1967_1982Pct={num(details, 'age_1967_1982_pct')}
+        age1983_2002Pct={num(details, 'age_1983_2002_pct')}
+        agePost2002Pct={num(details, 'age_post2002_pct')}
       />
     );
   }

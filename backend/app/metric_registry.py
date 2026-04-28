@@ -307,6 +307,26 @@ METRIC_REGISTRY = {
         "source_tables": ["core_epc_lsoa"],
     },
 
+    "building_profile": {
+        "section": "Property & Market",
+        "label": "Building Profile",
+        "short_label": "Building",
+        "description": "Area-level building characteristics from EPC certificates: heating, costs, construction age, CO2",
+        "local_grain": "lsoa",
+        "supports_parent": False,
+        "supports_trend": False,
+        "map_binding": "none",
+        "unit": "tCO2/yr",
+        "value_type": "decimal_1",
+        "status": "core",
+        "sort_priority": 16,
+        "decision_question": "What are the building characteristics in this area?",
+        "metric_family": "energy_efficiency",
+        "interpretation_direction": "lower_is_better",
+        "quality_notes": "Aggregated from all EPC certificates lodged for this area.",
+        "source_tables": ["core_epc_lsoa"],
+    },
+
     # -----------------------------------------------------------------------
     # Tab 2: Lifestyle & Connectivity
     # -----------------------------------------------------------------------
