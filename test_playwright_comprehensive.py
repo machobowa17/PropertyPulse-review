@@ -316,34 +316,30 @@ def run_all_tests():
         print(f"SECTION: {section}")
         print(f"{'='*60}")
 
+        # Rate-limit cooldown — prior tab tests make many API calls (60 req/min limit)
+        time.sleep(5)
+
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         page = context.new_page()
         page.goto(results_url("SW1A 1AA"))
         wait_for_results(page)
-        switch_tab(page, "Property")  # Map tests need Property tab for sold prices markers
-        time.sleep(3)  # Wait for tab data + map pois to start loading
+        # Default tab is Overview — switch to Property for sold price markers + layer tests
+        switch_tab(page, "Property")
 
         # Map canvas should exist
         has_canvas = has_map_canvas(page)
         R.add(section, "Map canvas present", has_canvas)
 
         # Map markers should appear (sold prices on Property tab)
-        # Poll for up to 20s — markers render after property data + map pois fetch
+        # Poll for up to 20s — mapPois fetch + Supercluster render can take a few seconds
         marker_count = 0
-        for _ in range(20):
+        for i in range(20):
             marker_count = count_markers(page)
             if marker_count > 0:
                 break
             time.sleep(1)
-        # If still 0, try a second approach: switch away and back to re-trigger
-        if marker_count == 0:
-            switch_tab(page, "Lifestyle")
-            time.sleep(2)
-            switch_tab(page, "Property")
-            time.sleep(5)
-            marker_count = count_markers(page)
         R.add(section, "Map markers present",
-              marker_count > 0, f"{marker_count} markers")
+              marker_count > 0, f"{marker_count} markers (waited {i+1}s)")
 
         # Check for boundary — map should have boundary source
         # We check via the LSOA fill layer which should be a canvas layer
@@ -359,12 +355,17 @@ def run_all_tests():
         if layer_btns.count() > 0:
             # Open layer panel — use last (desktop sidebar) button; force click to bypass z-index occlusion
             layer_btns.last.click(force=True)
-            time.sleep(0.5)
+            time.sleep(1)
 
             # Check layer panel text contains expected layers (new labels)
-            panel_text = page.locator('[class*="absolute"]').filter(has_text="Sold prices").inner_text()
-            has_sold = "Sold prices" in panel_text
-            R.add(section, "Layer panel — Sold Prices", has_sold, f"panel text present")
+            try:
+                sold_loc = page.locator('[class*="absolute"]').filter(has_text="Sold prices")
+                sold_loc.wait_for(timeout=5000)
+                panel_text = sold_loc.inner_text(timeout=5000)
+                has_sold = "Sold prices" in panel_text
+                R.add(section, "Layer panel — Sold Prices", has_sold, f"panel text present")
+            except PwTimeout:
+                R.add(section, "Layer panel — Sold Prices", False, "panel text not found within 5s")
 
             # Check for boundary layer toggles
             has_ward = (page.locator('button:has-text("Wider area boundary")').count() > 0

@@ -771,7 +771,23 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   // Update POI markers + flood zone polygons when pois, visibility, searchLsoa, or tab change
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
+
+    // If style not loaded yet, defer until it is (prevents race when pois arrive from cache
+    // before map tiles finish loading — the effect would silently exit with no retry)
+    if (!map.isStyleLoaded()) {
+      const onLoad = () => {
+        const tabChanged = prevTabRef.current !== activeTab;
+        prevTabRef.current = activeTab;
+        if (tabChanged || searchLsoa !== lastRenderedLsoaRef.current || visibleLayers !== lastRenderedLayersRef.current) {
+          lastRenderedPoisRef.current = undefined;
+        }
+        if (!POI_TABS.includes(activeTab || '')) return;
+        renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
+      };
+      map.once('load', onLoad);
+      return () => { map.off('load', onLoad); };
+    }
 
     const tabChanged = prevTabRef.current !== activeTab;
     prevTabRef.current = activeTab;
