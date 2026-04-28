@@ -780,10 +780,15 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     const _fc = pois?.features?.length ?? 0;
     console.log(`[MapView POI] tab=${activeTab} prev=${prevTabRef.current} changed=${_tc} styleOk=${_styleOk} features=${_fc}`);
 
-    // If style not loaded yet, defer until it is (prevents race when pois arrive from cache
-    // before map tiles finish loading — the effect would silently exit with no retry)
+    // If style not loaded yet, defer until it is. The 'load' event only fires once in the
+    // map's lifetime, so use 'idle' which fires whenever the map finishes rendering.
+    // This handles the case where tiles are briefly reloading when pois data arrives.
     if (!_styleOk) {
-      const onLoad = () => {
+      console.log('[MapView POI] style not loaded — deferring via idle event');
+      const onIdle = () => {
+        if (!map.isStyleLoaded()) return;  // still not ready, wait for next idle
+        map.off('idle', onIdle);  // one-shot: remove after first successful fire
+        console.log('[MapView POI] idle fired, style now loaded — rendering');
         const tc = prevTabRef.current !== activeTab;
         prevTabRef.current = activeTab;
         if (tc || searchLsoa !== lastRenderedLsoaRef.current || visibleLayers !== lastRenderedLayersRef.current) {
@@ -792,8 +797,8 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         if (!POI_TABS.includes(activeTab || '')) return;
         renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
       };
-      map.once('load', onLoad);
-      return () => { map.off('load', onLoad); };
+      map.on('idle', onIdle);
+      return () => { map.off('idle', onIdle); };
     }
 
     const tabChanged = prevTabRef.current !== activeTab;
