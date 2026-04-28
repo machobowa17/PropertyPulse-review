@@ -262,6 +262,8 @@ def run_tests():
         mobile_page.goto(results_url(SEARCH), timeout=60000)
         mobile_page.wait_for_selector("h1", timeout=30000)
         time.sleep(3)
+        switch_tab(mobile_page, "Property")  # Default is Overview — switch for section checks
+        time.sleep(2)
 
         mobile_sections = wait_for_sections(mobile_page)
         check("Mobile: sections render", mobile_sections >= 3, f"found {mobile_sections}")
