@@ -94,7 +94,7 @@ Source: Session 35 continuation. 3 deferred AI Studio items (H14–H16) implemen
 | B2 | Place boundary 500 when `core_place_boundaries_union` missing | try/except + `db.rollback()` fallback in `area_boundary.py` |
 
 #### Test suite
-- `test_brutal.py`: 13-section, 447-test brutal stress test (adversarial inputs, math correctness, boundary integrity, ethnicity accuracy, cross-search consistency, 5×5 tab×search matrix, Playwright UI)
+- `test_brutal.py`: 13-section brutal stress test (adversarial inputs, math correctness, boundary integrity, ethnicity accuracy, cross-search consistency, 5×5 tab×search matrix, Playwright UI). Originally 447 assertions (session 35), now ~390 after test evolution. 385/390 as of session 63.
 
 ---
 
@@ -232,7 +232,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P4 | Move comparable areas to Overview tab | Pending | Currently per-tab. Rearchitect to use cross-tab metrics for comparison. |
 | P5 | Merge "So what?" + "Watch out for" → single "Takeaway" | Pending | Across all tabs. Simpler, easier to tune per persona. **To be discussed.** |
 | P6 | Shortlisted vs Watch buttons — rethink UX | Pending | Unclear what each does, where saved, what the difference is. Sort out or simplify. |
-| P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Pending | User can't see what changes when toggling. Need evidence of effect. **To be discussed.** |
+| P7 | Decision mode (Buy/Rent/Invest) — make impact visible | Partial | C1 (session 34) added `DECISION_MODE_MULTIPLIERS` that change persona scoring. But impact is invisible to user — no visual indicator shows what changed. UX clarity still needed. |
 | P8 | Download report button broken | **DONE** | Fixed in session 57 (commit `2b6150f`). Report endpoint returns valid PDF (reportlab on EC2). Verified session 59: 200 OK, 18KB PDF for CR5 1RA. |
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
 | P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
@@ -366,35 +366,16 @@ Source: Full DB schema audit — every table, every column checked against backe
 | `lsoa_month_avg_ppsm` | Avg price/sqm per LSOA per month (only populated by ETL, never queried) |
 | `lsoa_month_avg_ppsft` | Avg price/sqft per LSOA per month (same) |
 
-Also idle: `price_per_sqm` (per-transaction, never queried — only sqft is used), `epc_match_score` (EPC→transaction match confidence, never exposed).
+Also idle: `price_per_sqm` (per-transaction, never queried — only sqft is used). ~~`epc_match_score`~~ now exposed in transaction table (session 63, D27).
 
 **`core_price_sqm_lad` (318 rows) + `core_price_sqm_lsoa` (35,670 rows) — entire tables NEVER queried:**
 Pre-computed price-per-sqm breakdowns by property type (detached/semi/terraced/flat). Both have `avg_price_per_sqm`, `avg_ppsm_detached`, `avg_ppsm_semi`, `avg_ppsm_terraced`, `avg_ppsm_flat`, `transaction_count`.
 
-**`core_hpi_lad` (122,533 rows) — only used by comparable-areas algorithm, NEVER displayed:**
-Official ONS House Price Index. Monthly time series with: `average_price`, `index_value`, `sales_volume`, `detached_price`, `semi_detached_price`, `terraced_price`, `flat_price`, `yearly_change_pct`. Could power an official HPI trend chart or validate our transaction-derived prices.
+**~~`core_hpi_lad` (122,533 rows) — was only used by comparable-areas~~** — **RESOLVED (D14+D15, session 50).** Now powers `official_hpi` metric on Property tab with annual time series, type breakdown, and parent comparison.
 
-**`core_epc_lsoa` — heating + CO2 columns exist in schema but are ALL NULL (0 of 35,672 rows populated):**
-`avg_co2_emissions`, `heat_gas_pct`, `heat_electric_pct`, `heat_oil_pct`, `heat_district_pct`, `heat_other_pct`, `heat_none_pct` — schema is ready but the ETL aggregation step never populated these. The heating columns ARE queried by `tab_property.py` but return NULLs. Fixing requires re-running EPC ETL with additional raw columns (`MAIN_FUEL`, `CO2_EMISSIONS_CURRENT`).
+**~~`core_epc_lsoa` — heating + CO2 columns were ALL NULL~~** — **RESOLVED (session 61).** All heating + CO2 columns now populated (35,748 LSOAs) via Hetzner EPC aggregation. D16-D20 implemented: construction age, running costs, CO2, heating fuel, solar. D21-D22 (session 62) added glazing, insulation, built form.
 
-**Raw EPC CSV — 84 of 93 columns not loaded:**
-ETL loads only 9 columns (`LMK_KEY`, `ADDRESS1-3`, `POSTCODE`, `LODGEMENT_DATE`, `TOTAL_FLOOR_AREA`, `NUMBER_HABITABLE_ROOMS`, `CURRENT_ENERGY_RATING`). Notable idle raw columns that would need fresh ETL ingestion:
-
-| Raw CSV column | Potential metric |
-|---------------|-----------------|
-| `CONSTRUCTION_AGE_BAND` | "Period built" distribution (Victorian / Inter-war / Post-2000 etc.) |
-| `WALLS_DESCRIPTION`, `ROOF_DESCRIPTION` | Construction quality insights |
-| `HEATING_COST_CURRENT`, `HOT_WATER_COST_CURRENT`, `LIGHTING_COST_CURRENT` | Running costs estimate |
-| `CO2_EMISSIONS_CURRENT` | Carbon footprint per property |
-| `MAIN_FUEL` | Gas/electric/oil heating breakdown (would populate the empty `core_epc_lsoa` heating columns) |
-| `SOLAR_WATER_HEATING_FLAG`, `PHOTO_SUPPLY` | Renewable energy adoption rate |
-| `BUILT_FORM` | Granular type (bungalow, maisonette, end-terrace, etc.) |
-| `ENVIRONMENT_IMPACT_CURRENT/POTENTIAL` | Environmental impact score |
-| `ENERGY_CONSUMPTION_CURRENT` | kWh/year energy use |
-| `MAINHEAT_DESCRIPTION` | Specific heating system (e.g. "Gas boiler, radiators") |
-| `WINDOWS_DESCRIPTION` | Double/triple glazing prevalence |
-| `FLOOR_DESCRIPTION` | Floor insulation quality |
-| `TENURE` | Ownership type at individual property level (owner-occupied / rented / social) |
+**~~Raw EPC CSV — 84 of 93 columns not loaded~~** — **RESOLVED.** Hetzner has ALL 93 columns in `bronze.raw_epc_domestic` (29.2M rows). Sessions 61-62 aggregated most high-value columns (construction age, heating fuel, CO2, running costs, solar, glazing, insulation, built form) to `core_epc_lsoa` (35,748 LSOAs). EC2 `core_epc_domestic` still has only 9 columns (used for transaction matching), but area-level metrics now pull from the fully-populated `core_epc_lsoa`. Remaining per-transaction EPC columns (D27 Tier 2) would need Hetzner Property API enrichment.
 
 #### Proposals — Quick Wins (zero ETL, just query existing data)
 
@@ -527,7 +508,7 @@ Expand the sales history table beyond the current 8 columns. Three tiers based o
 
 **Implementation:** Tier 1 can be done immediately. Tiers 2-3 blocked by M3 (EPC re-ingestion). Frontend table needs horizontal scroll for wider layout.
 
-**Status:** Tier 1 partial — **DONE** (session 60). Added `new_build` (green "New" badge), `price_per_sqft` (£/sqft sub-text under price), `ppd_category` to API response. Remaining Tier 1 columns (locality, rooms, sqft conversion, epc_match_score, lsoa_month_*) deferred.
+**Status:** Tier 1 **DONE** across sessions 60+63. Session 60: `new_build` badge, `price_per_sqft` sub-text, `ppd_category`. Session 63: locality, habitable_rooms, sqft conversion, epc_match_score, area context (lsoa_month_*). Tiers 2-3 remain (per-transaction EPC columns from Hetzner).
 
 #### D28 — Per-Property Data Sources for Address-Level Search (feeds P53)
 
