@@ -23,7 +23,7 @@ from app.services.session_helpers import (
 
 router = APIRouter()
 
-MAP_CACHE_VERSION = "v5"  # bumped: remove duplicate park POIs from Env tab; EV charger limit 20/30→200
+MAP_CACHE_VERSION = "v6"  # bumped: choropleth scope widened from ward to full LAD for postcode searches
 
 
 # ---------------------------------------------------------------------------
@@ -596,20 +596,12 @@ async def get_map_choropleth(
     boundary_source = session_boundary_source(sess)
     local_lads = sess.get("local_lads", [])
     lsoa_codes = sess.get("lsoa_codes", [])
-    ward_code = sess.get("ward_code", "_")
 
     # --- Determine LSOA scope ---
-    if boundary_source == "ward_lsoa":
-        # Postcode: expand to all LSOAs in the ward
-        scope_res = await db.execute(
-            text("SELECT DISTINCT lsoa_code FROM core_postcodes WHERE ward_code = :ward AND lsoa_code IS NOT NULL"),
-            {"ward": ward_code},
-        )
-        scope_codes = [r["lsoa_code"] for r in scope_res.mappings().all()]
-    elif boundary_source in ("place", "ward"):
+    if boundary_source in ("place", "ward"):
         scope_codes = lsoa_codes
     else:
-        # LAD / county: all LSOAs in the local LADs
+        # Postcode (ward_lsoa) or LAD/county: all LSOAs in the local LADs
         scope_res = await db.execute(
             text("SELECT lsoa_code FROM core_lsoa_boundaries WHERE lad_code = ANY(:lads)"),
             {"lads": local_lads},
