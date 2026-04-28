@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Home, Coffee, TreePine, Users, Landmark } from 'lucide-react';
+import { Home, Coffee, TreePine, Users, Landmark, LayoutDashboard } from 'lucide-react';
 import type { TabName } from '../types';
 import { TABS } from '../utils/tabs';
 
 const ICONS: Record<string, React.ElementType> = {
-  Home, Coffee, TreePine, Users, Landmark,
+  LayoutDashboard, Home, Coffee, TreePine, Users, Landmark,
 };
 
 interface Props {

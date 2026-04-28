@@ -8,6 +8,9 @@ import PersonaScoreCard from '../PersonaScoreCard';
 import UsefulResourcesPanel from '../UsefulResourcesPanel';
 import CollapsibleSection from '../CollapsibleSection';
 import SkeletonCard from '../SkeletonCard';
+import OverviewSnapshotGrid from './OverviewSnapshotGrid';
+import TabScoreRow from './TabScoreRow';
+import TabHighlightStrip from './TabHighlightStrip';
 import { TAB_EXPLAINERS } from '../../utils/tabExplainers';
 import { formatValue } from '../../utils/tabs';
 import {
@@ -31,9 +34,11 @@ export function ResultsMetricsPanel() {
     parentName,
     areaName,
     activeTab,
+    setActiveTab,
     persona,
     tabData,
     tabLoading,
+    allMetrics,
     priceHistory,
     priceByType,
     comparable,
@@ -74,7 +79,64 @@ export function ResultsMetricsPanel() {
 
       {tabLoading ? (
         <SkeletonCard count={8} />
+      ) : activeTab === 'Overview' ? (
+        /* ── Overview tab: custom layout ── */
+        <div key="Overview" className="grid gap-2.5 animate-tab-enter">
+          {/* Tab explainer bar */}
+          {TAB_EXPLAINERS[activeTab] != null && (
+            <div className="rounded-xl bg-brand-50/50 border border-brand-100/60 px-4 py-3">
+              <p className="text-xs font-semibold text-brand-700">{TAB_EXPLAINERS[activeTab].decision}</p>
+              <p className="text-[11px] text-brand-600/70 mt-0.5">{TAB_EXPLAINERS[activeTab].summary}</p>
+            </div>
+          )}
+
+          {/* Cross-tab persona score (uses allMetrics from all cached tabs) */}
+          {allMetrics.length > 0 && (
+            <PersonaScoreCard metrics={allMetrics} persona={persona} decisionMode={decisionMode} />
+          )}
+
+          {/* 10-metric snapshot grid (from Overview tab's own backend data) */}
+          {tabData?.metrics && (
+            <OverviewSnapshotGrid metrics={tabData.metrics} parentName={parentName} />
+          )}
+
+          {/* Tab score row — persona-weighted score per data tab */}
+          {allMetrics.length > 0 && (
+            <TabScoreRow metrics={allMetrics} persona={persona} decisionMode={decisionMode} onTabClick={setActiveTab} />
+          )}
+
+          {/* Comparable areas (P4: moved from Property to Overview) */}
+          {comparable != null && comparable.comparable.length > 0 && (
+            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
+              <ComparableAreas target={comparable.target} comparable={comparable.comparable} />
+            </CollapsibleSection>
+          )}
+          {comparable != null && !!(comparable as unknown as Record<string, unknown>).unsupported_scope && (
+            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
+              <div className="px-3 py-4 text-center">
+                <p className="text-sm text-ink-muted">{String((comparable as unknown as Record<string, unknown>).reason || 'Comparable areas require a single local authority. Try a specific borough.')}</p>
+              </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Useful resources (P3: moved from all tabs to Overview only) */}
+          {tabData != null && (
+            <CollapsibleSection title="Useful Resources" defaultOpen={false}>
+              <UsefulResourcesPanel
+                postcode={resolved?.type === 'postcode' ? q : null}
+                ladCode={codes?.lad}
+              />
+            </CollapsibleSection>
+          )}
+
+          {tabData?.metrics.length === 0 && (
+            <div className="py-12 text-center text-ink-muted">
+              No data available for this tab and area.
+            </div>
+          )}
+        </div>
       ) : (
+        /* ── Data tabs: section accordion layout ── */
         <div
           key={activeTab}
           className="grid gap-2.5 animate-tab-enter"
@@ -85,6 +147,11 @@ export function ResultsMetricsPanel() {
               <p className="text-xs font-semibold text-brand-700">{TAB_EXPLAINERS[activeTab].decision}</p>
               <p className="text-[11px] text-brand-600/70 mt-0.5">{TAB_EXPLAINERS[activeTab].summary}</p>
             </div>
+          )}
+
+          {/* P2: Mini overview strip — top 3 persona-weighted stats for this tab */}
+          {(tabData?.metrics?.length ?? 0) > 0 && (
+            <TabHighlightStrip metrics={tabData!.metrics} persona={persona} parentName={parentName} />
           )}
 
           {/* Persona score card */}
@@ -155,7 +222,7 @@ export function ResultsMetricsPanel() {
                   );
                 })()}
 
-                {/* Expanded: metric cards (prototype inline style) */}
+                {/* Expanded: metric cards */}
                 {isOpen && (
                   <div id={`section-panel-${section.config.id}`} role="region" aria-label={section.config.label} className="divide-y divide-divider/50 border-t border-divider/50">
                     {section.metrics.map((m) => (
@@ -183,35 +250,12 @@ export function ResultsMetricsPanel() {
             );
           })}
 
-          {/* Comparable areas */}
-          {activeTab === 'Property & Market' && comparable != null && comparable.comparable.length > 0 && (
-            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
-              <ComparableAreas target={comparable.target} comparable={comparable.comparable} />
-            </CollapsibleSection>
-          )}
-          {activeTab === 'Property & Market' && comparable != null && !!(comparable as unknown as Record<string, unknown>).unsupported_scope && (
-            <CollapsibleSection title="Comparable Areas" defaultOpen={false}>
-              <div className="px-3 py-4 text-center">
-                <p className="text-sm text-ink-muted">{String((comparable as unknown as Record<string, unknown>).reason || 'Comparable areas require a single local authority. Try a specific borough.')}</p>
-              </div>
-            </CollapsibleSection>
-          )}
           {/* Commute estimator (Lifestyle tab) */}
           {activeTab === 'Lifestyle & Connectivity' && resolved?.coordinates?.lat != null && (tabData?.metrics?.length ?? 0) > 0 && (
             <CollapsibleSection title="Commute Estimator" defaultOpen={false}>
               <CommuteEstimator
                 metrics={tabData!.metrics}
                 originLabel={areaName}
-              />
-            </CollapsibleSection>
-          )}
-
-          {/* Useful resources — always shown when data is resolved */}
-          {tabData != null && (
-            <CollapsibleSection title="Useful Resources" defaultOpen={false}>
-              <UsefulResourcesPanel
-                postcode={resolved?.type === 'postcode' ? q : null}
-                ladCode={codes?.lad}
               />
             </CollapsibleSection>
           )}

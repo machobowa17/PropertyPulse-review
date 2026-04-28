@@ -17,8 +17,9 @@ BASE = os.environ.get("BASE_URL", "http://localhost:5173")
 API = os.environ.get("API_URL", "http://127.0.0.1:8000/api/v1")
 
 # Tab short names used in the TabBar buttons (sm:hidden shows shortName)
-TAB_NAMES = ["Property", "Lifestyle", "Environment", "Community", "Governance"]
+TAB_NAMES = ["Overview", "Property", "Lifestyle", "Environment", "Community", "Governance"]
 TAB_FULL = [
+    "Overview",
     "Property & Market",
     "Lifestyle & Connectivity",
     "Environment & Safety",
@@ -231,9 +232,10 @@ def run_all_tests():
         page = context.new_page()
         page.goto(results_url("SW1A 1AA"))
         wait_for_results(page)
+        switch_tab(page, "Property")  # Default is now Overview — switch to Property for chart tests
         wait_for_tab_data(page)  # Wait for real MetricCards
 
-        # Property tab should be default — expand sections to reveal metric cards
+        # Property tab — expand sections to reveal metric cards
         # Then click a price metric card to expand it and reveal the chart
         # First section is auto-expanded; try to find and click the Average Sale Price metric
         avg_btn = page.locator('button[aria-label*="Average Sale Price"]').first
@@ -420,9 +422,12 @@ def run_all_tests():
         else:
             wait_for_tab_data(page)  # Wait for real cards
 
-            # Whitby should resolve and show Property tab
+            # Whitby should resolve — switch to Property for rent/null tests
             h1_text = page.locator("h1").first.inner_text()
             R.add(section, "Whitby resolves", "Whitby" in h1_text, f"h1='{h1_text[:40]}'")
+
+            switch_tab(page, "Property")
+            wait_for_tab_data(page)
 
             # Check that metric cards render (even with null values)
             card_count = count_metric_cards(page)
@@ -477,6 +482,7 @@ def run_all_tests():
 
         page.goto(results_url("Manchester"))
         wait_for_results(page)
+        switch_tab(page, "Property")  # Default is Overview — switch to Property
         wait_for_tab_data(page)
 
         # Get Property tab card count as baseline
@@ -484,7 +490,7 @@ def run_all_tests():
         prop_first_metric = prop_cards_text[0][:30] if prop_cards_text else ""
 
         # Rapid tab switching — cycle through all tabs quickly
-        for tab_short in ["Lifestyle", "Community", "Environment", "Governance", "Property"]:
+        for tab_short in ["Overview", "Lifestyle", "Community", "Environment", "Governance", "Property"]:
             get_tab_button(page, tab_short).click()
             time.sleep(0.3)  # Don't wait for data — stress test
 
@@ -680,6 +686,7 @@ def run_all_tests():
         page = context.new_page()
         page.goto(results_url("SW1A 1AA"))  # postcode — has full price data including charts
         wait_for_results(page)
+        switch_tab(page, "Property")  # Default is now Overview — switch to Property
         wait_for_tab_data(page)  # Wait for Property tab to load
 
         # Ensure first section (Prices & Value) is expanded to reveal metric cards

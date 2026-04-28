@@ -19,6 +19,7 @@ import { saveArea, removeSavedArea, isAreaSaved, buildSavedAreaId } from '../uti
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 
 export const ALL_TABS: TabName[] = [
+  'Overview',
   'Property & Market',
   'Lifestyle & Connectivity',
   'Environment & Safety',
@@ -116,14 +117,14 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
   const rawTab = searchParams.get('tab');
-  const initialTab = ALL_TABS.find((t) => t === rawTab) ?? 'Property & Market';
+  const initialTab = ALL_TABS.find((t) => t === rawTab) ?? 'Overview';
   const [activeTab, setActiveTabRaw] = useState<TabName>(initialTab);
   const [, startTransition] = useTransition();
   const setActiveTab = useCallback((tab: TabName) => {
     startTransition(() => setActiveTabRaw(tab));
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (tab === 'Property & Market') {
+      if (tab === 'Overview') {
         next.delete('tab');
       } else {
         next.set('tab', tab);
@@ -254,7 +255,16 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     },
   });
 
-  const allMetrics = tabData?.metrics ?? [];
+  // allMetrics: on Overview tab, combine metrics from all cached data tabs for holistic persona scoring
+  const allMetrics = useMemo(() => {
+    if (activeTab !== 'Overview') return tabData?.metrics ?? [];
+    const combined: Metric[] = [];
+    for (const tab of ALL_TABS.filter(t => t !== 'Overview')) {
+      const cached = queryClient.getQueryData<AreaResponse>(['area', sessionKey, tab]);
+      if (cached?.metrics) combined.push(...cached.metrics);
+    }
+    return combined;
+  }, [activeTab, sessionKey, tabData, queryClient]);
 
   // Fetch price history (Property tab)
   const { data: priceHistory } = useQuery({
@@ -277,11 +287,11 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     enabled: !!sessionKey && activeTab === 'Property & Market',
   });
 
-  // Fetch comparable areas (only needed on Property tab)
+  // Fetch comparable areas (Overview + Property tabs)
   const { data: comparable } = useQuery({
     queryKey: ['comparable', sessionKey],
     queryFn: () => fetchComparable(sessionKey!),
-    enabled: !!sessionKey && activeTab === 'Property & Market',
+    enabled: !!sessionKey && (activeTab === 'Overview' || activeTab === 'Property & Market'),
   });
 
   // Fetch map POIs based on active tab

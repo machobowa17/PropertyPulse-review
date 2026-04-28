@@ -171,6 +171,10 @@ const METRIC_TAB: Record<string, TabName> = {
   deprivation: 'Community & Education', area_persona: 'Community & Education', nhs_facilities: 'Community & Education',
   council_tax: 'Local Governance', local_authority: 'Local Governance', controlling_party: 'Local Governance',
   water_company: 'Local Governance', financial_health: 'Local Governance',
+  overview_avg_price: 'Overview', overview_council_tax: 'Overview', overview_nearest_station: 'Overview',
+  overview_broadband: 'Overview', overview_crime_rate: 'Overview', overview_air_quality: 'Overview',
+  overview_median_age: 'Overview', overview_deprivation: 'Overview', overview_pop_density: 'Overview',
+  overview_degree_educated: 'Overview',
 };
 
 const COLOUR_SCORE: Record<string, number> = {
@@ -181,7 +185,7 @@ const COLOUR_SCORE: Record<string, number> = {
 };
 
 const TAB_ORDER: TabName[] = [
-  'Property & Market', 'Lifestyle & Connectivity', 'Environment & Safety',
+  'Overview', 'Property & Market', 'Lifestyle & Connectivity', 'Environment & Safety',
   'Community & Education', 'Local Governance',
 ];
 

@@ -40,6 +40,7 @@ const SECTIONS: Record<string, SectionConfig> = {
   deprivation:         { id: 'deprivation',          label: 'Deprivation',          icon: Scale,         sortOrder: 15 },
   health_services:     { id: 'health_services',      label: 'Health Services',      icon: HeartPulse,    sortOrder: 16 },
   governance:          { id: 'governance',           label: 'Governance',           icon: Landmark,      sortOrder: 17 },
+  overview:            { id: 'overview',             label: 'Overview',             icon: BarChart3,     sortOrder: 0 },
 };
 
 // ─── Metric family → display section mapping ─────────────────────────
@@ -81,6 +82,12 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   health_access:            'health_services',
   local_governance:         'governance',
   utilities:                'governance',
+  overview_property:        'overview',
+  overview_costs:           'overview',
+  overview_lifestyle:       'overview',
+  overview_safety:          'overview',
+  overview_community:       'overview',
+  overview_people:          'overview',
 };
 
 // Metric-level overrides for ambiguous families or metrics without registry entries

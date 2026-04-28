@@ -150,6 +150,7 @@ export interface AreaResponse {
 }
 
 export type TabName =
+  | 'Overview'
   | 'Property & Market'
   | 'Lifestyle & Connectivity'
   | 'Environment & Safety'

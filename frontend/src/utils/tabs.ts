@@ -10,6 +10,7 @@ export interface TabConfig {
 }
 
 export const TABS: TabConfig[] = [
+  { name: 'Overview', icon: 'LayoutDashboard', shortName: 'Overview', colour: '#6366f1', bgColour: '#eef2ff' },
   { name: 'Property & Market', icon: 'Home', shortName: 'Property', colour: '#2563eb', bgColour: '#eff6ff' },
   { name: 'Lifestyle & Connectivity', icon: 'Coffee', shortName: 'Lifestyle', colour: '#7c3aed', bgColour: '#f5f3ff' },
   { name: 'Environment & Safety', icon: 'TreePine', shortName: 'Environment', colour: '#059669', bgColour: '#ecfdf5' },
@@ -40,6 +41,7 @@ export function formatValue(value: number | string | null, unit: string): string
   if (unit === 'party' || unit === 'provider' || unit === 'status' || unit === 'persona' || unit === 'name' || unit === 'level') return String(value);
   if (unit === 'per 1,000') return value.toFixed(1) + ' per 1k';
   if (unit === 'µg/m³') return value.toFixed(1) + ' µg/m³';
+  if (unit === 'Mbit/s') return value.toFixed(0) + ' Mbit/s';
   if (unit === 'dB') return value.toFixed(0) + ' dB';
   if (unit === 'people/hectare') return value.toLocaleString('en-GB', { maximumFractionDigits: 0 }) + '/ha';
   if (unit === 'years') return value.toFixed(1) + ' yrs';

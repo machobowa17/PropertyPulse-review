@@ -1,6 +1,6 @@
 """
 GET /api/v1/area?session_key=&tab=
-Tab data endpoint — dispatches to the 5 tab service handlers.
+Tab data endpoint — dispatches to the 6 tab service handlers.
 Post-processes flat metrics into the nested Metric contract via enrich_metrics().
 """
 import asyncio
@@ -25,12 +25,14 @@ from app.services.tab_lifestyle import fetch_lifestyle_connectivity
 from app.services.tab_environment import fetch_environment_safety
 from app.services.tab_community import fetch_community_education
 from app.services.tab_governance import fetch_local_governance
+from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v32"  # bumped: amenity label rename, takeaway merge
+AREA_CACHE_VERSION = "v33"  # bumped: Overview tab, 11D comparables
 
 TAB_HANDLERS = {
+    "Overview": fetch_overview,
     "Property & Market": fetch_property_market,
     "Lifestyle & Connectivity": fetch_lifestyle_connectivity,
     "Environment & Safety": fetch_environment_safety,

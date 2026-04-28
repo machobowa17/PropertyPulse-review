@@ -7,6 +7,11 @@ interface TabExplainer {
 }
 
 export const TAB_EXPLAINERS: Record<TabName, TabExplainer> = {
+  'Overview': {
+    title: 'Overview',
+    summary: 'Key indicators across price, transport, safety, community, and costs — at a glance.',
+    decision: 'Is this area right for me?',
+  },
   'Property & Market': {
     title: 'Property & Market',
     summary: 'Transaction prices, rental costs, yields, and energy efficiency across the local area.',

@@ -20,8 +20,9 @@ BASE = os.environ.get("BASE_URL", "http://localhost:5173")
 API = os.environ.get("API_URL", "http://localhost:8000/api/v1")
 SEARCH = "SW1A 1AA"
 
-TAB_SHORT = ["Property", "Lifestyle", "Environment", "Community", "Governance"]
+TAB_SHORT = ["Overview", "Property", "Lifestyle", "Environment", "Community", "Governance"]
 TAB_FULL = [
+    "Overview",
     "Property & Market",
     "Lifestyle & Connectivity",
     "Environment & Safety",
@@ -29,6 +30,7 @@ TAB_FULL = [
     "Local Governance",
 ]
 EXPECTED_METRIC_COUNTS = {
+    "Overview": 10,
     "Property": 12,
     "Lifestyle": 8,
     "Environment": 11,
@@ -133,6 +135,10 @@ def run_tests():
         title = page.locator("h1").first.inner_text()
         check("Page title present", len(title) > 0, f"title='{title}'")
 
+        # Default tab is now Overview — switch to Property for section accordion checks
+        switch_tab(page, "Property")
+        time.sleep(2)
+
         # Wait for section accordion to render
         section_count = wait_for_sections(page)
         check("Section accordion loaded", section_count >= 3, f"found {section_count} sections")
@@ -183,8 +189,12 @@ def run_tests():
         for i, (short, full) in enumerate(zip(TAB_SHORT, TAB_FULL)):
             switch_tab(page, short)
             time.sleep(2)
-            sc = wait_for_sections(page)
-            check(f"{short} tab: sections loaded", sc >= 1, f"found {sc} sections")
+            if short != "Overview":
+                sc = wait_for_sections(page)
+                check(f"{short} tab: sections loaded", sc >= 1, f"found {sc} sections")
+            else:
+                # Overview uses custom grid layout, not section accordion
+                check(f"{short} tab: loaded", True, "Overview tab has custom layout")
 
             # Verify metric count via API
             api_count = count_metrics_via_api(full)

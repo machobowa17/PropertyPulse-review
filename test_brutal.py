@@ -258,8 +258,9 @@ def test_mathematical_correctness(R: TestResults):
         R.add(S, "Setup: session key", False, "No session key")
         return
 
-    # Fetch all 5 tabs and check metric integrity
+    # Fetch all 6 tabs and check metric integrity
     tabs = [
+        "Overview",
         "Property & Market",
         "Lifestyle & Connectivity",
         "Environment & Safety",
@@ -698,8 +699,8 @@ def test_playwright_brutal(R: TestResults):
             page.wait_for_selector('h1', timeout=30000)
             time.sleep(3)  # Let initial tab load
 
-            # Rapidly click through all 5 tabs
-            tab_texts = ["Property", "Lifestyle", "Environment", "Community", "Governance"]
+            # Rapidly click through all 6 tabs
+            tab_texts = ["Overview", "Property", "Lifestyle", "Environment", "Community", "Governance"]
             for tab in tab_texts:
                 btn = page.locator(f'button:has-text("{tab}")').first
                 if btn.is_visible():
@@ -850,6 +851,7 @@ def test_full_matrix(R: TestResults):
     }
 
     tabs = [
+        "Overview",
         "Property & Market",
         "Lifestyle & Connectivity",
         "Environment & Safety",
