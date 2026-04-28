@@ -110,8 +110,15 @@ export interface MetricSection {
   metrics: Metric[];
 }
 
+// Sub-domain deprivation metrics — consolidated into the main deprivation card's radar chart
+const CONSOLIDATED_METRICS = new Set([
+  'deprivation_income', 'deprivation_employment', 'deprivation_education',
+  'deprivation_health', 'deprivation_crime', 'deprivation_barriers',
+  'deprivation_living_environment',
+]);
+
 export function groupMetricsBySection(metrics: Metric[]): MetricSection[] {
-  const visible = metrics.filter(m => m.local_value != null);
+  const visible = metrics.filter(m => m.local_value != null && !CONSOLIDATED_METRICS.has(m.id));
   const sectionMap = new Map<string, Metric[]>();
 
   for (const m of visible) {
