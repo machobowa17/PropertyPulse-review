@@ -336,6 +336,13 @@ async def fetch_property_market(
         parent_ppsf_headline = round(float(ppsm_parent_row["avg_ppsm"]) / 10.7639, 0)
 
     if local_ppsf_headline is not None:
+        # EPC coverage footnote
+        _total_txn = ppsm_row.get("total_txn")
+        _with_area = ppsm_row.get("txn_with_area")
+        _coverage_note = None
+        if _total_txn and _with_area:
+            _pct = round(_with_area / _total_txn * 100, 1)
+            _coverage_note = f"Based on {_pct}% of sales with EPC floor area ({_with_area:,} of {_total_txn:,})."
         metrics.append(
             metric(
                 "price_per_sqft",
@@ -348,6 +355,7 @@ async def fetch_property_market(
                     "semi": round(float(ppsm_row["avg_ppsm_semi"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_semi") else None,
                     "terraced": round(float(ppsm_row["avg_ppsm_terraced"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_terraced") else None,
                     "flat": round(float(ppsm_row["avg_ppsm_flat"]) / 10.7639, 0) if ppsm_row.get("avg_ppsm_flat") else None,
+                    "data_note": _coverage_note,
                 },
             )
         )

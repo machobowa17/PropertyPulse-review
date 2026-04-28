@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import {
   TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
-  Stethoscope, Coffee, TrainFront, TreePine, Dumbbell,
+  Stethoscope, Coffee, TrainFront, TreePine, Dumbbell, MapPin,
 } from 'lucide-react';
 import type { Metric, PersonaId } from '../types';
 import type { PriceByTypeResponse, PriceHistoryResponse } from '../api/client';
@@ -135,6 +135,7 @@ interface Props {
   priceHistoryData?: PriceHistoryResponse;
   areaName?: string;
   sessionKey?: string;
+  isMapActive?: boolean;
 }
 
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
@@ -177,7 +178,7 @@ function comparisonColor(
   return 'neutral';
 }
 
-export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey }: Props) {
+export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey, isMapActive }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
@@ -241,7 +242,10 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
       >
         {/* Metric name + decision question */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-ink truncate">{metric.name}</div>
+          <div className="text-sm font-semibold text-ink truncate flex items-center gap-1.5">
+            {metric.name}
+            {isMapActive && <MapPin size={13} className="text-brand-500 shrink-0" />}
+          </div>
           {metric.decision_question && <div className="text-[11px] text-ink-faint truncate">{metric.decision_question}</div>}
         </div>
 

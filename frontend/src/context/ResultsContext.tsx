@@ -88,6 +88,8 @@ export interface ResultsUIContextValue {
   activeChoropleth: string | null;
   mapFocusMode: MapFocusMode;
   activeMapMetricId: string | null;
+  autoFollowEnabled: boolean;
+  setAutoFollowEnabled: Dispatch<SetStateAction<boolean>>;
   focusLabel: string | null;
   focusReason: string | null;
   mapViewportRef: MutableRefObject<Viewport | null>;

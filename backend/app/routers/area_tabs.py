@@ -28,7 +28,7 @@ from app.services.tab_governance import fetch_local_governance
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v29"  # bumped: D21+D22 glazing, insulation, built form in building_profile
+AREA_CACHE_VERSION = "v30"  # bumped: D29 land_designations, D31 EPC coverage footnote
 
 TAB_HANDLERS = {
     "Property & Market": fetch_property_market,

@@ -397,7 +397,10 @@ export default function TransactionTable({ sessionKey }: Props) {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-ink-muted whitespace-nowrap">{txn.date}</td>
-                      <td className="px-3 py-2 text-ink max-w-[200px] truncate" title={txn.address}>{txn.address || '—'}</td>
+                      <td className="px-3 py-2 text-ink max-w-[200px]">
+                        <div className="truncate" title={txn.address}>{txn.address || '—'}</div>
+                        {txn.locality && <div className="text-[10px] text-ink-faint truncate">{txn.locality}</div>}
+                      </td>
                       <td className="px-3 py-2 text-ink font-mono text-right whitespace-nowrap">
                         <div>
                           £{txn.price?.toLocaleString('en-GB') ?? '—'}
@@ -419,31 +422,60 @@ export default function TransactionTable({ sessionKey }: Props) {
                           <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">New</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-center text-ink-muted">{txn.beds ?? '—'}</td>
+                      <td className="px-3 py-2 text-center text-ink-muted">
+                        <div>{txn.beds ?? '—'}</div>
+                        {txn.habitable_rooms != null && (
+                          <div className="text-[10px] text-ink-faint">({txn.habitable_rooms} rooms)</div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right text-ink-muted whitespace-nowrap">
-                        {txn.size_sqm ? `${txn.size_sqm} sqm` : '—'}
+                        {txn.size_sqm ? (
+                          <div>
+                            <div>{txn.size_sqm} sqm</div>
+                            <div className="text-[10px] text-ink-faint">{Math.round(txn.size_sqm * 10.7639)} sqft</div>
+                          </div>
+                        ) : '—'}
                       </td>
                       <td className="px-3 py-2 text-center text-ink-muted text-xs">{txn.tenure_label || '—'}</td>
                       <td className="px-3 py-2 text-center">
                         {txn.epc ? (
-                          <span
-                            className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[11px] font-bold text-white"
-                            style={{ backgroundColor: EPC_COLOURS[txn.epc] || '#888' }}
-                          >
-                            {txn.epc}
-                          </span>
+                          <div>
+                            <span
+                              className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[11px] font-bold text-white"
+                              style={{ backgroundColor: EPC_COLOURS[txn.epc] || '#888' }}
+                            >
+                              {txn.epc}
+                            </span>
+                            {txn.epc_match_score != null && txn.epc_match_score < 0.9 && (
+                              <div className="text-[9px] text-ink-faint" title="EPC match confidence">~{Math.round(txn.epc_match_score * 100)}%</div>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-ink-faint">—</span>
                         )}
                       </td>
                     </tr>
                     {isExpanded && (
-                      <PropertyHistorySubRows
-                        sessionKey={sessionKey}
-                        txn={txn}
-                        searchQuery={q}
-                        onHistoryLoaded={setPrevSalePrice}
-                      />
+                      <>
+                        <PropertyHistorySubRows
+                          sessionKey={sessionKey}
+                          txn={txn}
+                          searchQuery={q}
+                          onHistoryLoaded={setPrevSalePrice}
+                        />
+                        {txn.area_avg_price != null && (
+                          <tr className="bg-brand-50/10">
+                            <td className="px-0 py-0 w-[3%]">
+                              <div className="border-l-2 border-brand-200 ml-4 h-full">&nbsp;</div>
+                            </td>
+                            <td colSpan={SORT_COLUMNS.length} className="px-3 py-1.5 text-[10px] text-ink-faint">
+                              Area context: avg £{txn.area_avg_price.toLocaleString('en-GB')}
+                              {txn.area_median_price != null && <> · median £{txn.area_median_price.toLocaleString('en-GB')}</>}
+                              {txn.area_sales_count != null && <> · {txn.area_sales_count} sales that month</>}
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     )}
                   </Fragment>
                 );

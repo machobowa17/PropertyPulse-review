@@ -518,7 +518,13 @@ async def get_transactions(
                    longitude,
                    old_new,
                    price_per_sqft,
-                   ppd_category
+                   ppd_category,
+                   locality,
+                   habitable_rooms,
+                   epc_match_score,
+                   lsoa_month_avg_price,
+                   lsoa_month_median_price,
+                   lsoa_month_transaction_count
             FROM core_property_transactions
             {where}
             ORDER BY {sort_col} {sort_dir} {nulls}
@@ -556,6 +562,12 @@ async def get_transactions(
             "new_build": (r["old_new"] or "").strip() == "Y",
             "price_per_sqft": round(float(r["price_per_sqft"]), 0) if r["price_per_sqft"] else None,
             "ppd_category": (r["ppd_category"] or "").strip() or None,
+            "locality": (r["locality"] or "").strip() or None,
+            "habitable_rooms": r["habitable_rooms"],
+            "epc_match_score": round(float(r["epc_match_score"]), 2) if r["epc_match_score"] else None,
+            "area_avg_price": round(float(r["lsoa_month_avg_price"]), 0) if r["lsoa_month_avg_price"] else None,
+            "area_median_price": round(float(r["lsoa_month_median_price"]), 0) if r["lsoa_month_median_price"] else None,
+            "area_sales_count": r["lsoa_month_transaction_count"],
         })
 
     return {

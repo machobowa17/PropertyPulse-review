@@ -299,6 +299,12 @@ export interface Transaction {
   new_build?: boolean;
   price_per_sqft?: number | null;
   ppd_category?: string | null;
+  locality?: string | null;
+  habitable_rooms?: number | null;
+  epc_match_score?: number | null;
+  area_avg_price?: number | null;
+  area_median_price?: number | null;
+  area_sales_count?: number | null;
 }
 
 export interface PropertyHistoryEntry {

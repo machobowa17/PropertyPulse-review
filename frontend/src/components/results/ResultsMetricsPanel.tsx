@@ -38,6 +38,8 @@ export function ResultsMetricsPanel() {
     comparable,
     decisionMode,
     setMetricElementRef,
+    activeMapMetricId,
+    isDesktop,
   } = useResults();
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -167,6 +169,7 @@ export function ResultsMetricsPanel() {
                               priceHistoryData={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? (priceHistory ?? undefined) : undefined}
                               areaName={(m.id === 'avg_price' || m.id === 'median_price' || m.id === 'price_per_sqft') ? areaName : undefined}
                               sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
+                              isMapActive={isDesktop && activeMapMetricId === m.id}
                             />
                           </MetricErrorBoundary>
                         </div>

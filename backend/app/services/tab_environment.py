@@ -1,5 +1,5 @@
 """Tab 3: Environment & Safety — Bible Part 4, Tab 3.
-Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa.
+Queries: core_crime_lsoa, core_flood_zones, core_air_quality, core_noise, core_green_space, core_epc_lsoa, core_llc_charges.
 Bible Rule 4: multi-LSOA aggregation for non-postcode searches."""
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import text
@@ -715,6 +715,70 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
                 **{k.lower().replace(" ", "_") + "_count": v for k, v in sport_type_counts.items()},
                 "facilities": sport_list,
             } if sport_rows else None,
+        ))
+
+    # --- Land Designations (LLC Protected Sites + Area Management) ---
+    llc_local = await db.execute(
+        text("""
+            SELECT
+                COUNT(DISTINCT llc.id) FILTER (WHERE llc.charge_type = 'Area_Management') AS mgmt_count,
+                COUNT(DISTINCT llc.id) FILTER (WHERE llc.charge_type = 'Protected_Sites') AS protected_count,
+                COUNT(DISTINCT lb.lsoa_code) FILTER (
+                    WHERE llc.id IS NOT NULL
+                ) AS lsoas_with_designation,
+                COUNT(DISTINCT lb.lsoa_code) AS total_lsoas
+            FROM core_lsoa_boundaries lb
+            LEFT JOIN core_llc_charges llc
+                ON ST_Intersects(llc.geom, lb.geom)
+                AND llc.charge_type IN ('Area_Management', 'Protected_Sites')
+            WHERE lb.lsoa_code = ANY(:codes)
+        """),
+        {"codes": lsoa_codes},
+    )
+    llc_row = llc_local.mappings().first()
+
+    if llc_row:
+        mgmt = int(llc_row["mgmt_count"] or 0)
+        protected = int(llc_row["protected_count"] or 0)
+        desig_total = mgmt + protected
+        lsoas_hit = int(llc_row["lsoas_with_designation"] or 0)
+        total_lsoas = int(llc_row["total_lsoas"] or 1)
+        pct_designated = round(lsoas_hit / total_lsoas * 100, 1) if total_lsoas else 0
+
+        local_level = "Yes" if desig_total > 0 else "No"
+
+        # Parent: simple existence check (avoids expensive per-LSOA spatial join)
+        parent_level = None
+        if parent_lads:
+            llc_parent = await db.execute(
+                text("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM core_llc_charges llc
+                        JOIN core_lsoa_boundaries lb ON ST_Intersects(llc.geom, lb.geom)
+                        WHERE lb.lad_code = ANY(:parent_lads)
+                          AND llc.charge_type IN ('Area_Management', 'Protected_Sites')
+                        LIMIT 1
+                    ) AS has_designations
+                """),
+                {"parent_lads": parent_lads},
+            )
+            p_row = llc_parent.mappings().first()
+            if p_row and p_row["has_designations"]:
+                parent_level = "Yes"
+            else:
+                parent_level = "No"
+
+        metrics.append(metric(
+            "land_designations", "Land Designations",
+            local_level, parent_level, "level",
+            details={
+                "designation_count": desig_total,
+                "protected_sites": protected,
+                "management_zones": mgmt,
+                "lsoas_with_designation": lsoas_hit,
+                "total_lsoas": total_lsoas,
+                "pct_lsoas_designated": pct_designated,
+            },
         ))
 
     return metrics

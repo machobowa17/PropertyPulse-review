@@ -118,9 +118,11 @@ interface Props {
   focusMode?: 'section' | 'metric' | 'manual' | 'metric-fallback';
   focusLabel?: string | null;
   focusReason?: string | null;
+  autoFollowEnabled?: boolean;
+  onAutoFollowToggle?: () => void;
 }
 
-export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince, focusMode, focusLabel, focusReason }: Props) {
+export default function MapLayerControl({ activeTab, visibleLayers, onToggle, soldPricesSince, focusMode, focusLabel, focusReason, autoFollowEnabled, onAutoFollowToggle }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -171,11 +173,27 @@ export default function MapLayerControl({ activeTab, visibleLayers, onToggle, so
         <span className="text-xs font-semibold text-ink">Layers</span>
       </button>
 
-      {focusMode && focusMode !== 'manual' && focusLabel && (
-        <div className="mt-1.5 rounded-lg bg-brand-50/80 border border-brand-200/40 px-2.5 py-1.5 backdrop-blur pointer-events-auto" title={focusReason ?? undefined}>
-          <span className="text-[10px] font-medium text-brand-700 line-clamp-2">{focusLabel}</span>
-        </div>
-      )}
+      {/* Auto-follow toggle + focus label */}
+      <div className="mt-1.5 flex items-center gap-1.5">
+        {onAutoFollowToggle && (
+          <button
+            onClick={onAutoFollowToggle}
+            className={`rounded-lg px-2 py-1 text-[10px] font-medium border backdrop-blur pointer-events-auto transition-colors ${
+              autoFollowEnabled
+                ? 'bg-brand-50/80 border-brand-200/60 text-brand-700 hover:bg-brand-100/80'
+                : 'bg-white/80 border-divider/60 text-ink-faint hover:bg-surface/80'
+            }`}
+            title={autoFollowEnabled ? 'Auto-follow: ON — map follows scroll' : 'Auto-follow: OFF — click to re-enable'}
+          >
+            {autoFollowEnabled ? 'Follow' : 'Follow off'}
+          </button>
+        )}
+        {focusMode && focusMode !== 'manual' && focusLabel && (
+          <div className="rounded-lg bg-brand-50/80 border border-brand-200/40 px-2.5 py-1.5 backdrop-blur pointer-events-auto" title={focusReason ?? undefined}>
+            <span className="text-[10px] font-medium text-brand-700 line-clamp-2">{focusLabel}</span>
+          </div>
+        )}
+      </div>
 
       {open && (
         <div className="mt-2 rounded-2xl border border-divider/60 bg-white shadow-lg overflow-hidden pointer-events-auto">

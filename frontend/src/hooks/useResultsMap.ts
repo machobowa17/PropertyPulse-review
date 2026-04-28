@@ -24,6 +24,8 @@ interface UseResultsMapReturn {
   activeChoropleth: string | null;
   mapFocusMode: MapFocusMode;
   activeMapMetricId: string | null;
+  autoFollowEnabled: boolean;
+  setAutoFollowEnabled: Dispatch<SetStateAction<boolean>>;
   focusLabel: string | null;
   focusReason: string | null;
   mapViewportRef: MutableRefObject<Viewport | null>;
@@ -44,11 +46,15 @@ export function useResultsMap({
   const [activeChoropleth, setActiveChoropleth] = useState<string | null>(null);
   const [mapFocusMode, setMapFocusMode] = useState<MapFocusMode>('section');
   const [activeMapMetricId, setActiveMapMetricId] = useState<string | null>(null);
+  const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
 
   const mapViewportRef = useRef<Viewport | null>(null);
   const metricElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const activeScrollMetricIdRef = useRef<string | null>(null);
-  const manualToggleTimeRef = useRef<number>(0);
+  const autoFollowRef = useRef(true);
+
+  // Keep ref in sync with state (for IntersectionObserver callback)
+  useEffect(() => { autoFollowRef.current = autoFollowEnabled; }, [autoFollowEnabled]);
 
   const handleViewportChange = useCallback((vp: Viewport) => {
     mapViewportRef.current = vp;
@@ -60,6 +66,7 @@ export function useResultsMap({
     setActiveChoropleth(null);
     setMapFocusMode('section');
     setActiveMapMetricId(null);
+    setAutoFollowEnabled(true);
     setVisibleLayers((prev) => {
       const next = { ...prev };
       for (const ck of ALL_CHOROPLETH_KEYS) next[ck] = false;
@@ -73,6 +80,7 @@ export function useResultsMap({
     setActiveMapMetricId(null);
     activeScrollMetricIdRef.current = null;
     setActiveChoropleth(null);
+    setAutoFollowEnabled(true);
     setVisibleLayers((prev) => {
       const next = { ...prev };
       for (const ck of ALL_CHOROPLETH_KEYS) next[ck] = false;
@@ -83,7 +91,8 @@ export function useResultsMap({
   const handleLayerToggle = useCallback((key: string) => {
     setMapFocusMode('manual');
     setActiveMapMetricId(null);
-    manualToggleTimeRef.current = Date.now();
+    // Disable auto-follow when user manually toggles a layer
+    setAutoFollowEnabled(false);
     if (ALL_CHOROPLETH_KEYS.includes(key)) {
       // Mutual exclusion: toggle off if already active, otherwise switch
       setActiveChoropleth((prev) => prev === key ? null : key);
@@ -123,8 +132,9 @@ export function useResultsMap({
       setMapFocusMode('metric');
       applyMapFocusLayer(binding.layerKey);
     } else {
+      // Context-only metric: keep current layers visible instead of blanking
       setMapFocusMode('metric-fallback');
-      applyMapFocusLayer(null);
+      // Don't call applyMapFocusLayer(null) — preserve whatever is on the map
     }
   }, [applyMapFocusLayer]);
 
@@ -139,7 +149,6 @@ export function useResultsMap({
   }, []);
 
   // Scroll-based metric follow via IntersectionObserver (desktop only)
-  // Re-enables after 5s of manual mode so users can scroll back to auto-follow
   useEffect(() => {
     if (!isDesktop || !showMap || allMetrics.length === 0) return;
 
@@ -158,12 +167,13 @@ export function useResultsMap({
           if (visibleIds.has(m.id)) { nextMetricId = m.id; break; }
         }
         if (!nextMetricId || nextMetricId === activeScrollMetricIdRef.current) return;
-        // Skip scroll-follow for 5s after a manual layer toggle
-        if (manualToggleTimeRef.current && Date.now() - manualToggleTimeRef.current < 5000) return;
+        // Respect auto-follow toggle
+        if (!autoFollowRef.current) return;
         activeScrollMetricIdRef.current = nextMetricId;
         focusMetricById(nextMetricId, 'scroll');
       },
-      { rootMargin: '-35% 0px -35% 0px', threshold: 0 },
+      // Trigger zone: top 15% to 45% of viewport (upper reading position)
+      { rootMargin: '-15% 0px -55% 0px', threshold: 0 },
     );
 
     // Observe all registered metric elements
@@ -190,6 +200,8 @@ export function useResultsMap({
     activeChoropleth,
     mapFocusMode,
     activeMapMetricId,
+    autoFollowEnabled,
+    setAutoFollowEnabled,
     focusLabel,
     focusReason,
     mapViewportRef,

@@ -129,6 +129,8 @@ export function ResultsDesktopMap() {
     focusLabel,
     focusReason,
     handleLayerToggle,
+    autoFollowEnabled,
+    setAutoFollowEnabled,
     mapFlyToRef,
     mapHighlightRef,
   } = useResults();
@@ -162,6 +164,8 @@ export function ResultsDesktopMap() {
           focusMode={mapFocusMode}
           focusLabel={focusLabel}
           focusReason={focusReason}
+          autoFollowEnabled={autoFollowEnabled}
+          onAutoFollowToggle={() => setAutoFollowEnabled((v) => !v)}
         />
         {(mapPoisLoading || (activeChoropleth && !choroplethData)) && (
           <div className="absolute inset-0 z-[5] flex items-center justify-center bg-white/20 backdrop-blur-[1px] rounded-2xl pointer-events-none">

@@ -759,6 +759,23 @@ METRIC_REGISTRY = {
         "quality_notes": None,
         "source_tables": ["core_epc_lsoa", "core_air_quality_lsoa", "core_flood_lsoa", "core_green_space"],
     },
+    "land_designations": {
+        "section": "Environment & Safety",
+        "label": "Land Designations",
+        "description": "Protected sites and area management zones from HM Land Registry Local Land Charges",
+        "local_grain": "lsoa",
+        "supports_parent": True,
+        "supports_trend": False,
+        "map_binding": "none",
+        "unit": "level",
+        "status": "core",
+        "sort_priority": 13,
+        "decision_question": "Is this area within a conservation or protected zone?",
+        "metric_family": "environment_designations",
+        "interpretation_direction": "neutral",
+        "quality_notes": "Based on HM Land Registry Local Land Charges data. Coverage varies by local authority — not all authorities have submitted LLC data.",
+        "source_tables": ["core_llc_charges"],
+    },
 
     # -----------------------------------------------------------------------
     # Tab 4: Community & Education
