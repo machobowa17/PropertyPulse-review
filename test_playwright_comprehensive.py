@@ -320,6 +320,7 @@ def run_all_tests():
         page = context.new_page()
         page.goto(results_url("SW1A 1AA"))
         wait_for_results(page)
+        switch_tab(page, "Property")  # Map tests need Property tab for sold prices markers
         time.sleep(5)  # Let map fully render
 
         # Map canvas should exist
