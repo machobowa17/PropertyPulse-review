@@ -166,11 +166,11 @@ def run_tests():
         check("Metric cards visible after expanding", metric_count >= 10, f"found {metric_count}")
 
         # Check metric names in the currently open section (last one after expand_all)
-        metric_names = page.locator("[id^='metric-'] span.text-sm.font-semibold")
+        metric_names = page.locator("[id^='metric-'] .text-sm.font-semibold")
         check("Metric names rendered (last section)", metric_names.count() >= 1, f"found {metric_names.count()}")
 
         # Check local values displayed (font-mono for numeric values)
-        local_values = page.locator("[id^='metric-'] span.font-mono")
+        local_values = page.locator("[id^='metric-'] .font-mono")
         check("Local values rendered", local_values.count() >= 1, f"found {local_values.count()}")
 
         # ── Check PersonaScoreCard ──
