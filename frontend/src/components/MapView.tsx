@@ -435,7 +435,7 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     soldMarkersRef.current = [];
 
     const index = clusterIndexRef.current;
-    if (!index) { console.log('[MapView SOLD] no cluster index, returning'); return; }
+    if (!index) return;
 
     // If spider is active, check if we should keep it or close it
     let spiderCenter = spiderRef.current.center;
@@ -467,9 +467,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     try {
       const bounds = map.getBounds();
       const zoom = Math.floor(map.getZoom());
-      const bbox: [number, number, number, number] = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
-      const clusters = index.getClusters(bbox, zoom);
-      console.log(`[MapView SOLD] bounds=[${bbox.map(n=>n.toFixed(4))}] zoom=${zoom} clusters=${clusters.length} soldMarkersAfterClear=${soldMarkersRef.current.length}`);
+      const clusters = index.getClusters(
+        [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        zoom,
+      );
 
       // Cap individual (non-cluster) DOM markers to prevent mobile stutter
       const MAX_INDIVIDUAL_MARKERS = 150;
@@ -540,11 +541,11 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     lsoaCode?: string,
   ) => {
     // Don't clear markers if no new data — keeps old markers visible during tab-switch loading
-    if (!poisData?.features) { console.log('[MapView RENDER] skip: no features'); return; }
+    if (!poisData?.features) return;
 
     // R10: skip full rebuild if pois + filter inputs are all unchanged
     // (lastRenderedPoisRef is reset to undefined by the effect when tab/layers/lsoa change)
-    if (poisData === lastRenderedPoisRef.current) { console.log('[MapView RENDER] skip: same ref'); return; }
+    if (poisData === lastRenderedPoisRef.current) return;
     lastRenderedPoisRef.current = poisData;
     lastRenderedLayersRef.current = layers;
     lastRenderedLsoaRef.current = lsoaCode;
@@ -593,15 +594,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         (f) => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon',
       );
 
-      console.log(`[MapView RENDER] totalFeatures=${poisData.features.length} visible=${visibleFeatures.length} sold=${soldFeatures.length} otherPoi=${otherPointFeatures.length} polygon=${polygonFeatures.length} wardOn=${wardOn} lsoaOn=${lsoaOn}`);
-
       // Build supercluster index for sold prices
       if (soldFeatures.length > 0) {
         const index = new Supercluster({ radius: 60, maxZoom: 16 });
         index.load(soldFeatures as Supercluster.PointFeature<Record<string, unknown>>[]);
         clusterIndexRef.current = index;
         renderSoldPriceMarkers(map);
-        console.log(`[MapView RENDER] after renderSoldPriceMarkers: soldMarkers=${soldMarkersRef.current.length}`);
       }
 
       // Render other POI markers with distinct icons per category
@@ -773,22 +771,15 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   // Update POI markers + flood zone polygons when pois, visibility, searchLsoa, or tab change
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) { console.log('[MapView POI] no map ref'); return; }
-
-    const _styleOk = map.isStyleLoaded();
-    const _tc = prevTabRef.current !== activeTab;
-    const _fc = pois?.features?.length ?? 0;
-    console.log(`[MapView POI] tab=${activeTab} prev=${prevTabRef.current} changed=${_tc} styleOk=${_styleOk} features=${_fc}`);
+    if (!map) return;
 
     // If style not loaded yet, defer until it is. The 'load' event only fires once in the
     // map's lifetime, so use 'idle' which fires whenever the map finishes rendering.
     // This handles the case where tiles are briefly reloading when pois data arrives.
-    if (!_styleOk) {
-      console.log('[MapView POI] style not loaded — deferring via idle event');
+    if (!map.isStyleLoaded()) {
       const onIdle = () => {
         if (!map.isStyleLoaded()) return;  // still not ready, wait for next idle
         map.off('idle', onIdle);  // one-shot: remove after first successful fire
-        console.log('[MapView POI] idle fired, style now loaded — rendering');
         const tc = prevTabRef.current !== activeTab;
         prevTabRef.current = activeTab;
         if (tc || searchLsoa !== lastRenderedLsoaRef.current || visibleLayers !== lastRenderedLayersRef.current) {
@@ -824,7 +815,6 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
     // If tab doesn't fetch POIs (Local Governance), clear everything
     if (!POI_TABS.includes(activeTab || '')) {
-      console.log('[MapView POI] → clearAll (non-POI tab)');
       clearAll();
       return;
     }
@@ -832,12 +822,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     // If tab changed but new data hasn't arrived yet, clear stale markers from old tab
     // (prevents flood zones / old POIs lingering during loading gap)
     if (tabChanged && !pois?.features) {
-      console.log('[MapView POI] → clearAll (tab changed, no pois)');
       clearAll();
       return;
     }
 
-    console.log('[MapView POI] → calling renderPoisOnMap');
     renderPoisOnMap(map, pois, visibleLayers, searchLsoa);
   }, [activeTab, clearSpider, pois, renderPoisOnMap, searchLsoa, visibleLayers]);
 
