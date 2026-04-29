@@ -1206,7 +1206,7 @@ function TabContentView({ tab }: { tab: string }) {
   return (
     <div>
       <div style={{ fontFamily: T.sans, fontSize: 12, color: T.inkMuted, marginBottom: 16 }}>{totalMetrics} metrics across {config.sections.length} sections</div>
-      {config.sections.map((s, i) => <SectionAccordion key={s.id} section={s} defaultOpen={i === 0} />)}
+      {config.sections.map(s => <SectionAccordion key={s.id} section={s} />)}
       {tab === 'Property & Market' && <TransactionTable />}
       {tab === 'Community & Education' && <SchoolTable />}
     </div>
@@ -1260,8 +1260,8 @@ function ResultsView({ onHome }: { onHome: () => void }) {
 
       {/* Two-column layout: metrics left, map sticky right */}
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px 64px', display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-        {/* Left column — metrics */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Left column — metrics (60%) */}
+        <div style={{ flex: 3, minWidth: 0 }}>
           {activeTab === 'Overview' ? (
             <>
               <SnapshotGrid />
@@ -1273,8 +1273,8 @@ function ResultsView({ onHome }: { onHome: () => void }) {
           )}
         </div>
 
-        {/* Right column — sticky map (desktop only, hidden below 1024px via inline media-query hack) */}
-        <div className="proto2-map-col" style={{ width: 440, flexShrink: 0, position: 'sticky', top: 80 }}>
+        {/* Right column — sticky map (40%, hidden below 1024px) */}
+        <div className="proto2-map-col" style={{ flex: 2, minWidth: 0, position: 'sticky', top: 80 }}>
           <MapPanel />
         </div>
       </div>
