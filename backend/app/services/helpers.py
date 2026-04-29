@@ -686,8 +686,11 @@ async def get_lsoa_session(session_key: str) -> dict | None:
 async def get_parent_lad_info(db, lad_code: str, *, entity_type: str | None = None):
     """Get all LAD codes sharing the same parent_comparison, plus the parent name.
 
-    For singleton ceremonial counties (only 1 LAD in the group), escalates to
-    the full region so the comparison is meaningful.
+    For sub-LAD searches (postcode, ward, place, postcode_district), the parent
+    is the LAD itself — except London boroughs (E09) which use Greater London.
+
+    For LAD-level searches, uses the county peer group from parent_comparison.
+    Singleton ceremonial counties escalate to the full region.
 
     Returns (parent_lad_codes, parent_name).
     """
@@ -695,6 +698,18 @@ async def get_parent_lad_info(db, lad_code: str, *, entity_type: str | None = No
     if not lad_code or lad_code == "_":
         fallback_country, _ = infer_country_from_geo_codes(lad_code, fallback="England")
         return [], fallback_country
+
+    # Sub-LAD searches: parent = the LAD itself (except London boroughs → Greater London)
+    _SUB_LAD_TYPES = {"postcode", "ward", "place", "postcode_district"}
+    if entity_type in _SUB_LAD_TYPES and not lad_code.startswith("E09"):
+        row = await db.execute(
+            text("SELECT lad_name FROM core_lad_county_lookup WHERE lad_code = :lad"),
+            {"lad": lad_code},
+        )
+        name_row = row.mappings().first()
+        lad_display = name_row["lad_name"] if name_row else lad_code
+        return [lad_code], lad_display
+
     result = await db.execute(
         text("""
             SELECT l2.lad_code, l1.parent_comparison

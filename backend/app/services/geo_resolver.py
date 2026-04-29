@@ -120,7 +120,7 @@ async def _resolve_postcode(db: AsyncSession, query: str) -> dict:
         }
 
     # Rule 3: Parent Comparison
-    parent = await _resolve_parent(db, row["lad_code"])
+    parent = await _resolve_parent(db, row["lad_code"], entity_type="postcode")
 
     return {
         "query": query,
@@ -202,7 +202,7 @@ async def _resolve_district_postcode(db: AsyncSession, query: str) -> dict:
             "suggestions": suggestions,
         }
 
-    parent = await _resolve_parent(db, row["lad_code"])
+    parent = await _resolve_parent(db, row["lad_code"], entity_type="postcode_district")
     return {
         "query": query,
         "type": "postcode_district",
@@ -334,7 +334,7 @@ async def _try_lad(db: AsyncSession, q_lower: str, query: str) -> dict | None:
     if not row or (row["sim"] < 0.6 and not row["lad_name"].lower().startswith(q_lower)):
         return None
 
-    parent = await _resolve_parent(db, row["lad_code"])
+    parent = await _resolve_parent(db, row["lad_code"], entity_type="lad")
 
     # Determine display type: borough for London, district otherwise
     cl_result = await db.execute(
@@ -460,7 +460,7 @@ async def _try_place_name(db: AsyncSession, q_lower: str, query: str) -> dict | 
         if not check2.first():
             return None
 
-    parent = await _resolve_parent(db, lad_code)
+    parent = await _resolve_parent(db, lad_code, entity_type="place")
 
     return {
         "query": query,
@@ -521,7 +521,7 @@ async def _try_ward(db: AsyncSession, q_lower: str, query: str, *, exact_only: b
     if not row or row["sim"] < 0.7:
         return None
 
-    parent = await _resolve_parent(db, row["lad_code"])
+    parent = await _resolve_parent(db, row["lad_code"], entity_type="ward")
     return {
         "query": query,
         "type": "ward",
@@ -540,17 +540,18 @@ async def _try_ward(db: AsyncSession, q_lower: str, query: str, *, exact_only: b
 
 
 
-async def _resolve_parent(db: AsyncSession, lad_code: str) -> str:
+async def _resolve_parent(db: AsyncSession, lad_code: str, entity_type: str | None = None) -> str:
     """Bible Rule 3: Determine parent comparison from core_lad_county_lookup.
 
-    Delegates to get_parent_lad_info() which handles singleton ceremonial
-    counties (e.g. Northumberland → 'North East') via region escalation.
-    This keeps parent name resolution in one place.
+    Delegates to get_parent_lad_info() which handles:
+    - Sub-LAD searches (postcode/ward/place) → parent is the LAD itself
+      (except London boroughs → Greater London)
+    - LAD searches → county peer group (singletons escalate to region)
     """
     from app.services.helpers import get_parent_lad_info
 
     if not lad_code:
         return "England"
 
-    _, parent_name = await get_parent_lad_info(db, lad_code)
+    _, parent_name = await get_parent_lad_info(db, lad_code, entity_type=entity_type)
     return parent_name
