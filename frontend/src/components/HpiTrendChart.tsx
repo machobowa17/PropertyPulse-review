@@ -270,14 +270,16 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
           <LineChart
             data={chartData}
             margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
-            onMouseMove={enhanced ? (state: { activeTooltipIndex?: number; activePayload?: Array<{ dataKey: string; value: number }> }) => {
-              if (state.activeTooltipIndex != null) setHoveredIdx(state.activeTooltipIndex);
-              if (state.activePayload?.length) {
-                const best = state.activePayload.reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a));
+            onMouseMove={enhanced ? ((state: Record<string, unknown>) => {
+              const idx = state.activeTooltipIndex;
+              if (typeof idx === 'number') setHoveredIdx(idx);
+              const ap = state.activePayload as Array<{ dataKey: string; value: number }> | undefined;
+              if (ap?.length) {
+                const best = ap.reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a));
                 setActiveKey(best.dataKey);
               }
-            } : undefined}
-            onMouseLeave={enhanced ? () => { setHoveredIdx(null); setActiveKey(null); } : undefined}
+            }) as never : undefined}
+            onMouseLeave={enhanced ? (() => { setHoveredIdx(null); setActiveKey(null); }) as never : undefined}
           >
             {enhanced && (
               <defs>

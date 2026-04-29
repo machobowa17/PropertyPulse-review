@@ -35,10 +35,11 @@ export default function NewBuildTrendChart({ trend, enhanced }: Props) {
             data={trend}
             margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
             barSize={14}
-            onMouseMove={enhanced ? (state: { activePayload?: Array<{ payload: TrendPoint }> }) => {
-              if (state.activePayload?.[0]) setHoveredPoint(state.activePayload[0].payload);
-            } : undefined}
-            onMouseLeave={enhanced ? () => setHoveredPoint(null) : undefined}
+            onMouseMove={enhanced ? ((state: Record<string, unknown>) => {
+              const ap = state.activePayload as Array<{ payload: TrendPoint }> | undefined;
+              if (ap?.[0]) setHoveredPoint(ap[0].payload);
+            }) as never : undefined}
+            onMouseLeave={enhanced ? (() => setHoveredPoint(null)) as never : undefined}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis

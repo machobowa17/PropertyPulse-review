@@ -62,10 +62,11 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
             data={data}
             margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
             barSize={32}
-            onMouseMove={enhanced ? (state: { activePayload?: Array<{ payload: { name: string } }> }) => {
-              if (state.activePayload?.[0]) setHoveredType(state.activePayload[0].payload.name);
-            } : undefined}
-            onMouseLeave={enhanced ? () => setHoveredType(null) : undefined}
+            onMouseMove={enhanced ? ((state: Record<string, unknown>) => {
+              const ap = state.activePayload as Array<{ payload: { name: string } }> | undefined;
+              if (ap?.[0]) setHoveredType(ap[0].payload.name);
+            }) as never : undefined}
+            onMouseLeave={enhanced ? (() => setHoveredType(null)) as never : undefined}
           >
             <XAxis
               dataKey="name"
