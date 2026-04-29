@@ -39,7 +39,6 @@ interface Props {
   formSemiPct?: number | null;
   formTerracePct?: number | null;
   formEndTerracePct?: number | null;
-  enhanced?: boolean;
 }
 
 const HEAT_ITEMS = [
@@ -88,7 +87,6 @@ export default function BuildingProfileChart({
   roofGoodPct, roofVpoorPct,
   glazeSinglePct, glazeDoublePct, glazeTriplePct, avgMultiGlazePct,
   formDetachedPct, formSemiPct, formTerracePct, formEndTerracePct,
-  enhanced,
 }: Props) {
   const heatMap: Record<string, number | null | undefined> = {
     gas: heatGasPct, electric: heatElectricPct, oil: heatOilPct,
@@ -165,16 +163,11 @@ export default function BuildingProfileChart({
           <h4 className="text-xs font-semibold text-ink-muted mb-2">Built Form</h4>
           {/* Stacked bar */}
           <div className="h-6 rounded-full overflow-hidden flex bg-divider">
-            {formItems.map(({ label, pct, colour }, idx) => (
+            {formItems.map(({ label, pct, colour }) => (
               <div
                 key={label}
                 className="h-full flex items-center justify-center text-[10px] font-semibold text-white"
-                style={{
-                  width: `${pct}%`,
-                  backgroundColor: colour,
-                  minWidth: pct >= 3 ? undefined : 0,
-                  animation: enhanced ? `enhanced-fade-in 0.5s ease-out ${idx * 100}ms both` : undefined,
-                }}
+                style={{ width: `${pct}%`, backgroundColor: colour, minWidth: pct >= 3 ? undefined : 0 }}
                 title={`${label}: ${pct.toFixed(1)}%`}
               >
                 {pct >= 8 ? `${pct.toFixed(0)}%` : ''}
@@ -266,12 +259,7 @@ export default function BuildingProfileChart({
                   <div className="h-3 rounded-full overflow-hidden flex bg-divider">
                     <div
                       className="h-full rounded-full"
-                      style={{
-                        width: `${good}%`,
-                        backgroundColor: colour,
-                        opacity: 0.8,
-                        animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
-                      }}
+                      style={{ width: `${good}%`, backgroundColor: colour, opacity: 0.8 }}
                     />
                   </div>
                 </div>
@@ -311,7 +299,7 @@ export default function BuildingProfileChart({
         <div>
           <h4 className="text-xs font-semibold text-ink-muted mb-2">Construction Period</h4>
           <div className="space-y-1">
-            {AGE_BANDS.map(({ key, label, colour }, idx) => {
+            {AGE_BANDS.map(({ key, label, colour }) => {
               const pct = ageMap[key] ?? 0;
               if (pct < 0.5) return null;
               return (
@@ -320,12 +308,7 @@ export default function BuildingProfileChart({
                   <div className="flex-1 relative h-5 bg-divider rounded-full overflow-hidden">
                     <div
                       className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${maxAge > 0 ? (pct / maxAge) * 100 : 0}%`,
-                        backgroundColor: colour,
-                        opacity: 0.85,
-                        animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 80}ms both` : undefined,
-                      }}
+                      style={{ width: `${maxAge > 0 ? (pct / maxAge) * 100 : 0}%`, backgroundColor: colour, opacity: 0.85 }}
                     />
                   </div>
                   <div className="w-12 text-right text-xs font-medium text-ink tabular-nums shrink-0">

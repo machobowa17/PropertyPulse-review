@@ -5,15 +5,13 @@ interface Props {
   parentFullFibrePct: number | null;
   parentSuperfastPct: number | null;
   parentGigabitPct: number | null;
-  enhanced?: boolean;
 }
 
-function CoverageBar({ label, value, parentValue, colour, enhanced }: {
+function CoverageBar({ label, value, parentValue, colour }: {
   label: string;
   value: number | null;
   parentValue: number | null;
   colour: string;
-  enhanced?: boolean;
 }) {
   if (value == null) return null;
   const diff = parentValue != null ? value - parentValue : null;
@@ -36,23 +34,13 @@ function CoverageBar({ label, value, parentValue, colour, enhanced }: {
       <div className="relative h-2.5 bg-surface rounded-full overflow-hidden">
         <div
           className="absolute inset-y-0 left-0 rounded-full transition-all"
-          style={{
-            width: `${value}%`,
-            backgroundColor: colour,
-            animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
-          }}
+          style={{ width: `${value}%`, backgroundColor: colour }}
         />
         {parentValue != null && (
           <div
-            className={`absolute ${enhanced ? 'w-0.5 h-[calc(100%+6px)] -top-[3px] bg-amber-500 opacity-80' : 'inset-y-0 w-0.5 bg-ink/30'}`}
+            className="absolute inset-y-0 w-0.5 bg-ink/30"
             style={{ left: `${parentValue}%` }}
-          >
-            {enhanced && (
-              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-medium text-amber-600 whitespace-nowrap bg-white/90 px-0.5 rounded">
-                {parentValue.toFixed(0)}%
-              </span>
-            )}
-          </div>
+          />
         )}
       </div>
     </div>
@@ -62,7 +50,6 @@ function CoverageBar({ label, value, parentValue, colour, enhanced }: {
 export default function BroadbandPanel({
   fullFibrePct, superfastPct, gigabitPct,
   parentFullFibrePct, parentSuperfastPct, parentGigabitPct,
-  enhanced,
 }: Props) {
   return (
     <div className="space-y-4 mt-1">
@@ -72,21 +59,18 @@ export default function BroadbandPanel({
           value={fullFibrePct}
           parentValue={parentFullFibrePct}
           colour="#7c3aed"
-          enhanced={enhanced}
         />
         <CoverageBar
           label="Superfast (≥30 Mbps)"
           value={superfastPct}
           parentValue={parentSuperfastPct}
           colour="#2563eb"
-          enhanced={enhanced}
         />
         <CoverageBar
           label="Gigabit-capable (≥1000 Mbps)"
           value={gigabitPct}
           parentValue={parentGigabitPct}
           colour="#059669"
-          enhanced={enhanced}
         />
       </div>
       <p className="text-[10px] text-ink-faint">

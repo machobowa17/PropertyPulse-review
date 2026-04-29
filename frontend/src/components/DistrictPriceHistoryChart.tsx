@@ -3,7 +3,6 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -90,7 +89,6 @@ interface Props {
   areaName?: string;
   priceField?: 'avg_price' | 'median_price' | 'avg_ppsf';
   byBedrooms?: BedroomBreakdownPoint[];
-  enhanced?: boolean;
 }
 
 function CustomTooltip({ active, payload, label, activeKey, mode, fmtGBP }: {
@@ -153,7 +151,6 @@ export default function DistrictPriceHistoryChart({
   areaName,
   priceField = 'avg_price',
   byBedrooms,
-  enhanced,
 }: Props) {
   const localLabel = areaName ?? 'Local';
   const parentLabel = regionalName ?? 'Parent';
@@ -164,7 +161,6 @@ export default function DistrictPriceHistoryChart({
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['__all']));
   const [activeBeds, setActiveBeds] = useState<Set<string>>(new Set(['__all_beds']));
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   const hasBedrooms = !!byBedrooms && byBedrooms.length > 0;
 
@@ -427,7 +423,6 @@ export default function DistrictPriceHistoryChart({
 
     let best: string | null = null;
     let bestDist = Infinity;
-    let bestIdx = 0;
 
     chartData.forEach((point, i) => {
       const px = LC_MARGIN.left + yAxisW + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
@@ -437,12 +432,11 @@ export default function DistrictPriceHistoryChart({
         if (isNaN(v)) return;
         const py = LC_MARGIN.top + ((dMax - v) / yRange) * plotH;
         const dist = Math.hypot(px - cx, py - cy);
-        if (dist < bestDist) { bestDist = dist; best = key; bestIdx = i; }
+        if (dist < bestDist) { bestDist = dist; best = key; }
       });
     });
 
     if (best !== activeKey) setActiveKey(best);
-    setHoveredIdx(bestIdx);
   };
 
   if (priceData.length < 2) return null;
@@ -622,39 +616,6 @@ export default function DistrictPriceHistoryChart({
         )}
       </div>
 
-      {/* Enhanced: fixed readout above chart */}
-      {enhanced && hoveredIdx != null && chartData[hoveredIdx] && (
-        <div className="flex items-center gap-3 px-1 pb-1 text-[11px] font-mono tabular-nums">
-          <span className="font-semibold text-brand-600">{chartData[hoveredIdx].year}</span>
-          {lines.filter(l => !l.dashed).map(l => {
-            const val = chartData[hoveredIdx!][l.dataKey];
-            if (val == null) return null;
-            return (
-              <span key={l.dataKey} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.colour }} />
-                <span className="text-ink-muted">{l.name.split(': ').pop()}:</span>
-                <span className="font-semibold text-ink">
-                  {mode === 'price' ? fmtGBP(Number(val)) : fmtPct(Number(val))}
-                </span>
-              </span>
-            );
-          })}
-          {lines.filter(l => l.dashed).map(l => {
-            const val = chartData[hoveredIdx!][l.dataKey];
-            if (val == null) return null;
-            return (
-              <span key={l.dataKey} className="flex items-center gap-1 text-ink-faint">
-                <span className="w-2 h-0.5" style={{ backgroundColor: l.colour }} />
-                <span>{parentLabel}:</span>
-                <span className="font-semibold">
-                  {mode === 'price' ? fmtGBP(Number(val)) : fmtPct(Number(val))}
-                </span>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
       {/* Chart */}
       <div ref={containerRef} className="h-[260px]" role="img" aria-label="Line chart showing district average sale price history">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -662,19 +623,8 @@ export default function DistrictPriceHistoryChart({
             data={chartData}
             margin={LC_MARGIN}
             onMouseMove={handleMouseMove}
-            onMouseLeave={() => { setActiveKey(null); setHoveredIdx(null); }}
+            onMouseLeave={() => setActiveKey(null)}
           >
-            {/* Enhanced mode: gradient defs for area fills */}
-            {enhanced && (
-              <defs>
-                {lines.map(({ dataKey, colour }) => (
-                  <linearGradient key={`grad-${dataKey}`} id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={colour} stopOpacity={0.18} />
-                    <stop offset="100%" stopColor={colour} stopOpacity={0} />
-                  </linearGradient>
-                ))}
-              </defs>
-            )}
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-divider, #e5e7eb)" />
             <XAxis
               dataKey="year"
@@ -694,8 +644,8 @@ export default function DistrictPriceHistoryChart({
               allowDataOverflow
             />
             <Tooltip
-              content={enhanced ? () => null : <CustomTooltip activeKey={activeKey} mode={mode} fmtGBP={fmtGBP} />}
-              cursor={enhanced ? { stroke: '#9ca3af', strokeWidth: 1, strokeDasharray: '4 3' } : { stroke: '#e5e7eb', strokeWidth: 1 }}
+              content={<CustomTooltip activeKey={activeKey} mode={mode} fmtGBP={fmtGBP} />}
+              cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }}
               allowEscapeViewBox={{ x: false, y: true }}
               isAnimationActive={false}
               offset={16}
@@ -703,21 +653,6 @@ export default function DistrictPriceHistoryChart({
             {mode === 'yoy' && stableScale.min < 0 && stableScale.max > 0 && (
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
-            {/* Enhanced mode: gradient area fills behind lines */}
-            {enhanced && mode === 'price' && lines.map(({ dataKey }) => (
-              <Area
-                key={`area-${dataKey}`}
-                type="monotone"
-                dataKey={dataKey}
-                stroke="none"
-                fill={`url(#grad-${dataKey})`}
-                fillOpacity={1}
-                connectNulls
-                isAnimationActive
-                animationDuration={700}
-                animationEasing="ease-out"
-              />
-            ))}
             {lines.map(({ dataKey, name, colour, dashed }) => (
               <Line
                 key={dataKey}
@@ -727,17 +662,10 @@ export default function DistrictPriceHistoryChart({
                 stroke={colour}
                 strokeWidth={dataKey.includes('__all') ? 2.5 : 2}
                 strokeDasharray={dashed ? '6 3' : undefined}
-                strokeOpacity={
-                  enhanced && activeKey
-                    ? (dataKey === activeKey ? 1 : 0.3)
-                    : (dashed ? 0.7 : 1)
-                }
+                strokeOpacity={dashed ? 0.7 : 1}
                 dot={{ r: dataKey.includes('__all') ? 2.5 : 2 }}
                 activeDot={{ r: 4 }}
                 connectNulls
-                isAnimationActive={enhanced}
-                animationDuration={enhanced ? 700 : 0}
-                animationEasing="ease-out"
               />
             ))}
           </LineChart>

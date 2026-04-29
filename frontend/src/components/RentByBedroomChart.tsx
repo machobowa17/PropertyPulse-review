@@ -11,7 +11,6 @@ interface Props {
   yield2bed?: number | null;
   yield3bed?: number | null;
   yield4bed?: number | null;
-  enhanced?: boolean;
 }
 
 const BEDS = [
@@ -35,7 +34,6 @@ function fmtRent(v: number) {
 export default function RentByBedroomChart({
   rent1bed, rent2bed, rent3bed, rent4bed,
   yield1bed, yield2bed, yield3bed, yield4bed,
-  enhanced,
 }: Props) {
   const rentVals = { rent1bed, rent2bed, rent3bed, rent4bed };
   const yieldVals = { yield1bed, yield2bed, yield3bed, yield4bed };
@@ -53,18 +51,15 @@ export default function RentByBedroomChart({
       </div>
 
       <div className="space-y-2.5">
-        {rows.map(({ label, rentKey, yieldKey, colour }, idx) => {
+        {rows.map(({ label, rentKey, yieldKey, colour }) => {
           const rent = rentVals[rentKey];
           const yld  = yieldVals[yieldKey];
           const barPct = maxRent > 0 && rent != null ? (rent / maxRent) * 100 : 0;
 
           return (
             <div key={label} className="flex items-center gap-3">
-              {/* Bed label — coloured dot in enhanced */}
-              <div className="w-10 flex items-center gap-1 shrink-0">
-                {enhanced && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colour }} />}
-                <span className="text-[11px] font-semibold text-ink-faint">{label}</span>
-              </div>
+              {/* Bed label */}
+              <div className="w-10 text-[11px] font-semibold text-ink-faint shrink-0">{label}</div>
 
               {/* Bar + rent */}
               <div className="flex-1 min-w-0">
@@ -85,11 +80,7 @@ export default function RentByBedroomChart({
                 <div className="h-2 rounded-full bg-divider overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${barPct}%`,
-                      backgroundColor: colour,
-                      animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 100}ms both` : undefined,
-                    }}
+                    style={{ width: `${barPct}%`, backgroundColor: colour }}
                   />
                 </div>
               </div>

@@ -1,7 +1,6 @@
 interface Props {
   bands: Record<string, number | null>;   // band_a … band_i
   parents: Record<string, number | null>; // parent_a … parent_i
-  enhanced?: boolean;
 }
 
 const BANDS = [
@@ -21,7 +20,7 @@ function fmt(v: number | null | undefined): string {
   return '£' + Math.round(v).toLocaleString('en-GB');
 }
 
-export default function CouncilTaxBandGrid({ bands, parents, enhanced }: Props) {
+export default function CouncilTaxBandGrid({ bands, parents }: Props) {
   const visibleBands = BANDS.filter(({ key, parent }) => bands[key] != null || parents[parent] != null);
   const maxVal = Math.max(0, ...visibleBands.map((b) => bands[b.key] ?? 0));
 
@@ -38,11 +37,10 @@ export default function CouncilTaxBandGrid({ bands, parents, enhanced }: Props) 
           const isHigher = diff != null && diff > 10;
           const isLower = diff != null && diff < -10;
 
-          const isBandD = label === 'D';
           return (
-            <div key={key} className={`flex items-center gap-3 ${enhanced && isBandD ? 'bg-brand-50/50 rounded-lg px-2 py-1 -mx-2 border border-brand-200/50' : ''}`}>
-              <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${enhanced && isBandD ? 'bg-brand-600' : 'bg-brand/10'}`}>
-                <span className={`text-[11px] font-black ${enhanced && isBandD ? 'text-white' : 'text-brand'}`}>{label}</span>
+            <div key={key} className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded-lg bg-brand/10 flex items-center justify-center shrink-0">
+                <span className="text-[11px] font-black text-brand">{label}</span>
               </div>
 
               <div className="flex-1 min-w-0">
@@ -57,14 +55,11 @@ export default function CouncilTaxBandGrid({ bands, parents, enhanced }: Props) 
                 <div className="relative h-2 rounded-full bg-divider overflow-hidden">
                   <div
                     className="h-full rounded-full bg-brand-500 opacity-70"
-                    style={{
-                      width: `${barPct}%`,
-                      animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
-                    }}
+                    style={{ width: `${barPct}%` }}
                   />
                   {parentVal != null && maxVal > 0 && (
                     <div
-                      className={`absolute ${enhanced ? 'w-0.5 h-[calc(100%+6px)] -top-[3px] bg-amber-500 opacity-80' : 'w-0.5 h-full top-0 bg-ink/30'}`}
+                      className="absolute top-0 h-full w-0.5 bg-ink/30"
                       style={{ left: `${(parentVal / maxVal) * 100}%` }}
                     />
                   )}
@@ -77,7 +72,7 @@ export default function CouncilTaxBandGrid({ bands, parents, enhanced }: Props) 
 
       <div className="flex items-center gap-1.5 text-[10px] text-ink-faint">
         <div className="w-3 h-3 flex items-center justify-center">
-          <div className={`w-0.5 h-3 rounded ${enhanced ? 'bg-amber-500' : 'bg-ink/30'}`} />
+          <div className="w-0.5 h-3 bg-ink/30 rounded" />
         </div>
         <span>Vertical line = area average</span>
       </div>

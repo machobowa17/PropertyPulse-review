@@ -31,10 +31,9 @@ function walkMinutes(distanceM: number): number {
 interface Props {
   counts: Record<string, number>;
   nearest?: Array<{ type: string; name: string; distance_m?: number }>;
-  enhanced?: boolean;
 }
 
-export default function AmenityRadarChart({ counts, nearest, enhanced }: Props) {
+export default function AmenityRadarChart({ counts, nearest }: Props) {
   const data = Object.entries(AMENITY_LABELS).map(([key, label]) => ({
     amenity: label,
     count: counts[key] || 0,
@@ -91,18 +90,10 @@ export default function AmenityRadarChart({ counts, nearest, enhanced }: Props) 
       <div className="h-[260px] w-full" role="img" aria-label="Radar chart showing local amenity density by type">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <RadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
-            {enhanced && (
-              <defs>
-                <linearGradient id="amenity-radar-grad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-            )}
-            <PolarGrid stroke={enhanced ? '#d1d5db' : '#e5e7eb'} />
+            <PolarGrid stroke="#e5e7eb" />
             <PolarAngleAxis
               dataKey="amenity"
-              tick={{ fontSize: 11, fill: enhanced ? '#374151' : '#6b7280', fontWeight: enhanced ? 600 : 400 }}
+              tick={{ fontSize: 11, fill: '#6b7280' }}
             />
             <PolarRadiusAxis
               angle={90}
@@ -113,13 +104,9 @@ export default function AmenityRadarChart({ counts, nearest, enhanced }: Props) 
               name="Count"
               dataKey="count"
               stroke="#4f46e5"
-              fill={enhanced ? 'url(#amenity-radar-grad)' : '#4f46e5'}
-              fillOpacity={enhanced ? 1 : 0.15}
-              strokeWidth={enhanced ? 2.5 : 2}
-              dot={enhanced ? { r: 3, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2 } : false}
-              isAnimationActive={enhanced}
-              animationDuration={enhanced ? 700 : 0}
-              animationEasing="ease-out"
+              fill="#4f46e5"
+              fillOpacity={0.15}
+              strokeWidth={2}
             />
             <Tooltip
               contentStyle={{

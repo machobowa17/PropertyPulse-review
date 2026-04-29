@@ -12,7 +12,6 @@ interface Props {
   crime?: number | null;
   barriers?: number | null;
   livingEnvironment?: number | null;
-  enhanced?: boolean;
 }
 
 // Decile 1 = most deprived, 10 = least deprived
@@ -50,7 +49,6 @@ function normalise(val: number, min: number, max: number): number {
 export default function ImdDeprivationBlock({
   decile, rank, parentAvgDecile,
   income, employment, education, health, crime, barriers, livingEnvironment,
-  enhanced,
 }: Props) {
   const cfg = DECILE_CONFIG[decile] ?? DECILE_CONFIG[5];
   const barPct = (decile / 10) * 100;
@@ -111,11 +109,7 @@ export default function ImdDeprivationBlock({
         <div className="relative h-3 rounded-full overflow-hidden" style={{ backgroundColor: '#e5e7eb' }}>
           <div
             className="h-full rounded-full transition-all"
-            style={{
-              width: `${barPct}%`,
-              backgroundColor: cfg.colour,
-              animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
-            }}
+            style={{ width: `${barPct}%`, backgroundColor: cfg.colour }}
           />
           {Array.from({ length: 9 }, (_, i) => (
             <div
@@ -144,30 +138,18 @@ export default function ImdDeprivationBlock({
           <div className="mx-auto" style={{ width: '100%', maxWidth: 340, height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="72%" data={radarData}>
-                {enhanced && (
-                  <defs>
-                    <linearGradient id="imd-radar-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={cfg.colour} stopOpacity={0.4} />
-                      <stop offset="100%" stopColor={cfg.colour} stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                )}
-                <PolarGrid stroke={enhanced ? '#d1d5db' : '#e5e7eb'} />
+                <PolarGrid stroke="#e5e7eb" />
                 <PolarAngleAxis
                   dataKey="domain"
-                  tick={{ fontSize: 11, fill: enhanced ? '#374151' : '#6b7280', fontWeight: enhanced ? 600 : 400 }}
+                  tick={{ fontSize: 11, fill: '#6b7280' }}
                 />
                 <Radar
                   name="Score"
                   dataKey="score"
                   stroke={cfg.colour}
-                  fill={enhanced ? 'url(#imd-radar-grad)' : cfg.colour}
-                  fillOpacity={enhanced ? 1 : 0.25}
-                  strokeWidth={enhanced ? 2.5 : 2}
-                  dot={enhanced ? { r: 3, fill: cfg.colour, stroke: '#fff', strokeWidth: 2 } : false}
-                  isAnimationActive={enhanced}
-                  animationDuration={enhanced ? 700 : 0}
-                  animationEasing="ease-out"
+                  fill={cfg.colour}
+                  fillOpacity={0.25}
+                  strokeWidth={2}
                 />
                 <Tooltip
                   content={({ payload }) => {
@@ -191,25 +173,11 @@ export default function ImdDeprivationBlock({
           </div>
           {/* Domain scores table */}
           <div className="grid grid-cols-2 gap-1.5 mt-2">
-            {radarData.map(({ domain, score }, idx) => (
+            {radarData.map(({ domain, score }) => (
               <div key={domain} className="flex items-center gap-2 bg-white border border-divider rounded-lg px-2.5 py-1.5">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] text-ink-muted">{domain}</div>
-                  {enhanced && (
-                    <div className="h-1 rounded-full bg-divider/40 mt-1 overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${score}%`,
-                          backgroundColor: score >= 60 ? '#16a34a' : score >= 40 ? '#eab308' : '#dc2626',
-                          animation: `enhanced-bar-fill 0.5s ease-out ${idx * 60}ms both`,
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
+                <div className="flex-1 text-[11px] text-ink-muted">{domain}</div>
                 <div
-                  className="text-xs font-bold shrink-0"
+                  className="text-xs font-bold"
                   style={{ color: score >= 60 ? '#16a34a' : score >= 40 ? '#eab308' : '#dc2626' }}
                 >
                   {score}

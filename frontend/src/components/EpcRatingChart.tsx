@@ -8,7 +8,6 @@ interface Props {
   parentRatings?: { ab?: number | null; c?: number | null; d?: number | null; eg?: number | null } | null;
   cPlusPct?: number | null;
   parentCPlusPct?: number | null;
-  enhanced?: boolean;
 }
 
 // Classic UK EPC colour bands
@@ -35,7 +34,6 @@ export default function EpcRatingChart({
   avgScore, parentAvgScore,
   parentRatings,
   cPlusPct, parentCPlusPct,
-  enhanced,
 }: Props) {
   const bands: { label: string; local: number; parent: number | null; colour: string; range: string }[] = BANDS.map(b => ({
     label: b.label,
@@ -87,7 +85,7 @@ export default function EpcRatingChart({
         <div>
           <h4 className="text-xs font-semibold text-ink-muted mb-2">EPC Rating Distribution</h4>
           <div className="space-y-1.5">
-            {bands.map(({ label, local, parent, colour, range }, idx) => (
+            {bands.map(({ label, local, parent, colour, range }) => (
               <div key={label} className="flex items-center gap-2">
                 {/* Arrow-style band label */}
                 <div className="flex items-center shrink-0" style={{ width: 70 }}>
@@ -111,25 +109,14 @@ export default function EpcRatingChart({
                 <div className="flex-1 relative h-5 bg-divider rounded-full overflow-hidden">
                   <div
                     className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${Math.min(local, 100)}%`,
-                      backgroundColor: colour,
-                      opacity: 0.85,
-                      animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 100}ms both` : undefined,
-                    }}
+                    style={{ width: `${Math.min(local, 100)}%`, backgroundColor: colour, opacity: 0.85 }}
                   />
                   {parent != null && parent > 0 && (
                     <div
-                      className={`absolute ${enhanced ? 'w-0.5 h-[calc(100%+6px)] -top-[3px] bg-amber-500 opacity-80' : 'w-0.5 h-full top-0 bg-ink-muted opacity-40'}`}
+                      className="absolute top-0 h-full w-0.5 bg-ink-muted opacity-40"
                       style={{ left: `${Math.min(parent, 100)}%` }}
                       title={`Area avg: ${parent.toFixed(1)}%`}
-                    >
-                      {enhanced && (
-                        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-medium text-amber-600 whitespace-nowrap bg-white/90 px-0.5 rounded">
-                          {parent.toFixed(0)}%
-                        </span>
-                      )}
-                    </div>
+                    />
                   )}
                 </div>
                 <div className="w-12 text-right text-xs font-medium text-ink tabular-nums shrink-0">
@@ -139,12 +126,7 @@ export default function EpcRatingChart({
             ))}
           </div>
           {parentRatings && (
-            <div className="flex items-center gap-1.5 text-[10px] text-ink-faint mt-1.5">
-              <div className="w-3 h-3 flex items-center justify-center">
-                <div className={`w-0.5 h-3 rounded ${enhanced ? 'bg-amber-500' : 'bg-ink-muted/40'}`} />
-              </div>
-              <span>Vertical tick = area average</span>
-            </div>
+            <p className="text-[10px] text-ink-faint mt-1.5">Grey tick = area average</p>
           )}
         </div>
       )}

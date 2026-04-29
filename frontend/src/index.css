@@ -111,30 +111,3 @@ html { scroll-behavior: smooth; }
 .animate-tab-enter {
   animation: tab-enter 0.25s ease-out both;
 }
-
-/* Enhanced mode: staggered card entrance */
-@keyframes enhanced-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Enhanced mode: animated bar fill (used by renderers) */
-@keyframes enhanced-bar-fill {
-  from { width: 0; }
-}
-
-/* Enhanced mode: animated number counter pulse */
-@keyframes enhanced-counter-pulse {
-  0% { opacity: 0.4; transform: scale(0.95); }
-  60% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-/* Respect prefers-reduced-motion */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}

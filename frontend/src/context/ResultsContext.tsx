@@ -100,8 +100,6 @@ export interface ResultsUIContextValue {
   mapFlyToRef: MutableRefObject<((lng: number, lat: number, zoom?: number) => void) | null>;
   mapHighlightRef: MutableRefObject<((lng: number, lat: number, props?: Record<string, unknown>) => void) | null>;
   clearMapHighlight: () => void;
-  enhancedMode: boolean;
-  setEnhancedMode: Dispatch<SetStateAction<boolean>>;
 }
 
 // Combined type for backward-compatible useResults()
@@ -312,14 +310,6 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   // Map state — call useResultsMap BEFORE choropleth query (activeChoropleth comes from hook)
   const mapState = useResultsMap({ allMetrics, activeTab, isDesktop, sessionKey, q });
 
-  // Enhanced mode toggle — persists across page refreshes
-  const [enhancedMode, setEnhancedMode] = useState(() =>
-    JSON.parse(localStorage.getItem('pp_enhanced_mode') ?? 'false'),
-  );
-  useEffect(() => {
-    localStorage.setItem('pp_enhanced_mode', JSON.stringify(enhancedMode));
-  }, [enhancedMode]);
-
   // Ref for map flyTo function — populated by MapView's onMapReady callback
   const mapFlyToRef = useRef<((lng: number, lat: number, zoom?: number) => void) | null>(null);
   // Ref for map temporary highlight marker — shows a marker at coordinates, removed on clear
@@ -379,8 +369,8 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   const uiValue: ResultsUIContextValue = useMemo(
-    () => ({ ...mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight, enhancedMode, setEnhancedMode }),
-    [mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight, enhancedMode, setEnhancedMode],
+    () => ({ ...mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight }),
+    [mapState, mapFlyToRef, mapHighlightRef, clearMapHighlight],
   );
 
   const combinedValue: ResultsContextValue = useMemo(

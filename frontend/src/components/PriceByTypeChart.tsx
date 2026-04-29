@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -17,7 +16,6 @@ interface Props {
   flat?: number | null;
   ukMedian?: number | null;
   parentMedian?: number | null;
-  enhanced?: boolean;
 }
 
 const COLOURS: Record<string, string> = {
@@ -27,8 +25,7 @@ const COLOURS: Record<string, string> = {
   Flat: '#ea580c',
 };
 
-export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMedian, parentMedian, enhanced }: Props) {
-  const [hoveredType, setHoveredType] = useState<string | null>(null);
+export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMedian, parentMedian }: Props) {
   const data = [
     { name: 'Detached', price: detached },
     { name: 'Semi-det.', price: semi },
@@ -43,31 +40,10 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
 
   return (
     <div className="bg-surface rounded-xl p-4 space-y-2 mt-2">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-ink">Price by Property Type</h4>
-        {enhanced && hoveredType && (
-          <div className="flex items-center gap-2 text-[11px] font-mono tabular-nums">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: COLOURS[hoveredType] ?? '#6b7280' }} />
-            <span className="font-semibold text-ink">{hoveredType}</span>
-            <span className="text-ink-muted">{fmtGBP(data.find(d => d.name === hoveredType)?.price ?? 0)}</span>
-            {parentMedian != null && (
-              <span className="text-ink-faint">vs area avg {fmtGBP(parentMedian)}</span>
-            )}
-          </div>
-        )}
-      </div>
+      <h4 className="text-sm font-semibold text-ink">Price by Property Type</h4>
       <div className="h-[180px]" role="img" aria-label="Bar chart showing price by property type">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-          <BarChart
-            data={data}
-            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-            barSize={32}
-            onMouseMove={enhanced ? ((state: Record<string, unknown>) => {
-              const ap = state.activePayload as Array<{ payload: { name: string } }> | undefined;
-              if (ap?.[0]) setHoveredType(ap[0].payload.name);
-            }) as never : undefined}
-            onMouseLeave={enhanced ? (() => setHoveredType(null)) as never : undefined}
-          >
+          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barSize={32}>
             <XAxis
               dataKey="name"
               tick={{ fontSize: 11, fill: '#9ca3af' }}
@@ -82,8 +58,7 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
               width={52}
             />
             <Tooltip
-              content={enhanced ? () => null : undefined}
-              formatter={enhanced ? undefined : (value: unknown) => [fmtGBP(Number(value)), 'Avg price']}
+              formatter={(value) => [fmtGBP(Number(value)), 'Avg price']}
               labelStyle={{ fontWeight: 600, color: '#111827' }}
               contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 13 }}
               cursor={{ fill: 'rgba(0,0,0,0.04)' }}
@@ -118,13 +93,7 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
                 }}
               />
             )}
-            <Bar
-              dataKey="price"
-              radius={[4, 4, 0, 0]}
-              isAnimationActive={enhanced}
-              animationDuration={enhanced ? 700 : 0}
-              animationEasing="ease-out"
-            >
+            <Bar dataKey="price" radius={[4, 4, 0, 0]}>
               {data.map((entry) => (
                 <Cell key={entry.name} fill={COLOURS[entry.name] ?? '#6b7280'} />
               ))}

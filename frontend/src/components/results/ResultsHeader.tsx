@@ -6,7 +6,7 @@ import PersonaSelector from '../PersonaSelector';
 import { useResults } from '../../context/ResultsContext';
 
 export function ResultsHeader() {
-  const { q, decisionMode, handleDecisionModeChange, persona, setPersona, enhancedMode, setEnhancedMode } = useResults();
+  const { q, decisionMode, handleDecisionModeChange, persona, setPersona } = useResults();
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-divider/60">
@@ -25,17 +25,6 @@ export function ResultsHeader() {
         </div>
         <DecisionModeSelector current={decisionMode} onChange={handleDecisionModeChange} variant="dropdown" />
         <PersonaSelector current={persona} onChange={setPersona} />
-        <button
-          onClick={() => setEnhancedMode((v: boolean) => !v)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface text-xs font-medium text-ink-muted hover:bg-surface-warm transition-colors"
-          title={enhancedMode ? 'Switch to current view' : 'Switch to enhanced view'}
-        >
-          <span className={enhancedMode ? 'text-ink-muted' : 'text-ink font-semibold'}>Current</span>
-          <div className={`relative w-8 h-4.5 rounded-full transition-colors ${enhancedMode ? 'bg-brand-500' : 'bg-ink-faint/40'}`}>
-            <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform ${enhancedMode ? 'translate-x-4' : 'translate-x-0.5'}`} />
-          </div>
-          <span className={enhancedMode ? 'text-ink font-semibold' : 'text-ink-muted'}>Enhanced</span>
-        </button>
         <Link
           to="/saved"
           className="p-2 rounded-xl hover:bg-surface transition-colors"
