@@ -118,7 +118,7 @@ function computeYoy(series: HpiPoint[]): Record<string, number | null>[] {
 export default function HpiTrendChart({ series, enhanced }: Props) {
   const [mode, setMode] = useState<ViewMode>('price');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['avg_price']));
-  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
 
   const toggleType = (key: string) => {
     setActiveTypes((prev) => {
@@ -242,11 +242,6 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
           <LineChart
             data={chartData}
             margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
-            onMouseMove={(e: { activeTooltipIndex?: number }) => {
-              if (!enhanced) return;
-              // Track which series is being hovered for dimming
-            }}
-            onMouseLeave={() => enhanced && setHoveredKey(null)}
           >
             {enhanced && (
               <defs>

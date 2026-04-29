@@ -668,7 +668,7 @@ export default function DistrictPriceHistoryChart({
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
             {/* Enhanced mode: gradient area fills behind lines */}
-            {enhanced && mode === 'price' && lines.map(({ dataKey, colour }) => (
+            {enhanced && mode === 'price' && lines.map(({ dataKey }) => (
               <Area
                 key={`area-${dataKey}`}
                 type="monotone"
