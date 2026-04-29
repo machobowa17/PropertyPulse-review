@@ -40,32 +40,71 @@ async def get_price_history(
     parent_name = sess.get("parent_name", "England")
     boundary_source = sess.get("boundary_source", "lad")
 
-    # Local — scope determined by what the search key resolved to
+    # Local — scope determined by what the search key resolved to.
+    # For LAD/county searches, use pre-computed MVs (fast — <1s even for large LADs).
+    # For sub-LAD (postcode/ward/place), query raw transactions (small row counts, fast).
     if boundary_source in ("lad", "county"):
         local_lads = sess.get("local_lads", [])
-        _area_filter = "lad_code = ANY(:lads)"
-        _local_params = {"lads": local_lads, "price_types": list(PRICE_TYPES)}
+        # Look up LAD display name(s) for MV lookup
+        lad_name_res = await db.execute(
+            text("SELECT DISTINCT lad_name FROM core_lad_county_lookup WHERE lad_code = ANY(:lads)"),
+            {"lads": local_lads},
+        )
+        local_lad_names = [r["lad_name"] for r in lad_name_res.mappings().all()]
+
+        # For single-LAD searches, use the MV entry keyed by lad_name.
+        # For multi-LAD (county) searches, aggregate across all matching LAD entries.
+        local_res = await db.execute(
+            text("""
+                SELECT year::text AS year,
+                       ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       SUM(transactions) AS transactions
+                FROM mv_parent_yearly_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type = 'ALL'
+                GROUP BY year
+                ORDER BY year
+            """),
+            {"names": local_lad_names},
+        )
+        local_rows = [dict(r) for r in local_res.mappings().all()]
+
+        # Local PPSF from the dedicated MV
+        local_ppsf_res = await db.execute(
+            text("""
+                SELECT year::text AS yr, ROUND(AVG(avg_ppsf))::int AS avg_ppsf
+                FROM mv_parent_yearly_ppsf
+                WHERE parent_comparison = ANY(:names)
+                GROUP BY year ORDER BY year
+            """),
+            {"names": local_lad_names},
+        )
+        local_ppsf_by_year = {str(r["yr"]): int(r["avg_ppsf"]) for r in local_ppsf_res.mappings().all() if r["avg_ppsf"]}
+        for row in local_rows:
+            yr = str(row["year"]).strip()[:4]
+            row["avg_ppsf"] = local_ppsf_by_year.get(yr)
     else:
         lsoa_codes = sess["lsoa_codes"]
         _area_filter = "lsoa_code = ANY(:codes)"
         _local_params = {"codes": lsoa_codes, "price_types": list(PRICE_TYPES)}
 
-    # True avg + true median from raw transaction prices (not pre-aggregated columns)
-    local_res = await db.execute(
-        text(f"""
-            SELECT date_trunc('year', date_of_transfer)::date AS year,
-                   ROUND(AVG(price))::int AS avg_price,
-                   ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
-                   COUNT(*) AS transactions,
-                   ROUND(AVG(price::numeric / NULLIF(floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf
-            FROM core_property_transactions
-            WHERE {_area_filter}
-              AND property_type = ANY(:price_types)
-            GROUP BY 1 ORDER BY 1
-        """),
-        _local_params,
-    )
-    local_rows = [dict(r) for r in local_res.mappings().all()]
+        # True avg + true median from raw transaction prices (small area, fast)
+        local_res = await db.execute(
+            text(f"""
+                SELECT date_trunc('year', date_of_transfer)::date AS year,
+                       ROUND(AVG(price))::int AS avg_price,
+                       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
+                       COUNT(*) AS transactions,
+                       ROUND(AVG(price::numeric / NULLIF(floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf
+                FROM core_property_transactions
+                WHERE {_area_filter}
+                  AND property_type = ANY(:price_types)
+                GROUP BY 1 ORDER BY 1
+            """),
+            _local_params,
+        )
+        local_rows = [dict(r) for r in local_res.mappings().all()]
 
     # Regional — parent comparison line from pre-computed MVs.
     # MVs now include per-LAD entries (lad_name as parent_comparison) in addition
@@ -158,34 +197,108 @@ async def get_price_by_type(
     sess = await require_session(session_key)
     boundary_source = sess.get("boundary_source", "lad")
 
+    _TYPE_NAMES = {"D": "Detached", "S": "Semi-Detached", "T": "Terraced", "F": "Flat"}
+    parent_lad_codes = sess.get("parent_lad_codes", [])
+    parent_name = sess.get("parent_name", "England")
+
     if boundary_source in ("lad", "county"):
         local_lads = sess.get("local_lads", [])
-        _area_filter = "lad_code = ANY(:lads)"
-        _local_params = {"lads": local_lads, "price_types": list(PRICE_TYPES)}
+        # Look up LAD display name(s) for MV lookup
+        lad_name_res = await db.execute(
+            text("SELECT DISTINCT lad_name FROM core_lad_county_lookup WHERE lad_code = ANY(:lads)"),
+            {"lads": local_lads},
+        )
+        local_lad_names = [r["lad_name"] for r in lad_name_res.mappings().all()]
+
+        # Yearly by type from MV (fast — per-LAD entries exist)
+        res = await db.execute(
+            text("""
+                SELECT year::text AS year,
+                       property_type,
+                       ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       SUM(transactions) AS transactions
+                FROM mv_parent_yearly_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type != 'ALL'
+                GROUP BY year, property_type
+                ORDER BY year, property_type
+            """),
+            {"names": local_lad_names},
+        )
+        rows = [dict(r) for r in res.mappings().all()]
+        for row in rows:
+            row["year"] = str(row["year"]).strip()[:4]
+
+        # Rolling 12m from MV
+        rolling_res = await db.execute(
+            text("""
+                SELECT property_type, avg_price, median_price, transactions
+                FROM mv_parent_rolling_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type != 'ALL'
+            """),
+            {"names": local_lad_names},
+        )
+        rolling_by_type: dict = {}
+        for r in rolling_res.mappings().all():
+            pt = r["property_type"].strip()
+            label = _TYPE_NAMES.get(pt, pt)
+            rolling_by_type[label] = {
+                "year": "Last 12m",
+                "avg_price": r["avg_price"],
+                "median_price": r["median_price"],
+                "transactions": r["transactions"],
+            }
     else:
         lsoa_codes = sess["lsoa_codes"]
         _area_filter = "lsoa_code = ANY(:codes)"
         _local_params = {"codes": lsoa_codes, "price_types": list(PRICE_TYPES)}
 
-    res = await db.execute(
-        text(f"""
-            SELECT date_trunc('year', date_of_transfer)::date AS year,
-                   property_type,
-                   ROUND(AVG(price))::int AS avg_price,
-                   ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
-                   COUNT(*) AS transactions
-            FROM core_property_transactions
-            WHERE {_area_filter}
-              AND property_type = ANY(:price_types)
-            GROUP BY 1, 2 ORDER BY 1, 2
-        """),
-        _local_params,
-    )
-    rows = [dict(r) for r in res.mappings().all()]
-    for row in rows:
-        row["year"] = str(row["year"].year) if hasattr(row["year"], "year") else str(row["year"])[:4]
+        res = await db.execute(
+            text(f"""
+                SELECT date_trunc('year', date_of_transfer)::date AS year,
+                       property_type,
+                       ROUND(AVG(price))::int AS avg_price,
+                       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
+                       COUNT(*) AS transactions
+                FROM core_property_transactions
+                WHERE {_area_filter}
+                  AND property_type = ANY(:price_types)
+                GROUP BY 1, 2 ORDER BY 1, 2
+            """),
+            _local_params,
+        )
+        rows = [dict(r) for r in res.mappings().all()]
+        for row in rows:
+            row["year"] = str(row["year"].year) if hasattr(row["year"], "year") else str(row["year"])[:4]
 
-    _TYPE_NAMES = {"D": "Detached", "S": "Semi-Detached", "T": "Terraced", "F": "Flat"}
+        # Rolling 12m from raw transactions (small area, fast)
+        rolling_raw_res = await db.execute(
+            text(f"""
+                SELECT property_type,
+                       ROUND(AVG(price))::int AS avg_price,
+                       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
+                       COUNT(*) AS transactions
+                FROM core_property_transactions
+                WHERE {_area_filter}
+                  AND property_type = ANY(:price_types)
+                  AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
+                GROUP BY property_type
+            """),
+            _local_params,
+        )
+        rolling_by_type = {}
+        for r in rolling_raw_res.mappings().all():
+            pt = r["property_type"].strip()
+            label = _TYPE_NAMES.get(pt, pt)
+            rolling_by_type[label] = {
+                "year": "Last 12m",
+                "avg_price": r["avg_price"],
+                "median_price": r["median_price"],
+                "transactions": r["transactions"],
+            }
+
     by_type: dict = {}
     for row in rows:
         pt = row["property_type"].strip()
@@ -198,10 +311,13 @@ async def get_price_by_type(
             "median_price": row["median_price"],
             "transactions": row["transactions"],
         })
+    # Append rolling 12m
+    for label, rolling_point in rolling_by_type.items():
+        if label not in by_type:
+            by_type[label] = []
+        by_type[label].append(rolling_point)
 
     # Parent by type — from MVs (now include per-LAD entries)
-    parent_lad_codes = sess.get("parent_lad_codes", [])
-    parent_name = sess.get("parent_name", "England")
     parent_res = await db.execute(
         text("""
             SELECT year::text AS year,
@@ -230,34 +346,6 @@ async def get_price_by_type(
             "median_price": row["median_price"],
             "transactions": row["transactions"],
         })
-
-    # Rolling 12-month point appended as "Last 12m" to align chart with Q1 details bar chart.
-    # Q1 (avg_price) details use rolling 12m; without this the chart's partial current-year
-    # bucket showed a different number for the same type on the same page.
-    rolling_res = await db.execute(
-        text(f"""
-            SELECT property_type,
-                   ROUND(AVG(price))::int AS avg_price,
-                   ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
-                   COUNT(*) AS transactions
-            FROM core_property_transactions
-            WHERE {_area_filter}
-              AND property_type = ANY(:price_types)
-              AND date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-            GROUP BY property_type
-        """),
-        _local_params,
-    )
-    for r in rolling_res.mappings().all():
-        pt = r["property_type"].strip()
-        label = _TYPE_NAMES.get(pt, pt)
-        if label in by_type:
-            by_type[label].append({
-                "year": "Last 12m",
-                "avg_price": r["avg_price"],
-                "median_price": r["median_price"],
-                "transactions": r["transactions"],
-            })
 
     if parent_lad_codes:
         parent_rolling_res = await db.execute(
@@ -300,18 +388,17 @@ async def get_price_by_type(
             """),
             {"lads": local_lads, "price_types": list(PRICE_TYPES)},
         )
+        # Rolling PPSF from MV (fast, avoids scanning raw transactions)
         ppsf_rolling_res = await db.execute(
             text("""
-                SELECT t.property_type,
-                       ROUND(AVG(t.price::numeric / (t.floor_area_sqm::numeric * 10.7639)), 2) AS avg_ppsf
-                FROM core_property_transactions t
-                WHERE t.lad_code = ANY(:lads)
-                  AND t.floor_area_sqm > 0
-                  AND t.property_type = ANY(:price_types)
-                  AND t.date_of_transfer >= CURRENT_DATE - INTERVAL '13 months'
-                GROUP BY 1
+                SELECT property_type,
+                       ROUND(avg_ppsf::numeric, 2) AS avg_ppsf
+                FROM mv_parent_rolling_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type <> 'ALL'
+                  AND avg_ppsf IS NOT NULL
             """),
-            {"lads": local_lads, "price_types": list(PRICE_TYPES)},
+            {"names": local_lad_names},
         )
     else:
         ppsf_res = await db.execute(
