@@ -577,7 +577,7 @@ async def make_lsoa_session(
 
     # Compute parent comparison info once (eliminates 5 redundant DB queries per page load)
     primary_lad = lad_code if lad_code and lad_code != "_" else (local_lads[0] if local_lads else "_")
-    parent_lad_codes, parent_name = await get_parent_lad_info(db, primary_lad)
+    parent_lad_codes, parent_name = await get_parent_lad_info(db, primary_lad, entity_type=entity_type)
 
     # County self-comparison fix: when the search IS a county, get_parent_lad_info
     # returns the same county's LADs (county compares to itself → ratio ~1.0x).
@@ -683,8 +683,18 @@ async def get_lsoa_session(session_key: str) -> dict | None:
     return data
 
 
-async def get_parent_lad_info(db, lad_code: str):
-    """Get all LAD codes sharing the same parent_comparison, plus the parent name.
+async def get_parent_lad_info(db, lad_code: str, *, entity_type: str | None = None):
+    """Get parent LAD codes and name for comparison, aware of search granularity.
+
+    When entity_type is a sub-LAD search (postcode, postcode_district, ward, or
+    place), the parent is the LAD itself — the user searched within a LAD and wants
+    to compare their specific area against the wider local authority.
+
+    When entity_type is LAD-level or above (lad, county, None), the parent comes
+    from the county-level peer group via the parent_comparison self-join.
+
+    For singleton ceremonial counties (only 1 LAD in the group), escalates to
+    the full region so the comparison is meaningful.
 
     Returns (parent_lad_codes, parent_name).
     """
@@ -692,6 +702,20 @@ async def get_parent_lad_info(db, lad_code: str):
     if not lad_code or lad_code == "_":
         fallback_country, _ = infer_country_from_geo_codes(lad_code, fallback="England")
         return [], fallback_country
+
+    # Sub-LAD searches: parent is the LAD itself
+    _SUB_LAD_TYPES = {"postcode", "postcode_district", "ward", "place"}
+    if entity_type in _SUB_LAD_TYPES:
+        # Look up the LAD name for display
+        name_result = await db.execute(
+            text("SELECT lad_name FROM core_lad_county_lookup WHERE lad_code = :lad"),
+            {"lad": lad_code},
+        )
+        name_row = name_result.mappings().first()
+        if name_row:
+            return [lad_code], name_row["lad_name"]
+
+    # LAD-level or above: use county peer group via parent_comparison
     result = await db.execute(
         text("""
             SELECT l2.lad_code, l1.parent_comparison
@@ -707,4 +731,37 @@ async def get_parent_lad_info(db, lad_code: str):
         return [], fallback_country
     parent_name = rows[0]["parent_comparison"]
     parent_lad_codes = [r["lad_code"] for r in rows]
+
+    # Singleton escalation: if only 1 LAD matched (the LAD is alone in its
+    # ceremonial county, e.g. Northumberland, Bristol, Powys), escalate to
+    # the full region so comparison is meaningful.
+    if len(parent_lad_codes) <= 1:
+        region_result = await db.execute(
+            text("""
+                SELECT lad_code, region_name
+                FROM core_lad_county_lookup
+                WHERE region_name = (
+                    SELECT region_name FROM core_lad_county_lookup WHERE lad_code = :lad
+                )
+                AND region_name IS NOT NULL
+            """),
+            {"lad": lad_code},
+        )
+        region_rows = region_result.mappings().all()
+        if len(region_rows) > 1:
+            parent_lad_codes = [r["lad_code"] for r in region_rows]
+            parent_name = region_rows[0]["region_name"]
+        else:
+            # Wales (no region_name) or other countries: fall back to all LADs
+            # sharing the same country prefix (e.g. all W06 = "Wales").
+            country_prefix = lad_code[:1] if lad_code else "E"
+            country_result = await db.execute(
+                text("SELECT lad_code FROM core_lad_county_lookup WHERE lad_code LIKE :prefix"),
+                {"prefix": f"{country_prefix}%"},
+            )
+            country_rows = country_result.mappings().all()
+            if len(country_rows) > 1:
+                parent_lad_codes = [r["lad_code"] for r in country_rows]
+                parent_name = {"E": "England", "W": "Wales", "S": "Scotland"}.get(country_prefix, "England")
+
     return parent_lad_codes, parent_name

@@ -109,8 +109,12 @@ async def resolve(
         if cached.get("session_key") and cached.get("resolved_codes"):
             codes = cached["resolved_codes"]
             _, _, session = await _build_and_store_session(db, cached, codes)  # TTL refresh only
-            if session and session.get("geo") and not cached.get("geo"):
-                cached = {**cached, "geo": session["geo"]}
+            if session:
+                if session.get("geo") and not cached.get("geo"):
+                    cached = {**cached, "geo": session["geo"]}
+                # Keep parent label in sync with session's parent_name
+                if session.get("parent_name") and codes.get("parent") != session["parent_name"]:
+                    cached = {**cached, "resolved_codes": {**codes, "parent": session["parent_name"]}}
         if not cached.get("coverage"):
             cached = {**cached, "coverage": _coverage_metadata()}
         return cached
@@ -121,8 +125,15 @@ async def resolve(
     if result.get("resolved_codes"):
         session_key, lsoa_codes, session = await _build_and_store_session(db, result, result["resolved_codes"])
         lsoa_count = len(lsoa_codes)
+        # Override resolved_codes.parent with the session's parent_name so the
+        # frontend displays the same parent label that the data queries use.
+        # This ensures sub-LAD searches show "vs Reading" (LAD) not "vs Berkshire".
+        codes_override = result["resolved_codes"]
+        if session and session.get("parent_name"):
+            codes_override = {**codes_override, "parent": session["parent_name"]}
         result = {
             **result,
+            "resolved_codes": codes_override,
             "session_key": session_key,
             "lsoa_count": lsoa_count,
             "lsoa_codes": lsoa_codes if lsoa_count <= 8 else [],

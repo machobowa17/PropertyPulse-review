@@ -4,8 +4,9 @@ sources/lad_county_lookup.py — LAD → county/region parent mapping → core_l
 Implements Build Bible Rule 3:
     London borough   → parent_comparison = 'Greater London'
     Metropolitan district → parent_comparison = metropolitan county name
-    Unitary authority (no separate county) → parent_comparison = region name
     District (has county) → parent_comparison = county name
+    Unitary authority (E06/W06) → parent_comparison = ceremonial/preserved county name
+        (joins the same-named county group as E07 districts where one exists)
 
 Standard interface:
     METADATA  dict
@@ -14,6 +15,7 @@ Standard interface:
 Data files required in etl/data/ (or set LAD_CTYUA_PATH env var):
     lad_to_ctyua_2025.csv        — LAD code, LAD name, county/unitary authority code/name
     metro_county_lookup.csv      — E08 metro district → E11 metro county mapping
+    ceremonial_county_lookup.csv — E06/W06 UA → ceremonial/preserved county name
     Download from ONS Open Geography Portal.
 """
 
@@ -66,6 +68,24 @@ _COUNTRIES_WITH_REGIONS = set(countries_with_regions())
 _ETL_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 
 
+def _load_ceremonial_county_map() -> dict[str, str]:
+    """Load E06/W06 UA → ceremonial/preserved county name from CSV data file.
+
+    Unitary authorities have no administrative county above them, so the old
+    logic fell through to region name (e.g. Reading → 'South East').  This
+    maps each UA to its ceremonial county (England) or preserved county (Wales)
+    so the parent_comparison joins the correct county-level peer group.
+    """
+    csv_path = os.path.join(_ETL_DATA_DIR, "ceremonial_county_lookup.csv")
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(
+            f"Ceremonial county lookup not found at {csv_path}. "
+            "Place ceremonial_county_lookup.csv in etl/data/."
+        )
+    df = pd.read_csv(csv_path, dtype=str)
+    return {row["lad_code"]: row["ceremonial_county"] for _, row in df.iterrows()}
+
+
 def _load_metro_county_map() -> dict[str, tuple[str, str]]:
     """Load E08 metro district → E11 metro county mapping from CSV data file.
 
@@ -115,6 +135,9 @@ def run(db_url: str) -> int:
 
     metro_county_map = _load_metro_county_map()
     print(f"  Metro county lookup: {len(metro_county_map)} E08 districts → 6 metro counties", flush=True)
+
+    ceremonial_county_map = _load_ceremonial_county_map()
+    print(f"  Ceremonial county lookup: {len(ceremonial_county_map)} E06/W06 UAs → ceremonial/preserved counties", flush=True)
 
     conn = psycopg2.connect(db_url)
     conn.autocommit = False
@@ -175,10 +198,14 @@ def run(db_url: str) -> int:
         is_metro  = lad_code.startswith(_METROPOLITAN_PREFIX)
 
         # Determine parent_comparison per federated geography rules.
+        # Priority: London → metro/admin county → ceremonial/preserved county → region → country default.
+        ceremonial = ceremonial_county_map.get(lad_code)
         if is_london:
             parent_comparison = "Greater London"
         elif county_name:
             parent_comparison = county_name
+        elif ceremonial:
+            parent_comparison = ceremonial
         elif region_name:
             parent_comparison = region_name
         else:
