@@ -39,6 +39,7 @@ interface Props {
   formSemiPct?: number | null;
   formTerracePct?: number | null;
   formEndTerracePct?: number | null;
+  enhanced?: boolean;
 }
 
 const HEAT_ITEMS = [
@@ -87,6 +88,7 @@ export default function BuildingProfileChart({
   roofGoodPct, roofVpoorPct,
   glazeSinglePct, glazeDoublePct, glazeTriplePct, avgMultiGlazePct,
   formDetachedPct, formSemiPct, formTerracePct, formEndTerracePct,
+  enhanced,
 }: Props) {
   const heatMap: Record<string, number | null | undefined> = {
     gas: heatGasPct, electric: heatElectricPct, oil: heatOilPct,
@@ -259,7 +261,12 @@ export default function BuildingProfileChart({
                   <div className="h-3 rounded-full overflow-hidden flex bg-divider">
                     <div
                       className="h-full rounded-full"
-                      style={{ width: `${good}%`, backgroundColor: colour, opacity: 0.8 }}
+                      style={{
+                        width: `${good}%`,
+                        backgroundColor: colour,
+                        opacity: 0.8,
+                        animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+                      }}
                     />
                   </div>
                 </div>
@@ -308,7 +315,12 @@ export default function BuildingProfileChart({
                   <div className="flex-1 relative h-5 bg-divider rounded-full overflow-hidden">
                     <div
                       className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${maxAge > 0 ? (pct / maxAge) * 100 : 0}%`, backgroundColor: colour, opacity: 0.85 }}
+                      style={{
+                        width: `${maxAge > 0 ? (pct / maxAge) * 100 : 0}%`,
+                        backgroundColor: colour,
+                        opacity: 0.85,
+                        animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+                      }}
                     />
                   </div>
                   <div className="w-12 text-right text-xs font-medium text-ink tabular-nums shrink-0">

@@ -10,6 +10,7 @@ interface Props {
   metrics: Metric[];
   persona: PersonaId;
   parentName: string;
+  enhanced?: boolean;
 }
 
 function comparisonLabel(m: Metric, parentName: string): { text: string; className: string } | null {
@@ -32,7 +33,7 @@ function comparisonLabel(m: Metric, parentName: string): { text: string; classNa
   };
 }
 
-export default function TabHighlightStrip({ metrics, persona, parentName }: Props) {
+export default function TabHighlightStrip({ metrics, persona, parentName, enhanced }: Props) {
   const withValue = metrics.filter(m => m.local_value != null);
   if (withValue.length === 0) return null;
 
@@ -47,12 +48,17 @@ export default function TabHighlightStrip({ metrics, persona, parentName }: Prop
 
   return (
     <div className="grid grid-cols-3 gap-2">
-      {highlights.map(m => {
+      {highlights.map((m, i) => {
         const comp = comparisonLabel(m, parentName);
+        const localNum = typeof m.local_value === 'number' ? m.local_value : null;
+        const parentNum = typeof m.parent_value === 'number' ? m.parent_value : null;
+        const showMiniBar = enhanced && localNum != null && parentNum != null && localNum > 0;
+        const barMax = showMiniBar ? Math.max(localNum, parentNum) * 1.2 : 1;
         return (
           <div
             key={m.id}
             className="rounded-xl bg-white border border-divider px-3 py-2.5 shadow-sm"
+            style={enhanced ? { animation: `enhanced-fade-in 0.4s ease-out ${i * 80}ms both` } : undefined}
           >
             <div className="text-[10px] uppercase tracking-wider text-ink-faint font-medium truncate">
               {m.registry?.short_label || m.name}
@@ -63,6 +69,18 @@ export default function TabHighlightStrip({ metrics, persona, parentName }: Prop
             {comp && (
               <div className={`text-[10px] font-medium mt-0.5 ${comp.className}`}>
                 {comp.text}
+              </div>
+            )}
+            {showMiniBar && (
+              <div className="relative mt-1.5 h-1 rounded-full bg-ink-faint/15 overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-brand-500/60"
+                  style={{ width: `${(localNum / barMax) * 100}%`, animation: 'enhanced-bar-fill 0.7s ease-out both' }}
+                />
+                <div
+                  className="absolute top-[-1px] w-0.5 h-[calc(100%+2px)] bg-amber-500 rounded-full"
+                  style={{ left: `${(parentNum / barMax) * 100}%` }}
+                />
               </div>
             )}
           </div>

@@ -39,6 +39,7 @@ function pctChangeLabel(currentPrice: number, previousPrice: number): { text: st
 
 interface Props {
   sessionKey: string;
+  enhanced?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -270,7 +271,7 @@ function EpcDetailPanel({ transactionId, sessionKey }: { transactionId: string; 
 /* Main TransactionTable component                                     */
 /* ------------------------------------------------------------------ */
 
-export default function TransactionTable({ sessionKey }: Props) {
+export default function TransactionTable({ sessionKey, enhanced }: Props) {
   const [searchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
   const queryClient = useQueryClient();
@@ -481,7 +482,7 @@ export default function TransactionTable({ sessionKey }: Props) {
                 return (
                   <Fragment key={txn.transaction_id || i}>
                     <tr
-                      className={`${isFetching ? 'opacity-60' : ''} ${i % 2 === 0 ? 'bg-white' : 'bg-surface-warm/20'} hover:bg-brand-50/30 transition-colors cursor-pointer`}
+                      className={`${isFetching ? 'opacity-60' : ''} ${i % 2 === 0 ? 'bg-white' : enhanced ? 'bg-surface-warm/40' : 'bg-surface-warm/20'} hover:bg-brand-50/30 transition-colors cursor-pointer`}
                       onClick={() => toggleExpand(txn.transaction_id, txn)}
                     >
                       {/* Expand +/− indicator */}

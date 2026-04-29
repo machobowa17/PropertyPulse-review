@@ -11,6 +11,7 @@ interface Props {
   yield2bed?: number | null;
   yield3bed?: number | null;
   yield4bed?: number | null;
+  enhanced?: boolean;
 }
 
 const BEDS = [
@@ -34,6 +35,7 @@ function fmtRent(v: number) {
 export default function RentByBedroomChart({
   rent1bed, rent2bed, rent3bed, rent4bed,
   yield1bed, yield2bed, yield3bed, yield4bed,
+  enhanced,
 }: Props) {
   const rentVals = { rent1bed, rent2bed, rent3bed, rent4bed };
   const yieldVals = { yield1bed, yield2bed, yield3bed, yield4bed };
@@ -80,7 +82,11 @@ export default function RentByBedroomChart({
                 <div className="h-2 rounded-full bg-divider overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
-                    style={{ width: `${barPct}%`, backgroundColor: colour }}
+                    style={{
+                      width: `${barPct}%`,
+                      backgroundColor: colour,
+                      animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+                    }}
                   />
                 </div>
               </div>

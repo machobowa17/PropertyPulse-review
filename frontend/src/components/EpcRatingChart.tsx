@@ -8,6 +8,7 @@ interface Props {
   parentRatings?: { ab?: number | null; c?: number | null; d?: number | null; eg?: number | null } | null;
   cPlusPct?: number | null;
   parentCPlusPct?: number | null;
+  enhanced?: boolean;
 }
 
 // Classic UK EPC colour bands
@@ -34,6 +35,7 @@ export default function EpcRatingChart({
   avgScore, parentAvgScore,
   parentRatings,
   cPlusPct, parentCPlusPct,
+  enhanced,
 }: Props) {
   const bands: { label: string; local: number; parent: number | null; colour: string; range: string }[] = BANDS.map(b => ({
     label: b.label,
@@ -85,7 +87,7 @@ export default function EpcRatingChart({
         <div>
           <h4 className="text-xs font-semibold text-ink-muted mb-2">EPC Rating Distribution</h4>
           <div className="space-y-1.5">
-            {bands.map(({ label, local, parent, colour, range }) => (
+            {bands.map(({ label, local, parent, colour, range }, idx) => (
               <div key={label} className="flex items-center gap-2">
                 {/* Arrow-style band label */}
                 <div className="flex items-center shrink-0" style={{ width: 70 }}>
@@ -109,7 +111,12 @@ export default function EpcRatingChart({
                 <div className="flex-1 relative h-5 bg-divider rounded-full overflow-hidden">
                   <div
                     className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(local, 100)}%`, backgroundColor: colour, opacity: 0.85 }}
+                    style={{
+                      width: `${Math.min(local, 100)}%`,
+                      backgroundColor: colour,
+                      opacity: 0.85,
+                      animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 100}ms both` : undefined,
+                    }}
                   />
                   {parent != null && parent > 0 && (
                     <div

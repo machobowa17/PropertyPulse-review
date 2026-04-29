@@ -3,6 +3,7 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -22,6 +23,7 @@ interface HpiPoint {
 
 interface Props {
   series: HpiPoint[];
+  enhanced?: boolean;
 }
 
 type ViewMode = 'price' | 'yoy';
@@ -113,9 +115,10 @@ function computeYoy(series: HpiPoint[]): Record<string, number | null>[] {
   return result.slice(1);
 }
 
-export default function HpiTrendChart({ series }: Props) {
+export default function HpiTrendChart({ series, enhanced }: Props) {
   const [mode, setMode] = useState<ViewMode>('price');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['avg_price']));
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   const toggleType = (key: string) => {
     setActiveTypes((prev) => {
@@ -236,7 +239,29 @@ export default function HpiTrendChart({ series }: Props) {
       {/* Chart */}
       <div className="h-[220px]" role="img" aria-label="Line chart showing house price index trend">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-          <LineChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+          <LineChart
+            data={chartData}
+            margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+            onMouseMove={(e: { activeTooltipIndex?: number }) => {
+              if (!enhanced) return;
+              // Track which series is being hovered for dimming
+            }}
+            onMouseLeave={() => enhanced && setHoveredKey(null)}
+          >
+            {enhanced && (
+              <defs>
+                <linearGradient id="hpi-grad-avg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#374151" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="#374151" stopOpacity={0} />
+                </linearGradient>
+                {TYPE_LINES.map(({ key, colour }) => (
+                  <linearGradient key={`hpi-grad-${key}`} id={`hpi-grad-${key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={colour} stopOpacity={0.15} />
+                    <stop offset="100%" stopColor={colour} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+            )}
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="year" tick={{ fontSize: 11 }} />
             <YAxis
@@ -251,6 +276,14 @@ export default function HpiTrendChart({ series }: Props) {
             {mode === 'yoy' && stableScale.min < 0 && stableScale.max > 0 && (
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
+            {enhanced && mode === 'price' && activeTypes.has('avg_price') && (
+              <Area type="monotone" dataKey="avg_price" stroke="none" fill="url(#hpi-grad-avg)" fillOpacity={1} connectNulls isAnimationActive animationDuration={700} animationEasing="ease-out" />
+            )}
+            {enhanced && mode === 'price' && TYPE_LINES.map(({ key }) =>
+              activeTypes.has(key) ? (
+                <Area key={`area-${key}`} type="monotone" dataKey={key} stroke="none" fill={`url(#hpi-grad-${key})`} fillOpacity={1} connectNulls isAnimationActive animationDuration={700} animationEasing="ease-out" />
+              ) : null,
+            )}
             {activeTypes.has('avg_price') && (
               <Line
                 dataKey="avg_price"
@@ -260,6 +293,9 @@ export default function HpiTrendChart({ series }: Props) {
                 dot={{ r: 2.5 }}
                 activeDot={{ r: 4 }}
                 connectNulls
+                isAnimationActive={enhanced}
+                animationDuration={enhanced ? 700 : 0}
+                animationEasing="ease-out"
               />
             )}
             {TYPE_LINES.map(({ key, label, colour }) =>
@@ -273,6 +309,9 @@ export default function HpiTrendChart({ series }: Props) {
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
                   connectNulls
+                  isAnimationActive={enhanced}
+                  animationDuration={enhanced ? 700 : 0}
+                  animationEasing="ease-out"
                 />
               ) : null,
             )}

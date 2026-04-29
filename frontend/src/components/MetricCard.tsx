@@ -137,6 +137,7 @@ interface Props {
   sessionKey?: string;
   isMapActive?: boolean;
   modeMultiplier?: number;
+  enhanced?: boolean;
 }
 
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
@@ -179,7 +180,7 @@ function comparisonColor(
   return 'neutral';
 }
 
-export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey, isMapActive, modeMultiplier }: Props) {
+export default function MetricCard({ metric, persona, parentName, priceByTypeData, priceHistoryData, areaName, sessionKey, isMapActive, modeMultiplier, enhanced }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
@@ -244,7 +245,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full flex items-center gap-4 px-5 py-3.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl hover:bg-surface-warm/50 transition-colors ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-4 px-5 py-3.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-2xl hover:bg-surface-warm/50 transition-colors ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {/* Metric name + decision question */}
         <div className="flex-1 min-w-0">
@@ -330,7 +331,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           {detailsReady && <Suspense fallback={null}>
             <div className="px-4 lg:px-5 pb-4 pt-3 border-t border-divider/50 bg-surface-warm/30">
               {/* Priority 1: Redesigned detail renderers (prototype-approved) */}
-              {REDESIGNED_METRIC_IDS.has(metric.id) && renderRedesignedDetail(metric)}
+              {REDESIGNED_METRIC_IDS.has(metric.id) && renderRedesignedDetail(metric, enhanced)}
               {/* Priority 2: Price charts for price metrics */}
               {!REDESIGNED_METRIC_IDS.has(metric.id) && priceByTypeData && Object.keys(priceByTypeData.by_type).length > 0 && (
                 <DistrictPriceHistoryChart
@@ -341,6 +342,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   areaName={areaName}
                   priceField={metric.id === 'median_price' ? 'median_price' : metric.id === 'price_per_sqft' ? 'avg_ppsf' : 'avg_price'}
                   byBedrooms={priceHistoryData?.by_bedrooms}
+                  enhanced={enhanced}
                 />
               )}
               {/* Priority 3: Existing detail renderers (SchoolTable, StationTable, etc.) */}
@@ -349,11 +351,12 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                   details={metric.details ?? {}}
                   unit={metric.unit}
                   parentName={parentName}
+                  enhanced={enhanced}
                 />
               )}
               {metric.id === 'transaction_volume' && sessionKey && expanded && (
                 <Suspense fallback={null}>
-                  <TransactionTable sessionKey={sessionKey} />
+                  <TransactionTable sessionKey={sessionKey} enhanced={enhanced} />
                 </Suspense>
               )}
               {/* Quality flags (deduplicated against data notes) */}
@@ -414,8 +417,8 @@ function DataNotes({ details }: { details: Record<string, unknown> }) {
 }
 
 /** Render details object as sub-rows or list, always appending data notes */
-function DetailsRenderer({ details, unit, parentName }: { details: Record<string, unknown>; unit: string; parentName: string }) {
-  const content = renderDetailsContent(details, unit, parentName);
+function DetailsRenderer({ details, unit, parentName, enhanced }: { details: Record<string, unknown>; unit: string; parentName: string; enhanced?: boolean }) {
+  const content = renderDetailsContent(details, unit, parentName, enhanced);
   const notes = <DataNotes details={details} />;
   // If only notes and no content, still show notes
   if (!content) return notes;
@@ -485,7 +488,7 @@ function NhsFacilitiesDetail({ details }: { details: Record<string, unknown> }) 
   );
 }
 
-function renderDetailsContent(details: Record<string, unknown>, unit: string, parentName: string): React.ReactNode {
+function renderDetailsContent(details: Record<string, unknown>, unit: string, parentName: string, enhanced?: boolean): React.ReactNode {
   if (Array.isArray(details.schools)) {
     // Use SchoolTable when all_schools array is available (from Hetzner School API)
     const allSchools = arr(details, 'all_schools') as unknown as SchoolRow[];
@@ -682,6 +685,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         crime={num(details, 'crime')}
         barriers={num(details, 'barriers')}
         livingEnvironment={num(details, 'living_environment')}
+        enhanced={enhanced}
       />
     );
   }
@@ -739,7 +743,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
 
   // HPI trend chart (price_trend_yoy)
   if (Array.isArray(details.hpi_series) && details.hpi_series.length > 0) {
-    return <HpiTrendChart series={details.hpi_series as Array<{ year: number; avg_price: number | null; yoy_pct: number | null; detached: number | null; semi: number | null; terraced: number | null; flat: number | null }>} />;
+    return <HpiTrendChart series={details.hpi_series as Array<{ year: number; avg_price: number | null; yoy_pct: number | null; detached: number | null; semi: number | null; terraced: number | null; flat: number | null }>} enhanced={enhanced} />;
   }
 
   // Price by property type chart
@@ -752,6 +756,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         flat={num(details, 'flat')}
         ukMedian={num(details, 'uk_median')}
         parentMedian={num(details, 'parent_median')}
+        enhanced={enhanced}
       />
     );
   }
@@ -769,6 +774,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         parentRatings={rec<Record<string, number | null>>(details, 'parent_ratings')}
         cPlusPct={num(details, 'c_plus_pct')}
         parentCPlusPct={num(details, 'parent_c_plus_pct')}
+        enhanced={enhanced}
       />
     );
   }
@@ -813,6 +819,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         formSemiPct={num(details, 'form_semi_pct')}
         formTerracePct={num(details, 'form_terrace_pct')}
         formEndTerracePct={num(details, 'form_end_terrace_pct')}
+        enhanced={enhanced}
       />
     );
   }
@@ -832,6 +839,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         yield2bed={isRentCard ? num(details, 'yield_2bed') : num(details, '2bed')}
         yield3bed={isRentCard ? num(details, 'yield_3bed') : num(details, '3bed')}
         yield4bed={isRentCard ? num(details, 'yield_4bed') : num(details, '4bed')}
+        enhanced={enhanced}
       />
     );
   }
@@ -858,7 +866,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
       parent_g: num(details, 'parent_g'),
       parent_h: num(details, 'parent_h'),
     };
-    return <CouncilTaxBandGrid bands={bands} parents={parents} />;
+    return <CouncilTaxBandGrid bands={bands} parents={parents} enhanced={enhanced} />;
   }
 
   // Broadband panel: coverage bars (Ofcom Connected Nations data)
@@ -871,6 +879,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         parentFullFibrePct={num(details, 'parent_full_fibre_pct')}
         parentSuperfastPct={num(details, 'parent_superfast_pct')}
         parentGigabitPct={num(details, 'parent_gigabit_pct')}
+        enhanced={enhanced}
       />
     );
   }
@@ -881,6 +890,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
       <AmenityRadarChart
         counts={rec<Record<string, number>>(details, 'counts')!}
         nearest={Array.isArray(details.nearest) ? details.nearest as Array<{ type: string; name: string; distance_m?: number }> : undefined}
+        enhanced={enhanced}
       />
     );
   }
@@ -890,6 +900,7 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
     return (
       <NewBuildTrendChart
         trend={arr(details, 'nb_trend') as Array<{ year: number; new_builds: number; total: number; pct: number }>}
+        enhanced={enhanced}
       />
     );
   }
@@ -996,11 +1007,20 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
   const entries = Object.entries(details).filter(([k, v]) => v !== null && v !== undefined && !k.endsWith('_note') && k !== 'trend' && k !== 'detail_unit');
   if (entries.length === 0) return null;
 
+  // In enhanced mode, try to find parent_ prefixed values for comparison markers
+  const parentLookup = (key: string): number | null => {
+    const pKey = `parent_${key}`;
+    const pVal = details[pKey];
+    return typeof pVal === 'number' ? pVal : null;
+  };
+
   return (
     <div className="space-y-2 mt-2">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        {entries.map(([key, value]) => {
+        {entries.map(([key, value], idx) => {
           if (typeof value === 'object') return null;
+          // Skip parent_ keys if we're using them as comparison data
+          if (enhanced && key.startsWith('parent_')) return null;
           const label = key.replace(/_/g, ' ').replace(/pct /g, '% ').replace(/^(.)/, (c) => c.toUpperCase());
           const isGbp = unit === 'GBP' || unit === 'GBP/year' || unit === 'GBP/month';
           const isPct = detailUnit === '%' || String(key).includes('pct');
@@ -1014,10 +1034,36 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
             ? value ? 'Yes' : 'No'
             : String(value);
 
+          const numVal = typeof value === 'number' ? value : null;
+          const parentVal = parentLookup(key);
+          const showBar = enhanced && isPct && numVal != null && numVal >= 0 && numVal <= 100;
+
           return (
-            <div key={key} className="p-2.5 rounded-xl bg-surface">
+            <div
+              key={key}
+              className="p-2.5 rounded-xl bg-surface"
+              style={enhanced ? { animation: `enhanced-fade-in 0.4s ease-out ${idx * 50}ms both` } : undefined}
+            >
               <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">{label}</div>
               <div className="text-sm font-semibold text-ink mt-0.5">{display}</div>
+              {showBar && (
+                <div className="relative mt-1.5 h-1.5 rounded-full bg-ink-faint/15 overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-brand-500/70"
+                    style={{
+                      width: `${Math.min(numVal, 100)}%`,
+                      transition: enhanced ? 'width 0.7s ease-out' : undefined,
+                    }}
+                  />
+                  {parentVal != null && parentVal >= 0 && parentVal <= 100 && (
+                    <div
+                      className="absolute top-[-1px] w-0.5 h-[calc(100%+2px)] bg-amber-500 rounded-full"
+                      style={{ left: `${Math.min(parentVal, 100)}%` }}
+                      title={`Parent avg: ${parentVal.toFixed(1)}%`}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

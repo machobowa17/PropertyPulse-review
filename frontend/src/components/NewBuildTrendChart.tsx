@@ -9,9 +9,10 @@ interface TrendPoint {
 
 interface Props {
   trend: TrendPoint[];
+  enhanced?: boolean;
 }
 
-export default function NewBuildTrendChart({ trend }: Props) {
+export default function NewBuildTrendChart({ trend, enhanced }: Props) {
   if (!trend || trend.length === 0) return null;
 
   return (
@@ -50,7 +51,14 @@ export default function NewBuildTrendChart({ trend }: Props) {
               }}
               cursor={{ fill: 'rgba(0,0,0,0.04)' }}
             />
-            <Bar dataKey="pct" fill="#8b5cf6" radius={[2, 2, 0, 0]} />
+            <Bar
+              dataKey="pct"
+              fill="#8b5cf6"
+              radius={[2, 2, 0, 0]}
+              isAnimationActive={enhanced}
+              animationDuration={enhanced ? 700 : 0}
+              animationEasing="ease-out"
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -1,6 +1,7 @@
 interface Props {
   bands: Record<string, number | null>;   // band_a … band_i
   parents: Record<string, number | null>; // parent_a … parent_i
+  enhanced?: boolean;
 }
 
 const BANDS = [
@@ -20,7 +21,7 @@ function fmt(v: number | null | undefined): string {
   return '£' + Math.round(v).toLocaleString('en-GB');
 }
 
-export default function CouncilTaxBandGrid({ bands, parents }: Props) {
+export default function CouncilTaxBandGrid({ bands, parents, enhanced }: Props) {
   const visibleBands = BANDS.filter(({ key, parent }) => bands[key] != null || parents[parent] != null);
   const maxVal = Math.max(0, ...visibleBands.map((b) => bands[b.key] ?? 0));
 
@@ -55,7 +56,10 @@ export default function CouncilTaxBandGrid({ bands, parents }: Props) {
                 <div className="relative h-2 rounded-full bg-divider overflow-hidden">
                   <div
                     className="h-full rounded-full bg-brand-500 opacity-70"
-                    style={{ width: `${barPct}%` }}
+                    style={{
+                      width: `${barPct}%`,
+                      animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+                    }}
                   />
                   {parentVal != null && maxVal > 0 && (
                     <div

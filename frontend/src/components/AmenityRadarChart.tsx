@@ -31,9 +31,10 @@ function walkMinutes(distanceM: number): number {
 interface Props {
   counts: Record<string, number>;
   nearest?: Array<{ type: string; name: string; distance_m?: number }>;
+  enhanced?: boolean;
 }
 
-export default function AmenityRadarChart({ counts, nearest }: Props) {
+export default function AmenityRadarChart({ counts, nearest, enhanced }: Props) {
   const data = Object.entries(AMENITY_LABELS).map(([key, label]) => ({
     amenity: label,
     count: counts[key] || 0,
@@ -105,8 +106,11 @@ export default function AmenityRadarChart({ counts, nearest }: Props) {
               dataKey="count"
               stroke="#4f46e5"
               fill="#4f46e5"
-              fillOpacity={0.15}
+              fillOpacity={enhanced ? 0.2 : 0.15}
               strokeWidth={2}
+              isAnimationActive={enhanced}
+              animationDuration={enhanced ? 700 : 0}
+              animationEasing="ease-out"
             />
             <Tooltip
               contentStyle={{

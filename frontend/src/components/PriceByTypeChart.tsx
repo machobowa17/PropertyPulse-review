@@ -16,6 +16,7 @@ interface Props {
   flat?: number | null;
   ukMedian?: number | null;
   parentMedian?: number | null;
+  enhanced?: boolean;
 }
 
 const COLOURS: Record<string, string> = {
@@ -25,7 +26,7 @@ const COLOURS: Record<string, string> = {
   Flat: '#ea580c',
 };
 
-export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMedian, parentMedian }: Props) {
+export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMedian, parentMedian, enhanced }: Props) {
   const data = [
     { name: 'Detached', price: detached },
     { name: 'Semi-det.', price: semi },
@@ -93,7 +94,13 @@ export default function PriceByTypeChart({ detached, semi, terraced, flat, ukMed
                 }}
               />
             )}
-            <Bar dataKey="price" radius={[4, 4, 0, 0]}>
+            <Bar
+              dataKey="price"
+              radius={[4, 4, 0, 0]}
+              isAnimationActive={enhanced}
+              animationDuration={enhanced ? 700 : 0}
+              animationEasing="ease-out"
+            >
               {data.map((entry) => (
                 <Cell key={entry.name} fill={COLOURS[entry.name] ?? '#6b7280'} />
               ))}

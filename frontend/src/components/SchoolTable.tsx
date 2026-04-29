@@ -247,6 +247,7 @@ interface Props {
   schools: SchoolRow[];
   summary?: QualitySummary | null;
   isArea?: boolean;
+  enhanced?: boolean;
 }
 
 const PHASES = [

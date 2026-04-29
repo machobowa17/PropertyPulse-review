@@ -46,6 +46,7 @@ export function ResultsMetricsPanel() {
     setMetricElementRef,
     activeMapMetricId,
     isDesktop,
+    enhancedMode,
   } = useResults();
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -97,7 +98,7 @@ export function ResultsMetricsPanel() {
 
           {/* 10-metric snapshot grid (from Overview tab's own backend data) */}
           {tabData?.metrics && (
-            <OverviewSnapshotGrid metrics={tabData.metrics} parentName={parentName} />
+            <OverviewSnapshotGrid metrics={tabData.metrics} parentName={parentName} enhanced={enhancedMode} />
           )}
 
           {/* Tab score row — persona-weighted score per data tab */}
@@ -151,7 +152,7 @@ export function ResultsMetricsPanel() {
 
           {/* P2: Mini overview strip — top 3 persona-weighted stats for this tab */}
           {(tabData?.metrics?.length ?? 0) > 0 && (
-            <TabHighlightStrip metrics={tabData!.metrics} persona={persona} parentName={parentName} />
+            <TabHighlightStrip metrics={tabData!.metrics} persona={persona} parentName={parentName} enhanced={enhancedMode} />
           )}
 
           {/* Persona score card */}
@@ -239,6 +240,7 @@ export function ResultsMetricsPanel() {
                               sessionKey={m.id === 'transaction_volume' ? sessionKey : undefined}
                               isMapActive={isDesktop && activeMapMetricId === m.id}
                               modeMultiplier={decisionMode && decisionMode !== 'buy' ? DECISION_MODE_MULTIPLIERS[decisionMode]?.[m.id] : undefined}
+                              enhanced={enhancedMode}
                             />
                           </MetricErrorBoundary>
                         </div>

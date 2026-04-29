@@ -5,13 +5,15 @@ interface Props {
   parentFullFibrePct: number | null;
   parentSuperfastPct: number | null;
   parentGigabitPct: number | null;
+  enhanced?: boolean;
 }
 
-function CoverageBar({ label, value, parentValue, colour }: {
+function CoverageBar({ label, value, parentValue, colour, enhanced }: {
   label: string;
   value: number | null;
   parentValue: number | null;
   colour: string;
+  enhanced?: boolean;
 }) {
   if (value == null) return null;
   const diff = parentValue != null ? value - parentValue : null;
@@ -34,7 +36,11 @@ function CoverageBar({ label, value, parentValue, colour }: {
       <div className="relative h-2.5 bg-surface rounded-full overflow-hidden">
         <div
           className="absolute inset-y-0 left-0 rounded-full transition-all"
-          style={{ width: `${value}%`, backgroundColor: colour }}
+          style={{
+            width: `${value}%`,
+            backgroundColor: colour,
+            animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+          }}
         />
         {parentValue != null && (
           <div
@@ -50,6 +56,7 @@ function CoverageBar({ label, value, parentValue, colour }: {
 export default function BroadbandPanel({
   fullFibrePct, superfastPct, gigabitPct,
   parentFullFibrePct, parentSuperfastPct, parentGigabitPct,
+  enhanced,
 }: Props) {
   return (
     <div className="space-y-4 mt-1">
@@ -59,18 +66,21 @@ export default function BroadbandPanel({
           value={fullFibrePct}
           parentValue={parentFullFibrePct}
           colour="#7c3aed"
+          enhanced={enhanced}
         />
         <CoverageBar
           label="Superfast (≥30 Mbps)"
           value={superfastPct}
           parentValue={parentSuperfastPct}
           colour="#2563eb"
+          enhanced={enhanced}
         />
         <CoverageBar
           label="Gigabit-capable (≥1000 Mbps)"
           value={gigabitPct}
           parentValue={parentGigabitPct}
           colour="#059669"
+          enhanced={enhanced}
         />
       </div>
       <p className="text-[10px] text-ink-faint">

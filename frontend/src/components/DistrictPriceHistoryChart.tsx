@@ -3,6 +3,7 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -89,6 +90,7 @@ interface Props {
   areaName?: string;
   priceField?: 'avg_price' | 'median_price' | 'avg_ppsf';
   byBedrooms?: BedroomBreakdownPoint[];
+  enhanced?: boolean;
 }
 
 function CustomTooltip({ active, payload, label, activeKey, mode, fmtGBP }: {
@@ -151,6 +153,7 @@ export default function DistrictPriceHistoryChart({
   areaName,
   priceField = 'avg_price',
   byBedrooms,
+  enhanced,
 }: Props) {
   const localLabel = areaName ?? 'Local';
   const parentLabel = regionalName ?? 'Parent';
@@ -625,6 +628,17 @@ export default function DistrictPriceHistoryChart({
             onMouseMove={handleMouseMove}
             onMouseLeave={() => setActiveKey(null)}
           >
+            {/* Enhanced mode: gradient defs for area fills */}
+            {enhanced && (
+              <defs>
+                {lines.map(({ dataKey, colour }) => (
+                  <linearGradient key={`grad-${dataKey}`} id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={colour} stopOpacity={0.18} />
+                    <stop offset="100%" stopColor={colour} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+            )}
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-divider, #e5e7eb)" />
             <XAxis
               dataKey="year"
@@ -653,6 +667,21 @@ export default function DistrictPriceHistoryChart({
             {mode === 'yoy' && stableScale.min < 0 && stableScale.max > 0 && (
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
+            {/* Enhanced mode: gradient area fills behind lines */}
+            {enhanced && mode === 'price' && lines.map(({ dataKey, colour }) => (
+              <Area
+                key={`area-${dataKey}`}
+                type="monotone"
+                dataKey={dataKey}
+                stroke="none"
+                fill={`url(#grad-${dataKey})`}
+                fillOpacity={1}
+                connectNulls
+                isAnimationActive
+                animationDuration={700}
+                animationEasing="ease-out"
+              />
+            ))}
             {lines.map(({ dataKey, name, colour, dashed }) => (
               <Line
                 key={dataKey}
@@ -662,10 +691,17 @@ export default function DistrictPriceHistoryChart({
                 stroke={colour}
                 strokeWidth={dataKey.includes('__all') ? 2.5 : 2}
                 strokeDasharray={dashed ? '6 3' : undefined}
-                strokeOpacity={dashed ? 0.7 : 1}
+                strokeOpacity={
+                  enhanced && activeKey
+                    ? (dataKey === activeKey ? 1 : 0.3)
+                    : (dashed ? 0.7 : 1)
+                }
                 dot={{ r: dataKey.includes('__all') ? 2.5 : 2 }}
                 activeDot={{ r: 4 }}
                 connectNulls
+                isAnimationActive={enhanced}
+                animationDuration={enhanced ? 700 : 0}
+                animationEasing="ease-out"
               />
             ))}
           </LineChart>

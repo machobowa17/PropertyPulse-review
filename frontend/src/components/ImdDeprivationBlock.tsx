@@ -12,6 +12,7 @@ interface Props {
   crime?: number | null;
   barriers?: number | null;
   livingEnvironment?: number | null;
+  enhanced?: boolean;
 }
 
 // Decile 1 = most deprived, 10 = least deprived
@@ -49,6 +50,7 @@ function normalise(val: number, min: number, max: number): number {
 export default function ImdDeprivationBlock({
   decile, rank, parentAvgDecile,
   income, employment, education, health, crime, barriers, livingEnvironment,
+  enhanced,
 }: Props) {
   const cfg = DECILE_CONFIG[decile] ?? DECILE_CONFIG[5];
   const barPct = (decile / 10) * 100;
@@ -109,7 +111,11 @@ export default function ImdDeprivationBlock({
         <div className="relative h-3 rounded-full overflow-hidden" style={{ backgroundColor: '#e5e7eb' }}>
           <div
             className="h-full rounded-full transition-all"
-            style={{ width: `${barPct}%`, backgroundColor: cfg.colour }}
+            style={{
+              width: `${barPct}%`,
+              backgroundColor: cfg.colour,
+              animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+            }}
           />
           {Array.from({ length: 9 }, (_, i) => (
             <div
@@ -150,6 +156,9 @@ export default function ImdDeprivationBlock({
                   fill={cfg.colour}
                   fillOpacity={0.25}
                   strokeWidth={2}
+                  isAnimationActive={enhanced}
+                  animationDuration={enhanced ? 700 : 0}
+                  animationEasing="ease-out"
                 />
                 <Tooltip
                   content={({ payload }) => {
