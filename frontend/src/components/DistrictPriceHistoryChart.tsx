@@ -208,8 +208,10 @@ export default function DistrictPriceHistoryChart({
       if (!isCalendarYear(point.year)) continue;
       if (!byYear[point.year]) byYear[point.year] = {};
       const bedKey = `bed_${point.bedrooms}`;
+      // Per-bedroom data only has avg_price from pre-aggregated table.
+      // median_price/avg_ppsf not available per bedroom — fall back to avg_price.
       const bedValue = priceField === 'median_price' ? (point.median_price ?? point.avg_price)
-                     : priceField === 'avg_ppsf' ? (point.avg_ppsf ?? null)
+                     : priceField === 'avg_ppsf' ? (point.avg_ppsf ?? point.avg_price)
                      : point.avg_price;
       if (bedValue != null) {
         byYear[point.year][bedKey] = bedValue;
@@ -446,7 +448,9 @@ export default function DistrictPriceHistoryChart({
 
   if (priceData.length < 2) return null;
 
-  const fmtGBP = priceField === 'avg_ppsf'
+  // Bedroom breakdown always shows avg_price, so use price formatter in that case
+  const effectivePriceField = (dimension === 'bedrooms' && priceField !== 'avg_price') ? 'avg_price' : priceField;
+  const fmtGBP = effectivePriceField === 'avg_ppsf'
     ? (v: number) => '£' + Math.round(v).toLocaleString('en-GB') + '/sqft'
     : (v: number) => '£' + v.toLocaleString('en-GB', { maximumFractionDigits: 0 });
 
@@ -483,9 +487,14 @@ export default function DistrictPriceHistoryChart({
   return (
     <div className="bg-surface rounded-xl p-4 space-y-3">
       <h4 className="text-sm font-semibold text-ink">
-        {priceField === 'avg_ppsf' ? 'Price per Sqft History' : `${metricLabel} Sale Price History`}
+        {dimension === 'bedrooms' && priceField !== 'avg_price'
+          ? 'Average Sale Price History'
+          : priceField === 'avg_ppsf' ? 'Price per Sqft History' : `${metricLabel} Sale Price History`}
         {priceData.length > 0 && (
           <span className="text-[11px] font-normal text-ink-faint"> (since {priceData[0].year})</span>
+        )}
+        {dimension === 'bedrooms' && priceField !== 'avg_price' && (
+          <span className="text-[11px] font-normal text-ink-faint"> · Bedroom breakdown shows avg price</span>
         )}
       </h4>
 
