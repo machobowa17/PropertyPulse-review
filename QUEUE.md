@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-28 (session 66)
+Last updated: 2026-04-29 (session 67)
 
 **This is the SINGLE source of truth for all task tracking. No other file tracks task status.**
 
@@ -237,7 +237,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P9 | Scotland + NI coverage | Pending | To be discussed — scope, data sources, feasibility. |
 | P10 | DB scan: unused table data → new metrics | **DONE** | Audit completed session 47. See "Phase 8: Idle Data — Audit & Proposals" below. |
 | P51 | Saved areas — clarify persistence model | **DONE** | Session 65. Addressed alongside P6. localStorage v2 with clear "Saved to this browser" copy. Single collection, 48-item limit, auto-migration from v1. No cross-device sync needed for MVP. |
-| P52 | Full E2E test + deploy after Phase 7 | **DONE** | Session 66. tsc 0 errors, vite build clean, metric refactor 30/30, brutal 468/468, comprehensive 121/124 (2 pre-existing: Whitby timeout + Scotland, 1 flaky map marker timing). Deployed to EC2. SQL migration run. QUEUE.md + MEMORY.md updated. |
+| P52 | Full E2E test + deploy after Phase 7 | **DONE** | Session 66. tsc 0 errors, vite build clean, metric refactor 30/30, brutal 468/468, comprehensive 122/124 (2 pre-existing: Whitby timeout + Scotland). Deployed to EC2. SQL migration run. QUEUE.md + MEMORY.md updated. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
 | P54 | Add bedroom layer to price history charts | **DONE** | Session 60. "By Type" / "By Beds" dimension toggle in DistrictPriceHistoryChart. 1-5+ bed lines with colour-coded toggles. Backend now returns `by_bedrooms` for all search types (not just LAD). |
 
@@ -350,6 +350,113 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | S65-1 | P5: Takeaway merge | **DONE** | Session 65. Merged "So what?" + "Watch out for" into single coloured pill. |
 | S65-2 | P6+P51: Save button simplification | **DONE** | Session 65. Shortlist + Watchlist → single "Save" button. localStorage v2 with v1 migration. |
 | S65-3 | P26: Amenities rethink | **DONE** | Session 65. Renamed to "Local Amenities", walk-time estimates, essential-amenity badges. Cache v32. |
+| S66-1 | P1-P4: Overview tab + structural changes | **DONE** | Session 66. See P1-P4 above. |
+| S67-1 | Ceremonial county mapping for parent comparison | **DONE** | Session 67. `etl/data/ceremonial_county_lookup.csv` (86 rows) mapping E06/W06 UAs → ceremonial/preserved counties. ETL in `lad_county_lookup.py` uses this for `parent_comparison`. All 318 E+W LADs covered. 49 county groups + 6 singletons. |
+| S67-2 | Singleton escalation in `get_parent_lad_info()` | **DONE** | Session 67. Singletons (Bristol, Herefordshire, IoW, Northumberland, Rutland) escalate to full region. Powys escalates to all Wales (no `region_name`). |
+| S67-3 | `_resolve_parent()` delegates to `get_parent_lad_info()` | **DONE** | Session 67. Eliminated raw DB lookup in `geo_resolver.py`, single source of truth for parent name resolution. |
+| S67-4 | Sub-LAD parent comparison shortcircuit | **DONE** | Session 67. Postcodes/wards/places/postcode_districts compare against their containing LAD (single-element `parent_lad_codes`). London boroughs (E09) excluded — continue using Greater London (33 LADs). Fixes BS1 4DJ showing "vs South West" instead of "vs Bristol". |
+| S67-5 | Enhanced mode attempt + revert | **REVERTED** | Session 67. Attempted BurbScore-inspired visual enhancement across 22 renderers, but 14 only got `isAnimationActive` one-liners (invisible changes). All enhanced mode commits reverted to restore Prototype2 baseline. Plumbing preserved (context, toggle, prop threading). |
+| S67-6 | Map marker idle-event race fix | **DONE** | Session 67. Fixed idle event race condition causing map fly-away on boundary load. |
+
+---
+
+### Session 67: Parent Comparison — Complete Rule Set
+
+| Search Type | Entity Type | Parent Name | `parent_lad_codes` |
+|-------------|-------------|-------------|---------------------|
+| Postcode inside London borough | postcode | "Greater London" | all 33 E09 codes |
+| Postcode inside any other LAD | postcode | that LAD's name | `[that_lad_code]` |
+| Ward inside London borough | ward | "Greater London" | all 33 E09 codes |
+| Ward inside any other LAD | ward | that LAD's name | `[that_lad_code]` |
+| Place inside London borough | place | "Greater London" | all 33 E09 codes |
+| Place inside any other LAD | place | that LAD's name | `[that_lad_code]` |
+| Postcode district | postcode_district | follows same sub-LAD rule | same as above |
+| LAD search (non-singleton) | lad | county peer group name | all LADs in that group |
+| LAD search (singleton, England) | lad | region name | all LADs in that region |
+| LAD search (singleton, Wales: Powys) | lad | "Wales" | all 22 W06 codes |
+| County search | county | region name | all LADs in region |
+
+Wales preserved counties: Clwyd (4), Dyfed (3), Gwent (5), Gwynedd (2), Mid Glamorgan (3), Powys (1 singleton), South Glamorgan (2), West Glamorgan (2).
+
+---
+
+### Session 67: Competitive Analysis — Findstead.co.uk
+
+Source: User asked to review Findstead.co.uk. Detailed comparison produced.
+
+**Where Findstead beats us:** AI-powered natural language search, active property listings (100K+ scraped from Rightmove — legally grey), "paste a Rightmove URL" listing analysis, financial calculators (mortgage, stamp duty, rent-vs-buy), persona-driven onboarding UX.
+
+**Where we beat Findstead comprehensively:** Data depth (72+ metrics vs thin "area intelligence"), geographic coverage (all E&W vs London commuter belt only), comparable areas (11D algorithm), commute modelling (MOTIS multi-modal), school intelligence (Ofsted/KS2/KS4/KS5), map visualisations (choropleth, clusters, layers).
+
+**Key insight:** Findstead's listing inventory is almost certainly scraped from Rightmove/Zoopla (unnamed third-party sources, no agent relationships, small indie team). One cease-and-desist and their core feature disappears. We should NOT replicate this.
+
+---
+
+### Phase 9: Financial Tools & Discovery Features (session 67)
+
+Source: Competitive analysis of Findstead.co.uk — identified 5 features we can build legitimately from our own data and public government formulae. No scraping, no grey areas, no external API dependencies.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| F1 | Stamp duty calculator | Pending | HMRC-published formulae, pure arithmetic. Standard rates, first-time buyer relief, additional property surcharge (3%), Welsh LTT rates. Input: purchase price + buyer type. Output: total SDLT/LTT payable. Could live on Property tab or Overview tab. |
+| F2 | Mortgage affordability estimate | Pending | BoE published average rates + our area price data. Input: salary + deposit (or use area average price as default). Output: monthly repayment, affordability ratio, LTV. "Can you afford to live here?" framing. |
+| F3 | Rent vs Buy comparison | Pending | We already have rental data (rent-by-bedroom metrics) and sale prices in the DB. Show side-by-side: "Renting a 2-bed here costs £X/month vs buying at £Y/month mortgage repayment." Break-even analysis. No external data needed. |
+| F4 | "Areas you haven't considered" — comparable areas reframed | Pending | Reframe our 11D comparable areas algorithm with price filtering. Instead of "areas similar to this one", show "You're looking at Hackney — but have you considered these areas with similar scores at lower prices?" Add price differential column + sort by savings. |
+| F5 | Persona-driven onboarding flow | Pending | We already have personas (First-Time Buyer, Family, Investor, etc.) but they're buried in a small selector on the results page. Add optional onboarding: pick persona → set budget range → pick commute destination → search results pre-filtered and persona-scored from the start. Better UX around what we already have. |
+
+---
+
+### Session 67: BurbScore Competitive Analysis & Design Refresh
+
+Source: User asked to review burbscore.com. Detailed design gap analysis. User loved their visual warmth, typography, and UX — said "this is the gap between what I had in my head vs what I was trying to tell you our site needs to be."
+
+**Design gaps identified:**
+
+| Element | BurbScore | PropertyPulse | Gap |
+|---------|-----------|---------------|-----|
+| Colour palette | Warm cream/orange/sage (#FAF8F5, #C2410C) | Cool blue/grey | High |
+| Typography | Fraunces serif + Nunito Sans + IBM Plex Mono (3 fonts, 3 roles) | Single font family | High |
+| Whitespace | Generous padding, cards float in space | Dense, packed layout | Medium |
+| Storytelling | Narrative-first, persona-led guides | Data-dump style | Medium |
+| Compare flow | First-class side-by-side suburb comparison | No direct comparison UX | Medium |
+| Landing page | Product demo, animated gradient, 3-step flow | Search bar + tagline | Medium |
+| Chart style | Smooth curves, gradient fills, arc gauges | Straight lines, flat bars | Medium |
+| Animations | Staggered entrance, counter rollups, hover lift | Basic transitions | Low |
+
+**Prototype2 created:** `frontend/src/pages/Prototype2.tsx` (~1800 lines). Mock data for all 82 metrics across 6 tabs demonstrating BurbScore-inspired design: warm earth-tone palette, Fraunces serif headings, JetBrains Mono for data, staggered animations, arc gauges, gradient fills, smooth curves. Daily-rotating UK city map backgrounds (30 cities). Before/After toggle. Live at simusimi.com/prototype2.
+
+**User approved direction** and asked for changes to be applied to the **real portal** (not prototype) with a **Current/Enhanced toggle** for comparison.
+
+**22 Renderer Implementation Spec produced** — consolidated reference mapping each renderer to:
+- Exact file to modify
+- Exact BurbScore visual spec (spline tension, gradient stops, animation duration)
+- Which metrics inherit the change
+- Estimated lines of code
+
+**10 Cross-cutting patterns** from the spec:
+
+| # | Pattern | Effect |
+|---|---------|--------|
+| C1 | Smooth curves (`type="monotone"`) | Catmull-Rom vs angular lines |
+| C2 | Fixed hover readouts | Values in fixed top-left box, not floating tooltip |
+| C3 | Parent comparison bars/markers | Vertical tick with label on all bars |
+| C4 | Series dimming | Non-hovered chart lines → 30% opacity |
+| C5 | Dual comparison rows | Local bar + parent bar stacked |
+| C6 | Animated number counters | Headlines count from 0→value on mount |
+| C7 | Warm color shifts | Earth tones, section-colored accents |
+| C8 | Skeleton shimmers | Section-colored loading placeholders |
+| C9 | Staggered entrance | fadeInUp with 50ms delay per card |
+| C10 | `prefers-reduced-motion` | All animations suppressed |
+
+**First implementation attempt failed** (session 67). 14 of 22 renderers only got `isAnimationActive` one-liners — invisible when toggling. All commits reverted. Plumbing preserved (context, toggle, prop threading).
+
+**Status:** Awaiting re-implementation. Plan in `.claude/plans/mutable-nibbling-flurry.md`. User wants to fix comparison logic first (DONE), then BurbScore styling.
+
+---
+
+### Session 67: MetricCard Hover Bug (identified, not yet fixed)
+
+MetricCard expandable rows show a hover tint (`hover:bg-surface-warm/50`) that doesn't match the card's rounded corners — the button's rectangular hover background pokes out inside the `rounded-2xl` parent. Fix: match border-radius on the button to the card, or clip overflow.
 
 ---
 
@@ -625,7 +732,7 @@ What we can DERIVE:
 
 #### D34 — School Intelligence Module (Full Plan)
 
-Comprehensive school module matching/exceeding LocRating.com. Hosted on Hetzner, EC2 calls via API. Full plan at: `.claude/plans/mutable-nibbling-flurry.md`
+Comprehensive school module matching/exceeding LocRating.com. Hosted on Hetzner, EC2 calls via API.
 
 **13 database tables, 16 ETL scripts, FastAPI service on port 8082, SchoolTable + SchoolDetailPanel + SchoolComparison frontend components.**
 
@@ -663,7 +770,7 @@ Comprehensive school module matching/exceeding LocRating.com. Hosted on Hetzner,
 | core_llc_charges | 7,720,311 | 141 authorities |
 | core_flood_zones | 3,536,992 | FZ2 82.6%, FZ3 17.4% |
 | core_flood_lsoa | 33,755 | Per-LSOA flood exposure (derived) |
-| core_lad_county_lookup | 318 | All 6 metro counties now populated |
+| core_lad_county_lookup | 318 | All 6 metro counties + 86 ceremonial county mappings (E06/W06). 49 county groups + 6 singletons. |
 | core_place_boundaries_union | 9,565 | Pre-computed ST_Union per place (new) |
 | core_price_by_bedrooms_lad | 144,906 | LAD/year/type/bedroom aggregation (new) |
 | core_census_religion_ward | 7,638 | Census 2021 TS031 (now wired to tab) |
