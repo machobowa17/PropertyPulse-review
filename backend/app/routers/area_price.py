@@ -107,37 +107,48 @@ async def get_price_history(
         local_rows = [dict(r) for r in local_res.mappings().all()]
 
     # Regional — parent comparison line from pre-computed MVs.
-    # MVs now include per-LAD entries (lad_name as parent_comparison) in addition
-    # to county/region peer groups, so parent_name always finds a match.
-    parent_res = await db.execute(
-        text("""
-            SELECT year::text AS year,
-                   avg_price,
-                   median_price,
-                   transactions
-            FROM mv_parent_yearly_price_stats
-            WHERE parent_comparison = :parent_name
-              AND property_type = 'ALL'
-            ORDER BY year
-        """),
-        {"parent_name": parent_name},
-    )
-    parent_rows = [dict(r) for r in parent_res.mappings().all()]
+    # Look up parent LAD names for MV query — handles singletons that escalate
+    # to region (e.g. Bristol → "South West") where region isn't a direct MV key.
+    parent_lad_name_res = await db.execute(
+        text("SELECT DISTINCT lad_name FROM core_lad_county_lookup WHERE lad_code = ANY(:lads)"),
+        {"lads": parent_lad_codes},
+    ) if parent_lad_codes else None
+    parent_lad_names = [r["lad_name"] for r in parent_lad_name_res.mappings().all()] if parent_lad_name_res else []
 
-    # Parent avg_ppsf by year — from pre-computed MV
-    if parent_lad_codes:
+    if parent_lad_names:
+        parent_res = await db.execute(
+            text("""
+                SELECT year::text AS year,
+                       ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       SUM(transactions) AS transactions
+                FROM mv_parent_yearly_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type = 'ALL'
+                GROUP BY year
+                ORDER BY year
+            """),
+            {"names": parent_lad_names},
+        )
+        parent_rows = [dict(r) for r in parent_res.mappings().all()]
+
+        # Parent avg_ppsf by year
         parent_ppsf_res = await db.execute(
             text("""
-                SELECT year AS yr, avg_ppsf
+                SELECT year::text AS yr,
+                       ROUND(AVG(avg_ppsf))::int AS avg_ppsf
                 FROM mv_parent_yearly_ppsf
-                WHERE parent_comparison = :parent_name
+                WHERE parent_comparison = ANY(:names)
+                GROUP BY year ORDER BY year
             """),
-            {"parent_name": parent_name},
+            {"names": parent_lad_names},
         )
         parent_ppsf_by_year = {str(r["yr"]): int(r["avg_ppsf"]) for r in parent_ppsf_res.mappings().all() if r["avg_ppsf"]}
         for row in parent_rows:
             yr = str(row["year"]).strip()[:4]
             row["avg_ppsf"] = parent_ppsf_by_year.get(yr)
+    else:
+        parent_rows = []
 
     # Serialize dates as year strings
     for row in local_rows:
@@ -317,56 +328,68 @@ async def get_price_by_type(
             by_type[label] = []
         by_type[label].append(rolling_point)
 
-    # Parent by type — from MVs (now include per-LAD entries)
-    parent_res = await db.execute(
-        text("""
-            SELECT year::text AS year,
-                   property_type,
-                   avg_price,
-                   median_price,
-                   transactions
-            FROM mv_parent_yearly_price_stats
-            WHERE parent_comparison = :parent_name
-              AND property_type != 'ALL'
-            ORDER BY year, property_type
-        """),
-        {"parent_name": parent_name},
-    )
-    parent_rows = [dict(r) for r in parent_res.mappings().all()]
+    # Parent by type — use LAD names for MV lookup (handles singletons → region escalation)
+    parent_lad_name_res = await db.execute(
+        text("SELECT DISTINCT lad_name FROM core_lad_county_lookup WHERE lad_code = ANY(:lads)"),
+        {"lads": parent_lad_codes},
+    ) if parent_lad_codes else None
+    parent_lad_names = [r["lad_name"] for r in parent_lad_name_res.mappings().all()] if parent_lad_name_res else []
 
     parent_by_type: dict = {}
-    for row in parent_rows:
-        pt = row["property_type"].strip()
-        label = _TYPE_NAMES.get(pt, pt)
-        if label not in parent_by_type:
-            parent_by_type[label] = []
-        parent_by_type[label].append({
-            "year": row["year"],
-            "avg_price": row["avg_price"],
-            "median_price": row["median_price"],
-            "transactions": row["transactions"],
-        })
+    if parent_lad_names:
+        parent_res = await db.execute(
+            text("""
+                SELECT year::text AS year,
+                       property_type,
+                       ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       SUM(transactions) AS transactions
+                FROM mv_parent_yearly_price_stats
+                WHERE parent_comparison = ANY(:names)
+                  AND property_type != 'ALL'
+                GROUP BY year, property_type
+                ORDER BY year, property_type
+            """),
+            {"names": parent_lad_names},
+        )
+        parent_rows = [dict(r) for r in parent_res.mappings().all()]
 
-    if parent_lad_codes:
+        for row in parent_rows:
+            pt = row["property_type"].strip()
+            label = _TYPE_NAMES.get(pt, pt)
+            if label not in parent_by_type:
+                parent_by_type[label] = []
+            parent_by_type[label].append({
+                "year": row["year"],
+                "avg_price": row["avg_price"],
+                "median_price": row["median_price"],
+                "transactions": row["transactions"],
+            })
+
         parent_rolling_res = await db.execute(
             text("""
-                SELECT property_type, avg_price, median_price, transactions
+                SELECT property_type,
+                       ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       SUM(transactions) AS transactions
                 FROM mv_parent_rolling_price_stats
-                WHERE parent_comparison = :parent_name
+                WHERE parent_comparison = ANY(:names)
                   AND property_type != 'ALL'
+                GROUP BY property_type
             """),
-            {"parent_name": parent_name},
+            {"names": parent_lad_names},
         )
         for r in parent_rolling_res.mappings().all():
             pt = r["property_type"].strip()
             label = _TYPE_NAMES.get(pt, pt)
-            if label in parent_by_type:
-                parent_by_type[label].append({
-                    "year": "Last 12m",
-                    "avg_price": r["avg_price"],
-                    "median_price": r["median_price"],
-                    "transactions": r["transactions"],
-                })
+            if label not in parent_by_type:
+                parent_by_type[label] = []
+            parent_by_type[label].append({
+                "year": "Last 12m",
+                "avg_price": r["avg_price"],
+                "median_price": r["median_price"],
+                "transactions": r["transactions"],
+            })
 
     # ------------------------------------------------------------------
     # PPSF enrichment — yearly data from UCL core_price_sqm_lsoa_yearly,
@@ -442,8 +465,8 @@ async def get_price_by_type(
         for point in points:
             point["avg_ppsf"] = ppsf_lookup.get((label, point["year"]))
 
-    # Parent ppsf — yearly from UCL, rolling from master
-    if parent_lad_codes:
+    # Parent ppsf — yearly from UCL, rolling from MV
+    if parent_lad_names:
         parent_ppsf_res = await db.execute(
             text("""
                 SELECT y.year, y.property_type,
@@ -461,13 +484,14 @@ async def get_price_by_type(
         parent_ppsf_rolling_res = await db.execute(
             text("""
                 SELECT property_type,
-                       ROUND(avg_ppsf::numeric, 2) AS avg_ppsf
+                       ROUND(AVG(avg_ppsf)::numeric, 2) AS avg_ppsf
                 FROM mv_parent_rolling_price_stats
-                WHERE parent_comparison = :parent_name
+                WHERE parent_comparison = ANY(:names)
                   AND property_type <> 'ALL'
                   AND avg_ppsf IS NOT NULL
+                GROUP BY property_type
             """),
-            {"parent_name": parent_name},
+            {"names": parent_lad_names},
         )
         parent_ppsf_lookup: dict = {}
         for r in parent_ppsf_res.mappings().all():
