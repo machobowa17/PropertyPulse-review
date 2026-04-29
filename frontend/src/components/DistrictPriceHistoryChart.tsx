@@ -208,8 +208,13 @@ export default function DistrictPriceHistoryChart({
       if (!isCalendarYear(point.year)) continue;
       if (!byYear[point.year]) byYear[point.year] = {};
       const bedKey = `bed_${point.bedrooms}`;
-      byYear[point.year][bedKey] = point.avg_price;
-      byYear[point.year][`__txn_${bedKey}`] = point.transaction_count;
+      const bedValue = priceField === 'median_price' ? (point.median_price ?? point.avg_price)
+                     : priceField === 'avg_ppsf' ? (point.avg_ppsf ?? null)
+                     : point.avg_price;
+      if (bedValue != null) {
+        byYear[point.year][bedKey] = bedValue;
+        byYear[point.year][`__txn_${bedKey}`] = point.transaction_count;
+      }
     }
     // Also add __all_beds from overallLocal
     if (overallLocal) {

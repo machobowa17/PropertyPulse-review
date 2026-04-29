@@ -92,6 +92,8 @@ export interface BedroomBreakdownPoint {
   year: string;
   bedrooms: number;
   avg_price: number;
+  median_price?: number;
+  avg_ppsf?: number;
   transaction_count: number;
 }
 
