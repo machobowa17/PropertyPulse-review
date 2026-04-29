@@ -240,6 +240,7 @@ Source: User walkthrough of all 5 tabs on live site. ~50 items covering UX, data
 | P52 | Full E2E test + deploy after Phase 7 | **DONE** | Session 66. tsc 0 errors, vite build clean, metric refactor 30/30, brutal 468/468, comprehensive 122/124 (2 pre-existing: Whitby timeout + Scotland). Deployed to EC2. SQL migration run. QUEUE.md + MEMORY.md updated. |
 | P53 | Single address search — show all data for a specific property | Pending | Allow searching by full address (e.g. "14 Acacia Avenue, SW1A 1AA"). Display all non-GDPR-sensitive data we hold: transaction history, EPC ratings/details, floor area, property type, tenure, flood zone, LLC charges, INSPIRE parcel, noise levels, broadband, etc. All public registry data — no personal data. Requires: (1) resolve endpoint to handle address-level search, (2) new address-level results view, (3) DB scan to catalogue all address-level data available. Includes classic UK EPC certificate visual (arrow-style A-G chart with pointer) for the individual property. Data plan: see D28. |
 | P54 | Add bedroom layer to price history charts | **DONE** | Session 60. "By Type" / "By Beds" dimension toggle in DistrictPriceHistoryChart. 1-5+ bed lines with colour-coded toggles. Backend now returns `by_bedrooms` for all search types (not just LAD). |
+| P61 | Update landing page tagline | Pending | Current: "Know your neighbourhood." Candidates from GeoDepth/SimplySettled era: **"Move with certainty."** (+ supporting copy: "The right home isn't just about the property — it's about the life that comes with the address." + closer: "Stop hoping you've picked the right place. Know it."). User to pick final choice. `frontend/src/pages/Home.tsx:63-73`. |
 
 #### 7B — Map
 
@@ -746,6 +747,108 @@ Comprehensive school module matching/exceeding LocRating.com. Hosted on Hetzner,
 7. Polish + Academic Velocity + Heatmaps
 
 **Priority:** Major feature. Start after current Hetzner data platform work stabilises.
+
+---
+
+### Phase 10: GeoDepth/SimplySettled Retrospective — Stealable Ideas (session 68)
+
+Source: Audit of `~/Desktop/geodepth/` codebase (the predecessor project, built with Claude under the name GeoDepth/SimplySettled). That project had 76 datasets, 130+ DB tables, and several features/patterns we never ported to PropertyPulse. This section catalogues everything worth stealing. **All items originate from the other project — compare notes against `~/Desktop/geodepth/` at implementation time.**
+
+#### 10A — Whole Features We Don't Have
+
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| GD1 | **Find My Area — Multi-Dimensional Area Discovery** (`/find-my-area`) | Pending | Step-by-step wizard: (1) Workplace postcode or "I'm remote", (2) Budget (rent/buy + min/max), (3) Max distance from workplace (5/10/15/25/50 km), (4) Priority picker — toggle pills for Safety, Schools, Green Space, Transport, Quiet, Broadband, Cycling, Heritage, (5) Dealbreakers — "No Flood Zone 3" checkbox + minimum broadband speed slider. Backend query fans out PostGIS spatial filters + scores against priority weights → returns ranked postcode results on a map. We have ALL the underlying data (82 metrics + PostGIS + 11D comparable areas algo). This is a richer version of F4+F5 from Phase 9. GeoDepth had a working implementation in `web/app/find-my-area/page.tsx` (~200 lines). Persona pre-fills sensible defaults (family = schools high, retiree = quiet + green). Click any result → jumps to full report. **This was identified in VISION.md as "the killer differentiator: no free tool offers multi-dimensional area search backed by 76+ official datasets."** |
+| GD2 | **Rankings — Top 10 Area Lists** (`/rankings`) | Pending | Category-based area rankings per local authority: Greenest, Best Connected, Safest, Best for Families, Best Value. Each category has an icon + colour. User picks a LAD from dropdown → sees top 10 postcodes/LSOAs in that LAD for each category. Pure SQL queries against data we already have (crime, schools, transport, green space, prices). Low implementation effort, high SEO value — each ranking page is an indexable URL. GeoDepth implementation: `web/app/rankings/page.tsx` (~120 lines) + `getRankings(lad)` API endpoint. Could drive significant organic search traffic. |
+| GD3 | **Compare — Side-by-Side Area Comparison** (`/compare`) | Pending | Direct head-to-head comparison of two postcodes/areas. URL format: `/compare?a=SW1A+1AA&b=CR0+1LG`. Every metric rendered as a comparison grid so users see which area wins on each factor. We have comparable areas but no direct "compare Hackney vs Brixton" view. GeoDepth had `CompareView.tsx` component with dual-column scorecard layout + warm gradient background mesh. Could use our existing tab data — just render two `/area` responses side by side. |
+| GD4 | **Portfolio Scorer — Bulk Postcode Upload** (`/portfolio`) | Pending | Upload CSV of postcodes (batched in 5000) → get scored results back (composite, E/S/G sub-scores, stranded asset flag, LSOA, status) + CSV export. Aimed at estate agents, investors, relocation consultants tracking multiple properties. GeoDepth had `UploadZone` + `PortfolioSummary` + `ResultsTable` components. Our API already has per-area scoring; this is a batch wrapper + file upload UI + export button. Professional/power-user tool. |
+
+#### 10B — Data Sources We're Missing
+
+All sources below were ingested or planned in GeoDepth. All are OGL/free/public data. Grouped by effort.
+
+**Low effort (small files, simple ETL, high signal):**
+
+| # | Dataset | Source | Coverage | What it adds | GeoDepth reference | Priority |
+|---|---------|--------|----------|-------------|-------------------|----------|
+| GD-D1 | **Light pollution (CPRE Night Blight)** | CPRE `nightblight.cpre.org.uk` + VIIRS satellite | Postcode-level artificial sky brightness score | Environmental quality metric. Unique — no other UK portal shows this. GeoDepth had schema + frontend wired (`noise_exposure.light_pollution_score`, NoisePollutionTab), just needed the CPRE CSV download. | `etl/data/light_pollution/` (851 MB), `DATASETS.md` #31 | Medium |
+| GD-D2 | **Fly-tipping incidents** | Defra | LAD-level: total incidents, incidents per 1,000 pop | Environmental quality signal. Fetched during ETL. Simple LAD-level table. | `DATASETS.md` #32 | High |
+| GD-D3 | **Fuel poverty (LSOA)** | DESNZ | LSOA-level: fuel-poor households count and proportion | Deprivation signal. Adds to Community/Deprivation tab. Small file. | `etl/data/fuel_poverty/` (2.5 MB), `DATASETS.md` #66 | High |
+| GD-D4 | **DWP benefit claimant count** | DWP Stat-Xplore | LSOA-level: claimant count and rate | Employment/deprivation signal. Complements IMD domains. | `etl/data/dwp/` (2.4 MB), `DATASETS.md` #67 | High |
+| GD-D5 | **ONS Wellbeing scores** | ONS Annual Population Survey | LAD-level: life satisfaction, happiness, anxiety, worthwhile (4 metrics) | Unique "feel" metric — no other portal shows this. How happy are people here? | `etl/data/ons_wellbeing.xlsx` (2.1 MB), `DATASETS.md` #70 | High |
+| GD-D6 | **Population projections (2030/2040)** | ONS subnational projections | LAD-level: projected population 2030 + 2040 | Forward-looking "trajectory" signal. "This area is expected to grow 12% by 2040." | Part of `etl/data/area_outlook/` (6.3 MB), `DATASETS.md` #71 | Medium |
+| GD-D7 | **Heritage at Risk register** | Historic England HAR Register | All at-risk heritage assets: status, condition | Conservation/heritage signal. Adds to Environment tab or Governance. | `etl/data/heritage_at_risk.csv` (1.3 MB), `DATASETS.md` #42 | Low |
+| GD-D8 | **Conservation areas** | Historic England | Conservation area boundaries + at-risk status | Affects planning rights. "This property is in a conservation area." Spatial polygons. | `etl/data/conservation_areas.csv` + GeoPackage (70 MB), `DATASETS.md` #40 | Medium |
+| GD-D9 | **CRoW Act open access land** | Natural England | Open access land polygons under Countryside and Rights of Way Act | Outdoor access for walkers. Count + area within radius. | `etl/data/crow_access_land.geojson` (5.7 MB), `DATASETS.md` #48 | Low |
+| GD-D10 | **Water company performance (Ofwat)** | Ofwat Performance Report | Per-company/year: leakage, supply interruptions, CRI score, pollution incidents, flooding incidents, complaints, average annual bill | We assign water company (P50) but don't show performance. Leakage + pollution incidents are headline-worthy. | Compiled from Ofwat reports, `DATASETS.md` #62 | Medium |
+| GD-D11 | **NSIP projects + enterprise zones + freeports** | Planning Inspectorate + HM Treasury | LAD-level: nationally significant infrastructure projects, enterprise zone membership, freeport proximity | Development pipeline signal. "HS2 passes through this area." "This area is in a freeport zone." | Part of `etl/data/area_outlook/` (6.3 MB), `DATASETS.md` #71 | Low |
+| GD-D12 | **MP lookup** | Parliament API | Constituency → MP name, party, email | Governance enrichment. "Your MP is [Name] ([Party])." Simple API fetch. | `DATASETS.md` #59 | Low |
+
+**Medium effort (larger files, spatial joins, or API fetching):**
+
+| # | Dataset | Source | Coverage | What it adds | GeoDepth reference | Priority |
+|---|---------|--------|----------|-------------|-------------------|----------|
+| GD-D13 | **Coastal erosion (NCERM 2024)** | Environment Agency | Postcode proximity: erosion predictions under 4 scenarios (SMP policy/No Further Intervention × 2055/2105 timeframe). Nearest coastline distance, frontage ID, SMP policy, defence type, erosion prediction in metres. | High impact for coastal properties. "This property is 200m from coast with predicted 15m erosion by 2055." Safety/environment signal. | `etl/data/ncerm_2024/...NCERM_National_2024.gpkg` (394 MB), `DATASETS.md` #28 | Medium |
+| GD-D14 | **DESNZ actual energy consumption (LSOA, 2010-2024)** | Dept for Energy Security & Net Zero | LSOA annual: domestic electricity + gas consumption (meters, mean/median kWh, total kWh). 15-year time series. | ACTUAL running costs — not EPC estimates. "Average household here uses 15,000 kWh gas/year." Trend over time shows decarbonisation progress. | `etl/data/LSOA_domestic_elec_2010-2024.xlsx` (48 MB) + `LSOA_domestic_gas_2010-2024.xlsx` (53 MB), `DATASETS.md` #65 | High |
+| GD-D15 | **DfT traffic counts (AADF)** | Department for Transport | Annual average daily flow by vehicle type at count points nationwide | Road congestion signal. "Nearest A-road carries 25,000 vehicles/day." Proximity compute: nearest count point + flow. | `etl/data/traffic_counts/dft_traffic_counts_aadf.csv` (139 MB), `DATASETS.md` #37 | Medium |
+| GD-D16 | **Food hygiene ratings (FSA)** | Food Standards Agency FHRS API | All rated food businesses: name, rating (0-5), location | Amenity quality signal. "94% of food businesses here rated 4-5." Count by rating within radius. | `etl/data/fsa/establishments.json` (40 MB), `DATASETS.md` #55 | Medium |
+| GD-D17 | **Brownfield land register** | DLUHC | All brownfield sites: location, hectares, planning status, dwelling capacity | Development pipeline. "3 brownfield sites within 2km, combined capacity for 450 dwellings." Feeds "what's coming" narrative. | `etl/data/brownfield-land.csv` (20 MB), `DATASETS.md` #73 | Medium |
+| GD-D18 | **Corporate/overseas ownership (CCOD/OCOD)** | HM Land Registry | Postcode-level: UK corporate + overseas title counts, top owners | "12% of properties here are corporate-owned. Top owner: Grainger PLC (47 units)." Already in our D28-13 plan but GeoDepth had it live and working. | Fetched via LR bulk download, `DATASETS.md` #72 | Medium |
+| GD-D19 | **Charity register** | Charity Commission | All registered charities: name, activities, income, postcode | Community/social infrastructure. "5,880 charities within 3km — vibrant support network." Count + top charities by income. | `etl/data/charity_register.json` (482 MB), `DATASETS.md` #56 | Low |
+| GD-D20 | **Nurseries & care homes** | Ofsted / CQC | Nurseries and care homes: location, rating, capacity | Family/retiree amenity. Nearest + count within radius. Feeds persona scoring. | `etl/data/nurseries_carehomes/` (49 MB), `DATASETS.md` #57 | Medium |
+
+**Already planned in our queue (cross-reference):**
+
+| GeoDepth dataset | Our queue item | Status |
+|-----------------|---------------|--------|
+| Radon risk (UKHSA) | D28-14 | Planned (part of P53 address-level search) |
+| Corporate ownership (CCOD/OCOD) | D28-13 | Planned (part of P53) — GD-D18 above could be done earlier at area level |
+| Listed buildings (Historic England) | D28-10 | Planned (part of P53) |
+| OS Open UPRN | D28-15 | Planned (foundation for P53) |
+| Conservation areas | GD-D8 above | New — not in our queue before |
+| Brownfield | GD-D17 above | New — not in our queue before |
+
+#### 10C — UI/UX Patterns Worth Stealing
+
+| # | Pattern | Description | GeoDepth reference | Effort |
+|---|---------|-------------|-------------------|--------|
+| GD-U1 | **`useCountUp` hook** | Animated number counter: ease-out cubic, 800ms duration, configurable decimals. 31 lines of clean React code. Uses `requestAnimationFrame` for smooth 60fps animation. Drop-in for our enhanced mode cross-cutting pattern C6 (animated number counters). | `web/lib/hooks/useCountUp.ts` | Trivial |
+| GD-U2 | **Question-based metric framing** | Scorecard rows phrased as human questions: "What's the crime rate?", "How good are the schools?", "What do homes cost?" instead of metric IDs like `avg_price` or `crime_rate`. More engaging, more approachable. Could be added to our metric registry as a `question` field. | `ScorecardTable.tsx`, all `*QATab.tsx` files | Low |
+| GD-U3 | **VerdictPill with hover tooltip** | Verdict pills have a `tip` property — hovering shows a tooltip explaining WHY the verdict was given. "Prices are climbing fast" → hover → "Year-on-year growth of 8.2% is above the county average of 3.1%." We have takeaway pills but no "why" explainer tooltip. | `web/components/score/VerdictPill.tsx` (22 lines) | Low |
+| GD-U4 | **Sparkline component** | Tiny inline SVG sparkline (120×32px default) with trend-coloured end dot (green=up, red=down, grey=flat). No dependencies — pure SVG polyline. Clean, reusable for any time-series metric. GeoDepth had crime sparklines, price sparklines, etc. | `web/components/score/Sparkline.tsx` (65 lines) | Trivial |
+| GD-U5 | **DataFreshness footer** | Systematic source attribution + date on every card. "ONS Census 2021 · March 2023" / "Environment Agency · January 2026". We have `_note` and `quality_flags` but not a clean per-card source+date footer. Builds trust and transparency. | `web/components/score/DataFreshness.tsx` (31 lines) | Low |
+| GD-U6 | **"If you love this area, you'll also love..." framing** | Comparable areas presented with: similarity % match, trajectory grade (A-F colour-coded), median price, and natural-language explanations of WHY it's similar. Better than our current table-style comparable areas. | `web/components/score/SimilarAreas.tsx` (82 lines) | Low |
+| GD-U7 | **IntelligenceCard structure** | Their per-metric card has 6 layers: (1) Question heading (serif font), (2) Headline metric (big number/badge), (3) One-sentence summary (13px, secondary colour, line-clamp-3), (4) Optional reassurance tip (accent-coloured box), (5) Expandable "View full intelligence" toggle → detail content, (6) Source attribution footer. Richer information hierarchy than our MetricCard collapsed state. | `web/components/score/IntelligenceCard.tsx` (108 lines) | Medium |
+| GD-U8 | **GeoToggle — per-card geographic level switcher** | Pill bar that lets user switch individual metrics between postcode/ward/borough/county granularity. Levels without data shown greyed-out. Our searches are at a fixed level; this would let users drill up/down per metric. Complex but powerful. | `web/components/score/GeoToggle.tsx` (53 lines) | High |
+| GD-U9 | **ScoreRing / GlowRing** | SVG arc gauge with gradient fill, glow aura rings, animated stroke-dasharray transition (0.9s cubic-bezier). Colour shifts by score (≥75 green, ≥50 amber, <50 red). Used in hero section. More polished than Recharts for single-value gauges. Already partially replicated in our Prototype2 AirQualityGauge. | `web/components/score/ScoreRing.tsx` + `HeroSection.tsx` | Low |
+
+#### 10D — Narrative/Content Architecture Worth Stealing
+
+| # | Pattern | Description | GeoDepth reference |
+|---|---------|-------------|-------------------|
+| GD-N1 | **"Looking Ahead" subsection** | Forward-looking narrative per area: brownfield pipeline (sites, hectares, dwelling capacity), heritage constraints on development, business vitality (births vs deaths + survival rate), population growth trajectory (2030/2040 projections), NSIP projects, enterprise zones, freeports. We have no forward-looking section. Feeds investor and family personas. | `VISION.md` Section 1 "Looking Ahead" |
+| GD-N2 | **Takeaway engine "Sacred Rules"** | 9 codified rules for generating takeaway text: (1) Compare vs region baseline, (2) Three dimensions: data + trend + comparison, (3) NO metrics/numbers/years in takeaway text — cards show numbers, takeaways explain what they MEAN, (4) Outlier-driven — surface what's unique, not generic, (5) Word allocation proportional to deviation strength, (6) 18-word hard cap, (7) No dramatic words ("opposite", "extreme") — editorial not clickbait, (8) Sentiment colour from favourable/concerning balance, (9) Geo-responsive — changes when user toggles level. More disciplined than our current `getTakeaway()`. | `web/lib/takeaway-engine.ts` (lines 1-37) |
+| GD-N3 | **ESG composite scoring** | E (Environment), S (Social), G (Governance) sub-scores with composite risk rating. "Stranded asset" flag for properties at risk (poor EPC + flood zone + high deprivation). Investor-focused framing. GeoDepth had `StrandedBadge.tsx` component + hero E/S/G pills. Could be added to our Overview tab. | `web/components/score/StrandedBadge.tsx`, `HeroSection.tsx` |
+| GD-N4 | **Verdict Composer — intent × lifestyle matrix** | More granular persona system: 6 intents (buyer, renter, investor, curious, **expat, tourist**) × 13 lifestyles (urban professional, DINK, student, aspiring family, young family, family with teens, single parent, multi-generational, retiree/empty nester, remote worker, dog owner, commuter, eco-conscious). Each metric mapped to 1-3 "concerns" (affordability, capital_growth, yield, rental_cost, schools, safety, public_transport, driving, green_space, nightlife, active_lifestyle, healthcare, downsizing, sustainability, space, quiet, digital, 15-min neighbourhood, character, neighbours, community, alternative_lifestyle, local_governance). Verdict = geometric mean of intent weight × lifestyle weight for top concern. Deterministic, zero runtime cost. Our current system: 4 personas × 3 decision modes. Could expand significantly. | `web/lib/verdict-composer.ts`, `web/lib/concern-vectors.ts`, `web/lib/metric-concerns.ts`, `web/lib/verdict-phrases.ts` |
+| GD-N5 | **Cost of Living subsection** | Consolidated cost-of-living view: council tax by band, domestic energy costs (actual kWh), water rates (annual), travelcard/commute cost, childcare costs (weekly), stamp duty context. We have some of these scattered across tabs but no unified "what does it cost to live here?" view. | `VISION.md` Section 6 "Cost of Living" |
+| GD-N6 | **Community organisations** | Charity count + top charities by income within radius. Food banks, community centres, jobcentres. Nursery + care home provision. "Social infrastructure" metric we don't have. | `VISION.md` Section 3 "Community Character" |
+| GD-N7 | **Walking & outdoor access** | Public rights of way (footpaths, bridleways, byways — total km within radius), National Cycle Network route proximity, national trails proximity, CRoW open access land, pedestrianised streets, bike hire availability, bike parking density. Much richer outdoor/active lifestyle picture than our current cycling + amenity metrics. | `VISION.md` Section 2 "Walkability & Cycling" |
+| GD-N8 | **Water quality (WFD)** | EA Catchment Data Explorer API. Water body classification, ecological status, chemical status. "The nearest water body is the River Wandle — ecological status: Moderate." Planned but not completed in GeoDepth. | `PLAN.md` #13 |
+| GD-N9 | **Contaminated land / pollution incidents** | EA pollution incidents registry. Location, category, substance, water impact, date. Proximity: nearest incident + count within 2km. Planned but not completed in GeoDepth. | `PLAN.md` #14 |
+
+#### 10E — Design Patterns Already in GeoDepth
+
+These are CSS/visual patterns from GeoDepth that align with our BurbScore design refresh goals:
+
+| # | Pattern | Description | GeoDepth reference |
+|---|---------|-------------|-------------------|
+| GD-V1 | **Warm gradient mesh backgrounds** | Subtle multi-colour radial gradient orbs (sage green, gold, blue, pink) at 3-7% opacity with `blur-3xl`. Used on landing page hero and compare page. Creates warmth without being distracting. | `web/app/page.tsx` lines 158-176, `web/app/compare/page.tsx` lines 15-24 |
+| GD-V2 | **Glass card style (`gd-glass`)** | Cards with backdrop blur + border + shadow. `rounded-2xl bg-gd-surface border border-gd-border shadow-gd-sm`. Score-dependent glow: `box-shadow: 0 0 60px ${color}12, 0 0 120px ${color}06`. | `HeroSection.tsx` line 44 |
+| GD-V3 | **Animated pulse badge** | `<span className="w-1.5 h-1.5 rounded-full bg-gd-accent animate-pulse" />` — tiny green pulsing dot next to "Free · Open Data · Every Postcode" badge. Subtle life indicator. | `web/app/page.tsx` line 181 |
+| GD-V4 | **Card entrance animations** | `card-enter` CSS class for staggered fade-in. Each IntelligenceCard gets a `stagger` prop for delay. `animate-in fade-in slide-in-from-top-2 duration-200` for expanding details. | `IntelligenceCard.tsx` line 47, line 95 |
+| GD-V5 | **`active:scale-95` on buttons** | Subtle press-down effect on interactive elements. Combined with `transition-all duration-200`. Small detail that adds physicality. | Used throughout: `HeroSection.tsx` lines 121, 131 |
+| GD-V6 | **Three-font system** | `font-heading` (serif/display), `font-mono` (data values), default sans-serif (body). GeoDepth used Geist Sans + Geist Mono + a heading font. Same principle as BurbScore's Fraunces + Nunito + IBM Plex. | `web/app/layout.tsx`, `globals.css` |
+| GD-V7 | **Dot-grid background** | Landing page background: `radial-gradient(circle at 1px 1px, var(--gd-border) 1px, transparent 0)` at 40×40px spacing, 25% opacity. Subtle texture without being busy. | `web/app/page.tsx` lines 149-155 |
 
 ---
 
