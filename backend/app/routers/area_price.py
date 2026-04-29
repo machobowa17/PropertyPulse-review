@@ -133,28 +133,52 @@ async def get_price_history(
     for row in parent_rows:
         row["year"] = str(row["year"].year) if hasattr(row["year"], "year") else str(row["year"])[:4]
 
-    # Bedroom breakdown — from raw transactions so we get avg, median, AND ppsf
+    # Bedroom breakdown — avg_price from pre-aggregated table (fast),
+    # median_price + avg_ppsf computed from raw transactions (AVG is fast, skip
+    # PERCENTILE_CONT which is too slow for large LADs).
     bedrooms_rows: list = []
     bed_lads = sess.get("local_lads", [])
     if bed_lads:
+        # Fast avg_price + counts from pre-aggregated table
         bedrooms_res = await db.execute(
             text("""
-                SELECT EXTRACT(YEAR FROM date_of_transfer)::int::text AS year,
-                       bedrooms_estimated AS bedrooms,
-                       ROUND(AVG(price))::int AS avg_price,
-                       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price))::int AS median_price,
-                       ROUND(AVG(price::numeric / NULLIF(floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf,
-                       COUNT(*) AS transaction_count
-                FROM core_property_transactions
+                SELECT year::text AS year,
+                       bedrooms,
+                       ROUND(SUM(avg_price * transaction_count) / NULLIF(SUM(transaction_count), 0))::int AS avg_price,
+                       SUM(transaction_count) AS transaction_count
+                FROM core_price_by_bedrooms_lad
                 WHERE lad_code = ANY(:lads)
                   AND property_type = ANY(:price_types)
-                  AND bedrooms_estimated BETWEEN 1 AND 5
-                GROUP BY 1, 2
-                ORDER BY 1, 2
+                  AND bedrooms BETWEEN 1 AND 5
+                GROUP BY year, bedrooms
+                ORDER BY year, bedrooms
             """),
             {"lads": bed_lads, "price_types": list(PRICE_TYPES)},
         )
         bedrooms_rows = [dict(r) for r in bedrooms_res.mappings().all()]
+
+        # Enrich with avg_ppsf from raw transactions (AVG is fast, no PERCENTILE_CONT)
+        ppsf_bed_res = await db.execute(
+            text("""
+                SELECT EXTRACT(YEAR FROM date_of_transfer)::int::text AS year,
+                       bedrooms_estimated AS bedrooms,
+                       ROUND(AVG(price::numeric / NULLIF(floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf
+                FROM core_property_transactions
+                WHERE lad_code = ANY(:lads)
+                  AND property_type = ANY(:price_types)
+                  AND bedrooms_estimated BETWEEN 1 AND 5
+                  AND floor_area_sqm > 0
+                GROUP BY 1, 2
+            """),
+            {"lads": bed_lads, "price_types": list(PRICE_TYPES)},
+        )
+        ppsf_bed_lookup: dict = {}
+        for r in ppsf_bed_res.mappings().all():
+            ppsf_bed_lookup[(str(r["year"]), int(r["bedrooms"]))] = r["avg_ppsf"]
+
+        for row in bedrooms_rows:
+            row["avg_ppsf"] = ppsf_bed_lookup.get((str(row["year"]), int(row["bedrooms"])))
+            row["median_price"] = None  # Not available per bedroom (too slow)
 
     result = {
         "local": local_rows,
