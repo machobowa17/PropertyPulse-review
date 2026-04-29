@@ -1113,17 +1113,65 @@ function CrimeTrendSection() {
   );
 }
 
+// 30 UK cities/towns — rotates daily based on day-of-year
+const DAILY_MAPS = [
+  { name: 'Central London',   bbox: '-0.16,51.49,-0.06,51.53' },
+  { name: 'Manchester',       bbox: '-2.28,53.46,-2.20,53.50' },
+  { name: 'Birmingham',       bbox: '-1.93,52.46,-1.85,52.50' },
+  { name: 'Edinburgh',        bbox: '-3.22,55.94,-3.14,55.97' },
+  { name: 'Bristol',          bbox: '-2.62,51.44,-2.54,51.47' },
+  { name: 'Liverpool',        bbox: '-3.01,53.39,-2.93,53.42' },
+  { name: 'Leeds',            bbox: '-1.58,53.79,-1.50,53.82' },
+  { name: 'Glasgow',          bbox: '-4.30,55.84,-4.22,55.87' },
+  { name: 'Sheffield',        bbox: '-1.52,53.37,-1.44,53.40' },
+  { name: 'Newcastle',        bbox: '-1.64,54.96,-1.56,54.99' },
+  { name: 'Nottingham',       bbox: '-1.18,52.94,-1.10,52.97' },
+  { name: 'Cardiff',          bbox: '-3.21,51.47,-3.13,51.50' },
+  { name: 'Bath',             bbox: '-2.38,51.37,-2.34,51.39' },
+  { name: 'Oxford',           bbox: '-1.28,51.74,-1.22,51.77' },
+  { name: 'Cambridge',        bbox: '0.10,52.19,0.16,52.22' },
+  { name: 'York',             bbox: '-1.10,53.95,-1.04,53.97' },
+  { name: 'Brighton',         bbox: '-0.16,50.82,-0.10,50.84' },
+  { name: 'Norwich',          bbox: '1.27,52.62,1.33,52.65' },
+  { name: 'Exeter',           bbox: '-3.55,50.71,-3.49,50.74' },
+  { name: 'Chester',          bbox: '-2.90,53.18,-2.86,53.20' },
+  { name: 'Canterbury',       bbox: '1.06,51.27,1.10,51.29' },
+  { name: 'Winchester',       bbox: '-1.33,51.05,-1.29,51.07' },
+  { name: 'Salisbury',        bbox: '-1.81,51.06,-1.77,51.08' },
+  { name: 'Stratford-upon-Avon', bbox: '-1.72,52.19,-1.68,52.20' },
+  { name: 'Durham',           bbox: '-1.59,54.77,-1.55,54.78' },
+  { name: 'Whitby',           bbox: '-0.63,54.48,-0.59,54.49' },
+  { name: 'Richmond',         bbox: '-0.31,51.45,-0.27,51.47' },
+  { name: 'Greenwich',        bbox: '-0.01,51.47,0.03,51.49' },
+  { name: 'Hampstead',        bbox: '-0.19,51.55,-0.15,51.57' },
+  { name: 'Coulsdon',         bbox: '-0.15,51.31,-0.11,51.33' },
+];
+
+function getTodaysMap() {
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+  return DAILY_MAPS[dayOfYear % DAILY_MAPS.length];
+}
+
 function HomePageDemo() {
+  const todaysMap = getTodaysMap();
   return (
     <section style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Map background */}
+      {/* Map background — rotates daily through UK cities */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
-        <iframe title="Decorative map background"
-          src="https://www.openstreetmap.org/export/embed.html?bbox=-6.5,49.5,2.5,56.5&layer=mapnik"
-          style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', filter: 'grayscale(100%) brightness(1.1) contrast(0.7)', transform: 'scale(1.15)', transformOrigin: 'center center' }}
+        <iframe title={`Decorative map background — ${todaysMap.name}`}
+          src={`https://www.openstreetmap.org/export/embed.html?bbox=${todaysMap.bbox}&layer=mapnik`}
+          style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', filter: 'grayscale(100%) brightness(1.1) contrast(0.7)', transform: 'scale(1.3)', transformOrigin: 'center center' }}
           tabIndex={-1} aria-hidden="true" />
-        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${T.pageBg}E8 0%, ${T.pageBg}CC 30%, ${T.pageBg}B8 50%, ${T.pageBg}CC 70%, ${T.pageBg}F0 100%)`, zIndex: 1 }} />
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${T.pageBg}E0 0%, ${T.pageBg}C0 30%, ${T.pageBg}AA 50%, ${T.pageBg}C0 70%, ${T.pageBg}E8 100%)`, zIndex: 1 }} />
         <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: `radial-gradient(ellipse 60% 50% at 50% 40%, ${T.accent}08 0%, transparent 70%)` }} />
+        {/* City name watermark */}
+        <div style={{
+          position: 'absolute', bottom: 16, right: 24, zIndex: 3,
+          fontFamily: T.serif, fontSize: 13, fontWeight: 600, color: `${T.inkFaint}80`,
+          letterSpacing: '0.02em',
+        }}>
+          {todaysMap.name}
+        </div>
       </div>
       {/* Content */}
       <div style={{ position: 'relative', zIndex: 10, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '80px 32px' }}>
