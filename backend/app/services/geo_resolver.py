@@ -541,21 +541,16 @@ async def _try_ward(db: AsyncSession, q_lower: str, query: str, *, exact_only: b
 
 
 async def _resolve_parent(db: AsyncSession, lad_code: str) -> str:
-    """Bible Rule 3: Determine parent comparison from core_lad_county_lookup."""
+    """Bible Rule 3: Determine parent comparison from core_lad_county_lookup.
+
+    Delegates to get_parent_lad_info() which handles singleton ceremonial
+    counties (e.g. Northumberland → 'North East') via region escalation.
+    This keeps parent name resolution in one place.
+    """
+    from app.services.helpers import get_parent_lad_info
+
     if not lad_code:
         return "England"
 
-    result = await db.execute(
-        text("""
-            SELECT parent_comparison
-            FROM core_lad_county_lookup
-            WHERE lad_code = :lad_code
-        """),
-        {"lad_code": lad_code},
-    )
-    row = result.mappings().first()
-
-    if row and row["parent_comparison"]:
-        return row["parent_comparison"]
-
-    return "England"
+    _, parent_name = await get_parent_lad_info(db, lad_code)
+    return parent_name
