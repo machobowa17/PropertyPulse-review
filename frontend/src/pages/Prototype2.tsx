@@ -942,17 +942,73 @@ function SchoolTable() {
    ══════════════════════════════════════════════════════════════════════ */
 
 function MapPanel() {
+  // Mock map markers (positioned as % of the iframe viewport)
+  const markers = [
+    { left: '35%', top: '30%', color: T.accent, label: '£485k', type: 'price' },
+    { left: '55%', top: '45%', color: T.accent, label: '£612k', type: 'price' },
+    { left: '42%', top: '58%', color: T.accent, label: '£265k', type: 'price' },
+    { left: '28%', top: '40%', color: '#059669', label: 'Outstanding', type: 'school' },
+    { left: '62%', top: '35%', color: '#2563eb', label: 'Good', type: 'school' },
+    { left: '48%', top: '22%', color: '#7C3AED', label: 'Coulsdon South', type: 'station' },
+  ];
+
   return (
-    <div style={{ borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.divider}`, height: 400, position: 'relative', background: T.warmBg, marginBottom: 14 }}>
-      <iframe title="Area map" src="https://www.openstreetmap.org/export/embed.html?bbox=-0.15,51.30,-0.10,51.34&layer=mapnik&marker=51.32,-0.125" style={{ width: '100%', height: '100%', border: 'none' }} />
-      <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 2px 12px rgba(0,0,0,0.1)', border: `1px solid ${T.divider}` }}>
-        <div style={{ fontFamily: T.sans, fontSize: 10, fontWeight: 700, color: T.inkFaint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Legend</div>
-        {[{ color: '#C2410C', label: 'Sold prices' }, { color: '#059669', label: 'Outstanding schools' }, { color: '#2563eb', label: 'Good schools' }, { color: '#7C3AED', label: 'Stations' }].map(l => (
-          <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <div style={{ width: 8, height: 8, borderRadius: 4, background: l.color }} />
-            <span style={{ fontFamily: T.sans, fontSize: 10, color: T.inkMuted }}>{l.label}</span>
+    <div style={{ borderRadius: 16, overflow: 'hidden', border: `1px solid ${T.divider}`, height: 'calc(100vh - 100px)', minHeight: 500, maxHeight: 800, position: 'relative', background: T.warmBg }}>
+      {/* OSM embed with warm tint */}
+      <iframe title="Area map" src="https://www.openstreetmap.org/export/embed.html?bbox=-0.15,51.30,-0.10,51.34&layer=mapnik&marker=51.32,-0.125"
+        style={{ width: '100%', height: '100%', border: 'none', filter: 'saturate(0.85) sepia(0.08)' }} />
+
+      {/* Warm overlay tint to match theme */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(250,248,245,0.08)', pointerEvents: 'none' }} />
+
+      {/* Mock markers overlay */}
+      {markers.map((m, i) => (
+        <div key={i} style={{
+          position: 'absolute', left: m.left, top: m.top, transform: 'translate(-50%, -100%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none',
+        }}>
+          <div style={{
+            background: T.cardBg, borderRadius: 8, padding: '3px 8px', marginBottom: 2,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)', border: `1.5px solid ${m.color}`,
+            fontFamily: T.mono, fontSize: 10, fontWeight: 700, color: m.color, whiteSpace: 'nowrap',
+          }}>
+            {m.label}
+          </div>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: m.color, border: `2px solid ${T.cardBg}`, boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
+        </div>
+      ))}
+
+      {/* Legend card — warm-themed */}
+      <div style={{
+        position: 'absolute', top: 12, right: 12, background: 'rgba(250,248,245,0.94)',
+        backdropFilter: 'blur(10px)', borderRadius: 12, padding: '10px 14px',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.08)', border: `1px solid ${T.divider}`,
+      }}>
+        <div style={{ fontFamily: T.serif, fontSize: 11, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Map Legend</div>
+        {[
+          { color: T.accent, label: 'Sold prices', shape: 'circle' },
+          { color: '#059669', label: 'Outstanding schools', shape: 'circle' },
+          { color: '#2563eb', label: 'Good schools', shape: 'circle' },
+          { color: '#7C3AED', label: 'Stations', shape: 'diamond' },
+        ].map(l => (
+          <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{
+              width: 8, height: 8, background: l.color, flexShrink: 0,
+              borderRadius: l.shape === 'diamond' ? 1 : 4,
+              transform: l.shape === 'diamond' ? 'rotate(45deg)' : 'none',
+            }} />
+            <span style={{ fontFamily: T.sans, fontSize: 10, color: T.inkMuted, fontWeight: 500 }}>{l.label}</span>
           </div>
         ))}
+      </div>
+
+      {/* Area name badge */}
+      <div style={{
+        position: 'absolute', bottom: 12, left: 12, background: 'rgba(28,25,23,0.85)',
+        backdropFilter: 'blur(8px)', borderRadius: 10, padding: '8px 14px',
+      }}>
+        <div style={{ fontFamily: T.serif, fontSize: 13, fontWeight: 700, color: 'white' }}>{AREA.name}</div>
+        <div style={{ fontFamily: T.sans, fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>{AREA.parent} · {AREA.lsoaCount} LSOAs</div>
       </div>
     </div>
   );
@@ -983,7 +1039,7 @@ function NavBar({ onHome }: { onHome: () => void }) {
 function HeroSection() {
   return (
     <div style={{ background: T.heroGrad, padding: '40px 32px' }}>
-      <div style={{ maxWidth: 820, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ fontFamily: T.serif, fontWeight: 800, fontSize: 36, color: 'white', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
@@ -1012,7 +1068,7 @@ function PersonaFitBanner() {
   const verdictColor = score >= 70 ? T.good : score >= 45 ? T.caution : T.bad;
   const verdict = score >= 70 ? 'Strong' : score >= 45 ? 'Mixed' : 'Weak';
   return (
-    <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px', transform: 'translateY(-28px)', marginBottom: -12 }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px', transform: 'translateY(-28px)', marginBottom: -12 }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         background: T.cardBg, borderRadius: 16, padding: '16px 24px',
@@ -1038,7 +1094,7 @@ function PersonaFitBanner() {
 
 function SnapshotGrid() {
   return (
-    <section style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px 32px' }}>
+    <section style={{ padding: '0 0 32px' }}>
       <h2 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 22, color: T.ink, letterSpacing: '-0.02em', marginBottom: 16 }}>Area Snapshot</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: 12 }}>
         {HEADLINE_METRICS.map((m, i) => (
@@ -1068,7 +1124,7 @@ function SnapshotGrid() {
 
 function TabScoreCards({ onTabClick }: { onTabClick: (tab: string) => void }) {
   return (
-    <section style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px 32px' }}>
+    <section style={{ padding: '0 0 32px' }}>
       <h2 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 22, color: T.ink, letterSpacing: '-0.02em', marginBottom: 16 }}>Tab Scores</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: 12 }}>
         {TAB_SCORES.map((t, i) => {
@@ -1100,7 +1156,7 @@ function TabScoreCards({ onTabClick }: { onTabClick: (tab: string) => void }) {
 
 function ComparableAreasSection() {
   return (
-    <section style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px 32px' }}>
+    <section style={{ padding: '0 0 32px' }}>
       <h2 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 22, color: T.ink, letterSpacing: '-0.02em', marginBottom: 6 }}>Comparable Areas</h2>
       <p style={{ fontFamily: T.sans, fontSize: 12, color: T.inkMuted, marginBottom: 16, lineHeight: 1.5 }}>
         Matched across 11 dimensions: price, rent, earnings, air quality, growth, crime, deprivation, demographics, transport, and council tax.
@@ -1174,8 +1230,8 @@ function ResultsView({ onHome }: { onHome: () => void }) {
       <HeroSection />
       <PersonaFitBanner />
 
-      {/* Tab bar */}
-      <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px 24px' }}>
+      {/* Tab bar — full width */}
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px 16px' }}>
         <div style={{ display: 'flex', gap: 4, overflowX: 'auto', paddingBottom: 4 }} className="scrollbar-none">
           {TAB_NAMES.map(tab => {
             const isActive = activeTab === tab;
@@ -1202,22 +1258,25 @@ function ResultsView({ onHome }: { onHome: () => void }) {
         </div>
       </div>
 
-      {/* Map */}
-      <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px' }}>
-        <MapPanel />
-      </div>
+      {/* Two-column layout: metrics left, map sticky right */}
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 24px 64px', display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+        {/* Left column — metrics */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {activeTab === 'Overview' ? (
+            <>
+              <SnapshotGrid />
+              <TabScoreCards onTabClick={(t) => setActiveTab(t as TabName)} />
+              <ComparableAreasSection />
+            </>
+          ) : (
+            <TabContentView tab={activeTab} />
+          )}
+        </div>
 
-      {/* Tab content */}
-      <div style={{ maxWidth: 820, margin: '0 auto', padding: '0 32px 64px' }}>
-        {activeTab === 'Overview' ? (
-          <>
-            <SnapshotGrid />
-            <TabScoreCards onTabClick={(t) => setActiveTab(t as TabName)} />
-            <ComparableAreasSection />
-          </>
-        ) : (
-          <TabContentView tab={activeTab} />
-        )}
+        {/* Right column — sticky map (desktop only, hidden below 1024px via inline media-query hack) */}
+        <div className="proto2-map-col" style={{ width: 440, flexShrink: 0, position: 'sticky', top: 80 }}>
+          <MapPanel />
+        </div>
       </div>
     </div>
   );
@@ -1355,6 +1414,10 @@ function InjectStyles() {
       @keyframes fadeInUp {
         from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
+      }
+      /* Hide map column on mobile / narrow screens */
+      @media (max-width: 1023px) {
+        .proto2-map-col { display: none !important; }
       }
     `}</style>
   );
