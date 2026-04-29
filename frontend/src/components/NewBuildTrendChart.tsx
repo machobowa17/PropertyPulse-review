@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 interface TrendPoint {
@@ -13,14 +14,32 @@ interface Props {
 }
 
 export default function NewBuildTrendChart({ trend, enhanced }: Props) {
+  const [hoveredPoint, setHoveredPoint] = useState<TrendPoint | null>(null);
   if (!trend || trend.length === 0) return null;
 
   return (
     <div className="bg-surface rounded-xl p-3 space-y-1 mt-2">
-      <h4 className="text-xs font-semibold text-ink-muted">New Build % of Sales by Year</h4>
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-semibold text-ink-muted">New Build % of Sales by Year</h4>
+        {enhanced && hoveredPoint && (
+          <div className="flex items-center gap-2 text-[11px] font-mono tabular-nums">
+            <span className="font-semibold text-brand-600">{hoveredPoint.year}</span>
+            <span className="text-ink">{hoveredPoint.new_builds} of {hoveredPoint.total} sales</span>
+            <span className="font-semibold text-purple-600">{hoveredPoint.pct}%</span>
+          </div>
+        )}
+      </div>
       <div className="h-[180px]" role="img" aria-label="Bar chart showing new build percentage of sales by year">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-          <BarChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barSize={14}>
+          <BarChart
+            data={trend}
+            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+            barSize={14}
+            onMouseMove={enhanced ? (state: { activePayload?: Array<{ payload: TrendPoint }> }) => {
+              if (state.activePayload?.[0]) setHoveredPoint(state.activePayload[0].payload);
+            } : undefined}
+            onMouseLeave={enhanced ? () => setHoveredPoint(null) : undefined}
+          >
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis
               dataKey="year"
@@ -37,7 +56,7 @@ export default function NewBuildTrendChart({ trend, enhanced }: Props) {
               tickFormatter={(v) => `${v}%`}
             />
             <Tooltip
-              content={({ active, payload }) => {
+              content={enhanced ? () => null : ({ active, payload }) => {
                 if (!active || !payload?.length) return null;
                 const d = payload[0].payload as TrendPoint;
                 return (

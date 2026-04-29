@@ -44,9 +44,15 @@ function CoverageBar({ label, value, parentValue, colour, enhanced }: {
         />
         {parentValue != null && (
           <div
-            className="absolute inset-y-0 w-0.5 bg-ink/30"
+            className={`absolute ${enhanced ? 'w-0.5 h-[calc(100%+6px)] -top-[3px] bg-amber-500 opacity-80' : 'inset-y-0 w-0.5 bg-ink/30'}`}
             style={{ left: `${parentValue}%` }}
-          />
+          >
+            {enhanced && (
+              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-medium text-amber-600 whitespace-nowrap bg-white/90 px-0.5 rounded">
+                {parentValue.toFixed(0)}%
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>

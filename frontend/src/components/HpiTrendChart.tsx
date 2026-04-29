@@ -118,6 +118,8 @@ function computeYoy(series: HpiPoint[]): Record<string, number | null>[] {
 export default function HpiTrendChart({ series, enhanced }: Props) {
   const [mode, setMode] = useState<ViewMode>('price');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set(['avg_price']));
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
 
 
   const toggleType = (key: string) => {
@@ -236,12 +238,46 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
         </div>
       </div>
 
+      {/* Enhanced: fixed readout above chart */}
+      {enhanced && hoveredIdx != null && chartData[hoveredIdx] && (
+        <div className="flex items-center gap-3 px-1 pb-1 text-[11px] font-mono tabular-nums">
+          <span className="font-semibold text-brand-600">{chartData[hoveredIdx].year}</span>
+          {activeTypes.has('avg_price') && chartData[hoveredIdx].avg_price != null && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-gray-700" />
+              <span className="text-ink-muted">All:</span>
+              <span className="font-semibold text-ink">{mode === 'price' ? fmtPrice(Number(chartData[hoveredIdx].avg_price)) : fmtPct(Number(chartData[hoveredIdx].avg_price))}</span>
+            </span>
+          )}
+          {TYPE_LINES.map(({ key, label, colour }) => {
+            if (!activeTypes.has(key)) return null;
+            const val = chartData[hoveredIdx!][key as keyof typeof chartData[0]];
+            if (val == null) return null;
+            return (
+              <span key={key} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colour }} />
+                <span className="text-ink-muted">{label}:</span>
+                <span className="font-semibold text-ink">{mode === 'price' ? fmtPrice(Number(val)) : fmtPct(Number(val))}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {/* Chart */}
       <div className="h-[220px]" role="img" aria-label="Line chart showing house price index trend">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart
             data={chartData}
             margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+            onMouseMove={enhanced ? (state: { activeTooltipIndex?: number; activePayload?: Array<{ dataKey: string; value: number }> }) => {
+              if (state.activeTooltipIndex != null) setHoveredIdx(state.activeTooltipIndex);
+              if (state.activePayload?.length) {
+                const best = state.activePayload.reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a));
+                setActiveKey(best.dataKey);
+              }
+            } : undefined}
+            onMouseLeave={enhanced ? () => { setHoveredIdx(null); setActiveKey(null); } : undefined}
           >
             {enhanced && (
               <defs>
@@ -267,7 +303,10 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
               width={mode === 'price' ? 62 : 55}
               allowDataOverflow
             />
-            <Tooltip content={<CustomTooltip mode={mode} />} />
+            <Tooltip
+              content={enhanced ? () => null : <CustomTooltip mode={mode} />}
+              cursor={enhanced ? { stroke: '#9ca3af', strokeWidth: 1, strokeDasharray: '4 3' } : undefined}
+            />
             {mode === 'yoy' && stableScale.min < 0 && stableScale.max > 0 && (
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
             )}
@@ -281,10 +320,12 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
             )}
             {activeTypes.has('avg_price') && (
               <Line
+                type={enhanced ? 'monotone' : 'linear'}
                 dataKey="avg_price"
                 name="All Types"
                 stroke="#374151"
                 strokeWidth={2.5}
+                strokeOpacity={enhanced && activeKey && activeKey !== 'avg_price' ? 0.3 : 1}
                 dot={{ r: 2.5 }}
                 activeDot={{ r: 4 }}
                 connectNulls
@@ -297,10 +338,12 @@ export default function HpiTrendChart({ series, enhanced }: Props) {
               activeTypes.has(key) ? (
                 <Line
                   key={key}
+                  type={enhanced ? 'monotone' : 'linear'}
                   dataKey={key}
                   name={label}
                   stroke={colour}
                   strokeWidth={2}
+                  strokeOpacity={enhanced && activeKey && activeKey !== key ? 0.3 : 1}
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
                   connectNulls

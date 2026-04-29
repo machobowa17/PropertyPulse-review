@@ -71,7 +71,7 @@ export default function OverviewSnapshotGrid({ metrics, parentName, enhanced }: 
         return (
           <div
             key={m.id}
-            className="rounded-xl bg-white border border-divider px-3.5 py-3 shadow-sm hover:shadow-md transition-shadow"
+            className={`rounded-xl bg-white border border-divider px-3.5 py-3 shadow-sm hover:shadow-md transition-shadow ${enhanced ? 'border-t-2 border-t-indigo-400' : ''}`}
             style={enhanced ? { animation: `enhanced-fade-in 0.4s ease-out ${i * 50}ms both` } : undefined}
           >
             <div className="flex items-center gap-2 mb-1.5">

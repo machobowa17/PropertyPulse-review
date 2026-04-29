@@ -76,21 +76,29 @@ const CRIME_COLOURS: Record<string, string> = {
 export function CrimeBreakdown({ details, enhanced }: { details: Record<string, unknown>; enhanced?: boolean }) {
   const skipKeys = new Set(['rolling_12m_crimes', 'months_with_data', 'resident_population', 'high_footfall_note', 'data_unavailable_note', 'detail_unit']);
   const entries = Object.entries(details)
-    .filter(([k, v]) => !skipKeys.has(k) && typeof v === 'number' && !k.endsWith('_note'))
-    .map(([k, v]) => ({ label: k.replace(/_/g, ' ').replace(/^(.)/, c => c.toUpperCase()), count: v as number }))
+    .filter(([k, v]) => !skipKeys.has(k) && typeof v === 'number' && !k.endsWith('_note') && !k.startsWith('parent_'))
+    .map(([k, v]) => ({
+      label: k.replace(/_/g, ' ').replace(/^(.)/, c => c.toUpperCase()),
+      count: v as number,
+    }))
     .sort((a, b) => b.count - a.count);
   if (entries.length === 0) return null;
   const maxCount = entries[0].count;
   const total = entries.reduce((s, e) => s + e.count, 0);
+
   return (
     <div className="space-y-2">
-      <div className="text-xs text-ink-faint mb-2">{total.toLocaleString()} crimes in rolling 12 months</div>
+      <div className="text-xs text-ink-faint mb-2">
+        {total.toLocaleString()} crimes in rolling 12 months
+      </div>
       {entries.map((e, idx) => {
         const colour = enhanced ? (CRIME_COLOURS[e.label] ?? '#f43f5e') : undefined;
+        const pct = total > 0 ? (e.count / total * 100) : 0;
         return (
           <div key={e.label} className="flex items-center gap-2">
+            {enhanced && <span className="w-5 text-[10px] text-ink-faint tabular-nums text-right">{idx + 1}</span>}
             <span className="w-20 text-xs text-ink-muted text-right shrink-0 truncate">{e.label}</span>
-            <div className="flex-1 h-5 rounded bg-divider/40 overflow-hidden">
+            <div className="flex-1 h-5 rounded bg-divider/40 overflow-hidden relative">
               <div
                 className={`h-full rounded ${enhanced ? '' : 'bg-rose-400/70'}`}
                 style={{
@@ -102,6 +110,7 @@ export function CrimeBreakdown({ details, enhanced }: { details: Record<string, 
               />
             </div>
             <span className="w-12 text-xs text-ink tabular-nums text-right">{e.count.toLocaleString()}</span>
+            {enhanced && <span className="w-10 text-[10px] text-ink-faint tabular-nums text-right">{pct.toFixed(0)}%</span>}
           </div>
         );
       })}
@@ -110,8 +119,9 @@ export function CrimeBreakdown({ details, enhanced }: { details: Record<string, 
 }
 
 // ─── Range Chart (for price_spread) ─────────────────────────────────
-export function RangeChart({ min, max, p10, p25, p50, p75, p90 }: {
+export function RangeChart({ min, max, p10, p25, p50, p75, p90, enhanced, parentMedian }: {
   min: number; max: number; p10: number; p25?: number; p50?: number; p75?: number; p90: number;
+  enhanced?: boolean; parentMedian?: number | null;
 }) {
   const range = max - min || 1;
   const pos = (v: number) => ((v - min) / range) * 100;
@@ -121,11 +131,33 @@ export function RangeChart({ min, max, p10, p25, p50, p75, p90 }: {
     <div className="py-3">
       <div className="relative h-10 mx-2">
         <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-divider rounded-full" style={{ left: '0%', width: '100%' }} />
-        <div className="absolute top-1/2 -translate-y-1/2 h-3 bg-brand-300/50 rounded-full" style={{ left: `${pos(p10)}%`, width: `${pos(p90) - pos(p10)}%` }} />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 h-3 bg-brand-300/50 rounded-full"
+          style={{
+            left: `${pos(p10)}%`,
+            width: `${pos(p90) - pos(p10)}%`,
+            animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+          }}
+        />
         {p25 != null && p75 != null && (
-          <div className="absolute top-1/2 -translate-y-1/2 h-5 bg-brand-500 rounded-full" style={{ left: `${pos(p25)}%`, width: `${pos(p75) - pos(p25)}%` }} />
+          <div
+            className="absolute top-1/2 -translate-y-1/2 h-5 bg-brand-500 rounded-full"
+            style={{
+              left: `${pos(p25)}%`,
+              width: `${pos(p75) - pos(p25)}%`,
+              animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out 0.1s both' : undefined,
+            }}
+          />
         )}
         <div className="absolute top-1/2 -translate-y-1/2 w-0.5 h-7 bg-ink" style={{ left: `${pos(median)}%` }} />
+        {enhanced && parentMedian != null && parentMedian >= min && parentMedian <= max && (
+          <div className="absolute top-1/2 -translate-y-1/2 h-9 flex flex-col items-center" style={{ left: `${pos(parentMedian)}%` }}>
+            <div className="w-px h-full border-l-2 border-dashed border-amber-500" />
+            <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-medium text-amber-600 whitespace-nowrap bg-white/80 px-1 rounded">
+              Area {fmt(parentMedian)}
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex justify-between text-xs text-ink-faint mt-1 mx-2">
         <span>{fmt(min)}</span>
@@ -143,9 +175,11 @@ export function RangeChart({ min, max, p10, p25, p50, p75, p90 }: {
 }
 
 // ─── Noise Scale ────────────────────────────────────────────────────
-export function NoiseScale({ road, rail, air, band, enhanced }: {
+export function NoiseScale({ road, rail, air, band, enhanced, parentRoad, parentRail, parentAir }: {
   road?: number | null; rail?: number | null; air?: number | null; band?: string | null; enhanced?: boolean;
+  parentRoad?: number | null; parentRail?: number | null; parentAir?: number | null;
 }) {
+  const parentMap: Record<string, number | null | undefined> = { Road: parentRoad, Rail: parentRail, Air: parentAir };
   const levels = [
     { label: 'Road', db: road },
     { label: 'Rail', db: rail },
@@ -181,7 +215,7 @@ export function NoiseScale({ road, rail, air, band, enhanced }: {
             <span className="text-ink-muted">{l.label}</span>
             <span className="text-ink font-medium">{l.db!.toFixed(0)} dB <span className="text-xs text-ink-faint">({getLabel(l.db!)})</span></span>
           </div>
-          <div className="h-3 rounded-full bg-divider/40 overflow-hidden">
+          <div className="h-3 rounded-full bg-divider/40 overflow-hidden relative">
             <div
               className={`h-full rounded-full ${getColor(l.db!)} transition-all`}
               style={{
@@ -190,6 +224,13 @@ export function NoiseScale({ road, rail, air, band, enhanced }: {
                 animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 100}ms both` : undefined,
               }}
             />
+            {enhanced && parentMap[l.label] != null && parentMap[l.label]! > 0 && (
+              <div
+                className="absolute top-0 w-0.5 h-full bg-amber-500 rounded-full"
+                style={{ left: `${Math.min((parentMap[l.label]! / 80) * 100, 100)}%` }}
+                title={`Area avg: ${parentMap[l.label]!.toFixed(0)} dB`}
+              />
+            )}
           </div>
         </div>
       ))}
@@ -409,7 +450,7 @@ export function renderRedesignedDetail(metric: Metric, enhanced?: boolean): Reac
     const p10 = d.p10 as number | undefined;
     const p90 = d.p90 as number | undefined;
     if (min_price != null && max_price != null && p10 != null && p90 != null) {
-      return <RangeChart min={min_price} max={max_price} p10={p10} p25={d.p25 as number | undefined} p50={d.p50 as number | undefined} p75={d.p75 as number | undefined} p90={p90} />;
+      return <RangeChart min={min_price} max={max_price} p10={p10} p25={d.p25 as number | undefined} p50={d.p50 as number | undefined} p75={d.p75 as number | undefined} p90={p90} enhanced={enhanced} />;
     }
   }
 

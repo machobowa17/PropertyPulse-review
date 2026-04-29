@@ -696,10 +696,20 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
     const z2 = num(details, 'zone_2_pct');
     const pz3 = num(details, 'parent_zone_3_pct');
     const totalLsoas = num(details, 'total_lsoas');
+    const floodLevel = String(details.flood_level).toLowerCase();
+    const riskBg = enhanced
+      ? floodLevel.includes('high') || floodLevel.includes('significant')
+        ? 'bg-red-50 border border-red-200/60'
+        : floodLevel.includes('medium') || floodLevel.includes('moderate')
+        ? 'bg-amber-50 border border-amber-200/60'
+        : floodLevel.includes('low')
+        ? 'bg-emerald-50 border border-emerald-200/60'
+        : 'bg-surface'
+      : 'bg-surface';
     return (
       <div className="space-y-2 mt-2">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <div className="p-2.5 rounded-xl bg-surface">
+          <div className={`p-2.5 rounded-xl ${riskBg}`}>
             <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Risk Level</div>
             <div className="text-sm font-semibold text-ink mt-0.5">{String(details.flood_level)}</div>
           </div>
@@ -708,12 +718,25 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
               <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Zone 3 (High)</div>
               <div className="text-sm font-semibold text-ink mt-0.5">{z3.toFixed(1)}% of LSOAs</div>
               {pz3 != null && <div className="text-[10px] text-ink-faint mt-0.5">vs {pz3.toFixed(1)}% region</div>}
+              {enhanced && (
+                <div className="relative mt-1.5 h-1.5 rounded-full bg-divider/30 overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-red-400/70" style={{ width: `${Math.min(z3, 100)}%` }} />
+                  {pz3 != null && (
+                    <div className="absolute top-[-1px] w-0.5 h-[calc(100%+2px)] bg-amber-500 rounded-full" style={{ left: `${Math.min(pz3, 100)}%` }} />
+                  )}
+                </div>
+              )}
             </div>
           )}
           {z2 != null && (
             <div className="p-2.5 rounded-xl bg-surface">
               <div className="text-[11px] text-ink-faint uppercase tracking-wide font-medium">Zone 2 (Medium)</div>
               <div className="text-sm font-semibold text-ink mt-0.5">{z2.toFixed(1)}% of LSOAs</div>
+              {enhanced && (
+                <div className="relative mt-1.5 h-1.5 rounded-full bg-divider/30 overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-amber-400/70" style={{ width: `${Math.min(z2, 100)}%` }} />
+                </div>
+              )}
             </div>
           )}
           {totalLsoas != null && (

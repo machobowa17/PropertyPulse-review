@@ -120,10 +120,16 @@ export default function EpcRatingChart({
                   />
                   {parent != null && parent > 0 && (
                     <div
-                      className="absolute top-0 h-full w-0.5 bg-ink-muted opacity-40"
+                      className={`absolute ${enhanced ? 'w-0.5 h-[calc(100%+6px)] -top-[3px] bg-amber-500 opacity-80' : 'w-0.5 h-full top-0 bg-ink-muted opacity-40'}`}
                       style={{ left: `${Math.min(parent, 100)}%` }}
                       title={`Area avg: ${parent.toFixed(1)}%`}
-                    />
+                    >
+                      {enhanced && (
+                        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-medium text-amber-600 whitespace-nowrap bg-white/90 px-0.5 rounded">
+                          {parent.toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="w-12 text-right text-xs font-medium text-ink tabular-nums shrink-0">
@@ -133,7 +139,12 @@ export default function EpcRatingChart({
             ))}
           </div>
           {parentRatings && (
-            <p className="text-[10px] text-ink-faint mt-1.5">Grey tick = area average</p>
+            <div className="flex items-center gap-1.5 text-[10px] text-ink-faint mt-1.5">
+              <div className="w-3 h-3 flex items-center justify-center">
+                <div className={`w-0.5 h-3 rounded ${enhanced ? 'bg-amber-500' : 'bg-ink-muted/40'}`} />
+              </div>
+              <span>Vertical tick = area average</span>
+            </div>
           )}
         </div>
       )}

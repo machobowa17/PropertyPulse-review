@@ -53,15 +53,18 @@ export default function RentByBedroomChart({
       </div>
 
       <div className="space-y-2.5">
-        {rows.map(({ label, rentKey, yieldKey, colour }) => {
+        {rows.map(({ label, rentKey, yieldKey, colour }, idx) => {
           const rent = rentVals[rentKey];
           const yld  = yieldVals[yieldKey];
           const barPct = maxRent > 0 && rent != null ? (rent / maxRent) * 100 : 0;
 
           return (
             <div key={label} className="flex items-center gap-3">
-              {/* Bed label */}
-              <div className="w-10 text-[11px] font-semibold text-ink-faint shrink-0">{label}</div>
+              {/* Bed label — coloured dot in enhanced */}
+              <div className="w-10 flex items-center gap-1 shrink-0">
+                {enhanced && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colour }} />}
+                <span className="text-[11px] font-semibold text-ink-faint">{label}</span>
+              </div>
 
               {/* Bar + rent */}
               <div className="flex-1 min-w-0">
@@ -85,7 +88,7 @@ export default function RentByBedroomChart({
                     style={{
                       width: `${barPct}%`,
                       backgroundColor: colour,
-                      animation: enhanced ? 'enhanced-bar-fill 0.7s ease-out both' : undefined,
+                      animation: enhanced ? `enhanced-bar-fill 0.7s ease-out ${idx * 100}ms both` : undefined,
                     }}
                   />
                 </div>

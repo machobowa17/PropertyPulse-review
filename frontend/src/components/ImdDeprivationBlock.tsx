@@ -144,18 +144,27 @@ export default function ImdDeprivationBlock({
           <div className="mx-auto" style={{ width: '100%', maxWidth: 340, height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="72%" data={radarData}>
-                <PolarGrid stroke="#e5e7eb" />
+                {enhanced && (
+                  <defs>
+                    <linearGradient id="imd-radar-grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={cfg.colour} stopOpacity={0.4} />
+                      <stop offset="100%" stopColor={cfg.colour} stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                )}
+                <PolarGrid stroke={enhanced ? '#d1d5db' : '#e5e7eb'} />
                 <PolarAngleAxis
                   dataKey="domain"
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 11, fill: enhanced ? '#374151' : '#6b7280', fontWeight: enhanced ? 600 : 400 }}
                 />
                 <Radar
                   name="Score"
                   dataKey="score"
                   stroke={cfg.colour}
-                  fill={cfg.colour}
-                  fillOpacity={0.25}
-                  strokeWidth={2}
+                  fill={enhanced ? 'url(#imd-radar-grad)' : cfg.colour}
+                  fillOpacity={enhanced ? 1 : 0.25}
+                  strokeWidth={enhanced ? 2.5 : 2}
+                  dot={enhanced ? { r: 3, fill: cfg.colour, stroke: '#fff', strokeWidth: 2 } : false}
                   isAnimationActive={enhanced}
                   animationDuration={enhanced ? 700 : 0}
                   animationEasing="ease-out"
@@ -182,11 +191,25 @@ export default function ImdDeprivationBlock({
           </div>
           {/* Domain scores table */}
           <div className="grid grid-cols-2 gap-1.5 mt-2">
-            {radarData.map(({ domain, score }) => (
+            {radarData.map(({ domain, score }, idx) => (
               <div key={domain} className="flex items-center gap-2 bg-white border border-divider rounded-lg px-2.5 py-1.5">
-                <div className="flex-1 text-[11px] text-ink-muted">{domain}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-ink-muted">{domain}</div>
+                  {enhanced && (
+                    <div className="h-1 rounded-full bg-divider/40 mt-1 overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${score}%`,
+                          backgroundColor: score >= 60 ? '#16a34a' : score >= 40 ? '#eab308' : '#dc2626',
+                          animation: `enhanced-bar-fill 0.5s ease-out ${idx * 60}ms both`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
                 <div
-                  className="text-xs font-bold"
+                  className="text-xs font-bold shrink-0"
                   style={{ color: score >= 60 ? '#16a34a' : score >= 40 ? '#eab308' : '#dc2626' }}
                 >
                   {score}
