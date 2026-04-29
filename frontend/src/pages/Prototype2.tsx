@@ -123,7 +123,7 @@ const PROPERTY_SECTIONS: MockSection[] = [
   {
     id: 'prices_value', title: 'Prices & Value', icon: PoundSterling, iconColor: '#C2410C',
     metrics: [
-      { id: 'avg_price', label: 'Avg Price', value: '£485,200', parent: '£412,800', direction: 'higher_is_neutral', chartType: 'trend', chartData: { points: [448, 455, 442, 451, 460, 472, 468, 478, 485], labels: ['Apr 23','Jul 23','Oct 23','Jan 24','Apr 24','Jul 24','Oct 24','Jan 25','Apr 25'] } },
+      { id: 'avg_price', label: 'Avg Price', value: '£485,200', parent: '£412,800', direction: 'higher_is_neutral', chartType: 'trend', chartData: { points: [448, 455, 442, 451, 460, 472, 468, 478, 485], parentPoints: [398, 402, 395, 400, 405, 408, 410, 412, 413], labels: ['Apr 23','Jul 23','Oct 23','Jan 24','Apr 24','Jul 24','Oct 24','Jan 25','Apr 25'] } },
       { id: 'median_price', label: 'Median Price', value: '£462,000', parent: '£395,000', direction: 'higher_is_neutral' },
       { id: 'price_per_sqft', label: '£/sqft', value: '£412', parent: '£368', unit: 'GBP/sqft', direction: 'higher_is_neutral' },
       { id: 'price_spread', label: 'Price Spread', value: '£285k–£780k', parent: '£210k–£650k', direction: 'higher_is_neutral' },
@@ -134,7 +134,7 @@ const PROPERTY_SECTIONS: MockSection[] = [
     id: 'market_activity', title: 'Market Activity', icon: TrendingUp, iconColor: '#7C3AED',
     metrics: [
       { id: 'transaction_volume', label: 'Transactions', value: '142', parent: '118', unit: 'sales / 13mo', direction: 'higher_is_better' },
-      { id: 'freehold_leasehold', label: 'Freehold Share', value: '72%', parent: '64%', direction: 'higher_is_neutral', chartType: 'bars', chartData: [{ label: 'Freehold', pct: 72 }, { label: 'Leasehold', pct: 28 }] },
+      { id: 'freehold_leasehold', label: 'Freehold Share', value: '72%', parent: '64%', direction: 'higher_is_neutral', chartType: 'bars', chartData: [{ label: 'Freehold', pct: 72, parentPct: 64 }, { label: 'Leasehold', pct: 28, parentPct: 36 }] },
       { id: 'new_build_proportion', label: 'New-build Share', value: '8.2%', parent: '12.4%', direction: 'higher_is_neutral' },
     ],
   },
@@ -173,7 +173,7 @@ const LIFESTYLE_SECTIONS: MockSection[] = [
     metrics: [
       { id: 'nearest_station', label: 'Nearest Station', value: '540m', parent: '1,180m', unit: 'metres', direction: 'lower_is_better' },
       { id: 'stations_in_area', label: 'Stations', value: '3', parent: '2', unit: 'count', direction: 'higher_is_better' },
-      { id: 'ptal_score', label: 'PTAL', value: '4', parent: '3', unit: 'level', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 4, max: 6 } },
+      { id: 'ptal_score', label: 'PTAL', value: '4', parent: '3', unit: 'level', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 4, max: 6, parentValue: 3 } },
       { id: 'commuter_connectivity', label: 'Connectivity Score', value: '71', parent: '58', unit: 'score /100', direction: 'higher_is_better' },
       { id: 'connectivity_index', label: 'Connectivity Index', value: '68', parent: '54', unit: 'score /100', direction: 'higher_is_better' },
       { id: 'ev_chargers', label: 'EV Chargers', value: '12', parent: '8', unit: 'count', direction: 'higher_is_better' },
@@ -189,7 +189,7 @@ const LIFESTYLE_SECTIONS: MockSection[] = [
   {
     id: 'amenities', title: 'Amenities & Active Travel', icon: ShoppingBag, iconColor: '#059669',
     metrics: [
-      { id: 'fifteen_min_score', label: '15-Min Score', value: '74', parent: '62', unit: 'score /100', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 74, max: 100 } },
+      { id: 'fifteen_min_score', label: '15-Min Score', value: '74', parent: '62', unit: 'score /100', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 74, max: 100, parentValue: 62 } },
       { id: 'amenities_15min', label: 'Amenities Nearby', value: '47', parent: '38', unit: 'count', direction: 'higher_is_better' },
       { id: 'cycling', label: 'Cycle Commuters', value: '4.2%', parent: '3.1%', direction: 'higher_is_better' },
       { id: 'commute_distance', label: 'WFH Rate', value: '28.4%', parent: '24.1%', direction: 'higher_is_neutral' },
@@ -221,14 +221,14 @@ const ENVIRONMENT_SECTIONS: MockSection[] = [
   {
     id: 'environment', title: 'Environment', icon: Wind, iconColor: '#0891B2',
     metrics: [
-      { id: 'air_quality_no2', label: 'NO₂', value: '24.1', parent: '28.4', unit: 'µg/m³', direction: 'lower_is_better', chartType: 'gauge', chartData: { value: 24.1, max: 60, limit: 40, limitLabel: 'UK limit' } },
-      { id: 'air_quality_pm25', label: 'PM2.5', value: '10.2', parent: '11.8', unit: 'µg/m³', direction: 'lower_is_better', chartType: 'gauge', chartData: { value: 10.2, max: 30, limit: 15, limitLabel: 'WHO limit' } },
+      { id: 'air_quality_no2', label: 'NO₂', value: '24.1', parent: '28.4', unit: 'µg/m³', direction: 'lower_is_better', chartType: 'gauge', chartData: { value: 24.1, max: 60, limit: 40, limitLabel: 'UK limit', parentValue: 28.4 } },
+      { id: 'air_quality_pm25', label: 'PM2.5', value: '10.2', parent: '11.8', unit: 'µg/m³', direction: 'lower_is_better', chartType: 'gauge', chartData: { value: 10.2, max: 30, limit: 15, limitLabel: 'WHO limit', parentValue: 11.8 } },
       { id: 'noise', label: 'Noise', value: '52.3 dB', parent: '56.8 dB', direction: 'lower_is_better', chartType: 'noise',
         chartData: [
-          { source: 'Road Traffic (Day)', db: 52.3, category: 'Moderate' },
-          { source: 'Road Traffic (Night)', db: 44.1, category: 'Quiet' },
-          { source: 'Rail (Day)', db: 48.7, category: 'Moderate' },
-          { source: 'Rail (Night)', db: 38.2, category: 'Quiet' },
+          { source: 'Road Traffic (Day)', db: 52.3, category: 'Moderate', parentDb: 56.8 },
+          { source: 'Road Traffic (Night)', db: 44.1, category: 'Quiet', parentDb: 48.2 },
+          { source: 'Rail (Day)', db: 48.7, category: 'Moderate', parentDb: 50.1 },
+          { source: 'Rail (Night)', db: 38.2, category: 'Quiet', parentDb: 42.5 },
         ],
       },
       { id: 'epc_rating', label: 'EPC Score', value: '62', parent: '58', unit: 'score', direction: 'higher_is_better' },
@@ -321,7 +321,7 @@ const COMMUNITY_SECTIONS: MockSection[] = [
   {
     id: 'deprivation', title: 'Deprivation', icon: Scale, iconColor: '#6366F1',
     metrics: [
-      { id: 'deprivation', label: 'IMD Decile', value: '7', parent: '5', unit: 'score (10=least deprived)', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 7, max: 10 } },
+      { id: 'deprivation', label: 'IMD Decile', value: '7', parent: '5', unit: 'score (10=least deprived)', direction: 'higher_is_better', chartType: 'gauge', chartData: { value: 7, max: 10, parentValue: 5 } },
     ],
   },
   {
@@ -412,6 +412,12 @@ function getTodaysMap() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   ENHANCED MODE CONTEXT — Before/After toggle
+   ══════════════════════════════════════════════════════════════════════ */
+// Global enhanced mode flag — passed down through props
+// "current" = existing PropertyPulse look, "enhanced" = BurbScore-inspired
+
+/* ══════════════════════════════════════════════════════════════════════
    UTILITY HELPERS
    ══════════════════════════════════════════════════════════════════════ */
 const fmtPrice = (n: number) => '£' + n.toLocaleString('en-GB');
@@ -465,113 +471,337 @@ function Card({ children, style, hover = true }: { children: React.ReactNode; st
    CHART RENDERERS — UNIVERSAL, DATA-DRIVEN
    ══════════════════════════════════════════════════════════════════════ */
 
-function TrendChart({ data }: { data: { points: number[]; labels: string[] } }) {
+function TrendChart({ data, enhanced = false }: { data: { points: number[]; labels: string[]; parentPoints?: number[] }; enhanced?: boolean }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const max = Math.max(...data.points);
   const min = Math.min(...data.points);
   const range = max - min || 1;
-  const W = 600, H = 140, padL = 50, padR = 10, padT = 10, padB = 28;
+  const W = 600, H = enhanced ? 160 : 140, padL = 50, padR = 10, padT = enhanced ? 30 : 10, padB = 28;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const pts = data.points.map((v, i) => ({
     x: padL + (i / (data.points.length - 1)) * chartW,
     y: padT + chartH - ((v - min) / range) * chartH,
+    val: v,
   }));
-  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  // Parent line points (enhanced only)
+  const parentPts = enhanced && data.parentPoints ? data.parentPoints.map((v, i) => ({
+    x: padL + (i / (data.parentPoints!.length - 1)) * chartW,
+    y: padT + chartH - ((v - min) / range) * chartH,
+    val: v,
+  })) : null;
+
+  // Catmull-Rom spline (enhanced) vs linear (current)
+  function buildPath(points: { x: number; y: number }[]) {
+    if (!enhanced) return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+    // Catmull-Rom to cubic bezier conversion
+    if (points.length < 2) return `M${points[0]?.x ?? 0},${points[0]?.y ?? 0}`;
+    let d = `M${points[0].x},${points[0].y}`;
+    const tension = 0.35;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[Math.max(i - 1, 0)];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[Math.min(i + 2, points.length - 1)];
+      const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+      const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+      const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+      const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+      d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
+
+  const linePath = buildPath(pts);
   const areaPath = linePath + ` L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`;
+  const parentPath = parentPts ? buildPath(parentPts) : null;
+
+  const activeIdx = hoverIdx ?? pts.length - 1;
+  const fmtVal = (v: number) => v >= 1000 ? `£${Math.round(v / 1000)}k` : v.toFixed(0);
+
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible', marginTop: 12 }}>
-      {[0, 0.5, 1].map(frac => {
-        const y = padT + chartH * (1 - frac);
-        const val = min + range * frac;
-        return (
-          <g key={frac}>
-            <line x1={padL} x2={W - padR} y1={y} y2={y} stroke={T.divider} strokeDasharray="3,3" />
-            <text x={padL - 6} y={y + 3} textAnchor="end" style={{ fontFamily: T.mono, fontSize: 9, fill: T.inkFaint }}>{val >= 1000 ? `£${Math.round(val/1000)}k` : val.toFixed(0)}</text>
-          </g>
-        );
-      })}
-      <path d={areaPath} fill={`${T.accent}12`} />
-      <path d={linePath} fill="none" stroke={T.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-      {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={T.cardBg} stroke={T.accent} strokeWidth={1.5} />)}
-      {data.labels.map((l, i) => {
-        const x = padL + (i / (data.labels.length - 1)) * chartW;
-        return i % 2 === 0 ? <text key={i} x={x} y={H - 4} textAnchor="middle" style={{ fontFamily: T.mono, fontSize: 8, fill: T.inkFaint }}>{l}</text> : null;
-      })}
-    </svg>
+    <div style={{ position: 'relative', marginTop: 12 }}
+      onMouseLeave={() => setHoverIdx(null)}>
+      {/* Fixed readout box (enhanced only) */}
+      {enhanced && (
+        <div style={{
+          position: 'absolute', top: 0, left: 50, zIndex: 2,
+          fontFamily: T.mono, fontSize: 10, color: T.ink, display: 'flex', gap: 12, alignItems: 'center',
+        }}>
+          <span style={{ fontWeight: 700, color: T.accent }}>{data.labels[activeIdx]}</span>
+          <span>Local: <strong>{fmtVal(pts[activeIdx].val)}</strong></span>
+          {parentPts && <span style={{ color: T.inkMuted }}>vs {AREA.parent}: <strong>{fmtVal(parentPts[activeIdx].val)}</strong></span>}
+        </div>
+      )}
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}
+        onMouseMove={enhanced ? (e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const mouseX = ((e.clientX - rect.left) / rect.width) * W;
+          let closest = 0, closestDist = Infinity;
+          pts.forEach((p, i) => { const d = Math.abs(p.x - mouseX); if (d < closestDist) { closestDist = d; closest = i; } });
+          setHoverIdx(closest);
+        } : undefined}
+      >
+        {/* Gradient def (enhanced) */}
+        {enhanced && (
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.accent} stopOpacity={0.18} />
+              <stop offset="100%" stopColor={T.accent} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+        )}
+        {[0, 0.5, 1].map(frac => {
+          const y = padT + chartH * (1 - frac);
+          const val = min + range * frac;
+          return (
+            <g key={frac}>
+              <line x1={padL} x2={W - padR} y1={y} y2={y} stroke={T.divider} strokeDasharray="3,3" />
+              <text x={padL - 6} y={y + 3} textAnchor="end" style={{ fontFamily: T.mono, fontSize: 9, fill: T.inkFaint }}>{fmtVal(val)}</text>
+            </g>
+          );
+        })}
+        <path d={areaPath} fill={enhanced ? 'url(#trendFill)' : `${T.accent}12`} />
+        {/* Parent line (enhanced, dashed, dimmed on hover) */}
+        {parentPath && (
+          <path d={parentPath} fill="none" stroke={T.inkFaint} strokeWidth={1.5} strokeDasharray="6,3"
+            style={{ opacity: hoverIdx !== null ? 0.3 : 0.6, transition: 'opacity 0.2s' }} />
+        )}
+        <path d={linePath} fill="none" stroke={T.accent} strokeWidth={enhanced ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={enhanced && i === activeIdx ? 5 : 3} fill={T.cardBg} stroke={T.accent} strokeWidth={enhanced && i === activeIdx ? 2 : 1.5} style={{ transition: 'r 0.15s' }} />)}
+        {/* Vertical tracking line (enhanced) */}
+        {enhanced && hoverIdx !== null && (
+          <line x1={pts[hoverIdx].x} x2={pts[hoverIdx].x} y1={padT} y2={padT + chartH} stroke={T.inkFaint} strokeWidth={1} strokeDasharray="4,3" opacity={0.4} />
+        )}
+        {data.labels.map((l, i) => {
+          const x = padL + (i / (data.labels.length - 1)) * chartW;
+          return i % 2 === 0 ? <text key={i} x={x} y={H - 4} textAnchor="middle" style={{ fontFamily: T.mono, fontSize: 8, fill: T.inkFaint }}>{l}</text> : null;
+        })}
+      </svg>
+    </div>
   );
 }
 
-function BarsChart({ data }: { data: { label: string; pct: number }[] }) {
+function BarsChart({ data, enhanced = false }: { data: { label: string; pct: number; parentPct?: number }[]; enhanced?: boolean }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-      {data.map(d => (
-        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 100, fontFamily: T.sans, fontSize: 11, color: T.inkMuted, textAlign: 'right', flexShrink: 0 }}>{d.label}</div>
-          <div style={{ flex: 1, height: 16, borderRadius: 8, background: T.dividerSoft, overflow: 'hidden' }}>
-            <div style={{ width: `${d.pct}%`, height: '100%', borderRadius: 8, background: T.accent, transition: 'width 0.5s ease-out' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: enhanced ? 12 : 8, marginTop: 12 }}>
+      {data.map((d, i) => (
+        <div key={d.label}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {enhanced && <div style={{ width: 16, fontFamily: T.mono, fontSize: 9, color: T.inkFaint, textAlign: 'center' }}>{i + 1}</div>}
+            <div style={{ width: 100, fontFamily: T.sans, fontSize: 11, color: T.inkMuted, textAlign: 'right', flexShrink: 0 }}>{d.label}</div>
+            <div style={{ flex: 1, height: 16, borderRadius: 8, background: T.dividerSoft, overflow: 'hidden', position: 'relative' }}>
+              <div style={{
+                width: enhanced ? 0 : `${d.pct}%`, height: '100%', borderRadius: 8, background: T.accent,
+                transition: 'width 0.7s ease-out',
+                animation: enhanced ? `barGrow${d.pct} 0.7s ease-out ${i * 80}ms forwards` : undefined,
+              }} />
+            </div>
+            <div style={{ width: 36, fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.ink, textAlign: 'right' }}>{d.pct}%</div>
           </div>
-          <div style={{ width: 36, fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.ink, textAlign: 'right' }}>{d.pct}%</div>
+          {/* Parent comparison bar (enhanced only) */}
+          {enhanced && d.parentPct !== undefined && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+              <div style={{ width: 16 }} />
+              <div style={{ width: 100, fontFamily: T.sans, fontSize: 9, color: T.inkFaint, textAlign: 'right', flexShrink: 0 }}>{AREA.parent}</div>
+              <div style={{ flex: 1, height: 10, borderRadius: 5, background: T.dividerSoft, overflow: 'hidden' }}>
+                <div style={{ width: `${d.parentPct}%`, height: '100%', borderRadius: 5, background: T.inkFaint, opacity: 0.35, transition: 'width 0.7s ease-out' }} />
+              </div>
+              <div style={{ width: 36, fontFamily: T.mono, fontSize: 9, color: T.inkFaint, textAlign: 'right' }}>{d.parentPct}%</div>
+            </div>
+          )}
+          {enhanced && <style>{`@keyframes barGrow${d.pct} { from { width: 0% } to { width: ${d.pct}% } }`}</style>}
         </div>
       ))}
     </div>
   );
 }
 
-function GaugeChart({ data }: { data: { value: number; max: number; limit?: number; limitLabel?: string } }) {
+function GaugeChart({ data, enhanced = false }: { data: { value: number; max: number; limit?: number; limitLabel?: string; parentValue?: number }; enhanced?: boolean }) {
   const pctFill = Math.min((data.value / data.max) * 100, 100);
   const pctLimit = data.limit ? (data.limit / data.max) * 100 : undefined;
   const isGood = !data.limit || data.value <= data.limit;
+
+  // Enhanced: 270-degree arc gauge for score/index metrics, gradient bar for AQ metrics
+  if (enhanced && !data.limit) {
+    // Arc gauge for scores (PTAL, 15-min score, IMD, etc.)
+    const size = 100, cx = 50, cy = 55, r = 38;
+    const startAngle = 135, endAngle = 405; // 270 degrees
+    const valueAngle = startAngle + (pctFill / 100) * (endAngle - startAngle);
+    const parentAngle = data.parentValue ? startAngle + (Math.min(data.parentValue / data.max, 1) * (endAngle - startAngle)) : null;
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const arcPt = (angle: number) => ({ x: cx + r * Math.cos(toRad(angle)), y: cy + r * Math.sin(toRad(angle)) });
+    const describeArc = (start: number, end: number) => {
+      const s = arcPt(start), e = arcPt(end);
+      const large = end - start > 180 ? 1 : 0;
+      return `M${s.x},${s.y} A${r},${r} 0 ${large} 1 ${e.x},${e.y}`;
+    };
+    return (
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <svg width={size} height={size - 10} viewBox={`0 0 ${size} ${size - 10}`}>
+          <path d={describeArc(startAngle, endAngle)} fill="none" stroke={T.divider} strokeWidth={8} strokeLinecap="round" />
+          <path d={describeArc(startAngle, valueAngle)} fill="none" stroke={isGood ? T.good : T.accent} strokeWidth={8} strokeLinecap="round">
+            <animate attributeName="stroke-dashoffset" from="250" to="0" dur="0.8s" fill="freeze" />
+          </path>
+          {parentAngle && (() => { const p = arcPt(parentAngle); return <circle cx={p.x} cy={p.y} r={4} fill={T.inkFaint} stroke={T.cardBg} strokeWidth={2} />; })()}
+          <text x={cx} y={cy - 2} textAnchor="middle" style={{ fontFamily: T.mono, fontSize: 18, fontWeight: 800, fill: T.ink }}>{data.value}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" style={{ fontFamily: T.sans, fontSize: 8, fill: T.inkFaint }}>of {data.max}</text>
+        </svg>
+        {data.parentValue !== undefined && (
+          <div style={{ fontFamily: T.sans, fontSize: 10, color: T.inkFaint, marginTop: 4 }}>
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 3, background: T.inkFaint, marginRight: 4, verticalAlign: 'middle' }} />
+            {AREA.parent}: {data.parentValue}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Enhanced bar with gradient track (for AQ metrics with limits)
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ position: 'relative', height: 20, borderRadius: 10, background: T.dividerSoft, overflow: 'visible' }}>
-        <div style={{
-          width: `${pctFill}%`, height: '100%', borderRadius: 10,
-          background: isGood ? 'linear-gradient(90deg, #059669, #34d399)' : 'linear-gradient(90deg, #d97706, #dc2626)',
-          transition: 'width 0.8s ease-out',
-        }} />
+      <div style={{ position: 'relative', height: enhanced ? 24 : 20, borderRadius: enhanced ? 12 : 10, overflow: 'visible',
+        background: enhanced
+          ? 'linear-gradient(90deg, #059669 0%, #84cc16 25%, #facc15 50%, #fb923c 75%, #ef4444 100%)'
+          : T.dividerSoft,
+      }}>
+        {enhanced ? (
+          // Clip overlay: fill = opaque gradient, remaining = dimmed
+          <div style={{
+            position: 'absolute', top: 0, right: 0, height: '100%', borderRadius: '0 12px 12px 0',
+            width: `${100 - pctFill}%`, background: 'rgba(250,248,245,0.75)',
+            transition: 'width 0.8s ease-out',
+          }} />
+        ) : (
+          <div style={{
+            width: `${pctFill}%`, height: '100%', borderRadius: 10,
+            background: isGood ? 'linear-gradient(90deg, #059669, #34d399)' : 'linear-gradient(90deg, #d97706, #dc2626)',
+            transition: 'width 0.8s ease-out',
+          }} />
+        )}
         {pctLimit !== undefined && (
-          <div style={{ position: 'absolute', top: -3, left: `${pctLimit}%`, transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ width: 2, height: 26, background: T.ink, opacity: 0.3, borderRadius: 1 }} />
-            <div style={{ fontFamily: T.mono, fontSize: 8, color: T.inkMuted, marginTop: 1, whiteSpace: 'nowrap' }}>{data.limitLabel}</div>
+          <div style={{ position: 'absolute', top: enhanced ? -8 : -3, left: `${pctLimit}%`, transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
+            {enhanced && (
+              <div style={{ fontFamily: T.mono, fontSize: 8, fontWeight: 700, color: T.ink, background: T.cardBg, border: `1px solid ${T.divider}`, padding: '1px 6px', borderRadius: 4, marginBottom: 2, whiteSpace: 'nowrap' }}>{data.limitLabel}</div>
+            )}
+            <div style={{ width: 2, height: enhanced ? 36 : 26, background: T.ink, opacity: enhanced ? 0.6 : 0.3, borderRadius: 1 }} />
+            {!enhanced && <div style={{ fontFamily: T.mono, fontSize: 8, color: T.inkMuted, marginTop: 1, whiteSpace: 'nowrap' }}>{data.limitLabel}</div>}
+          </div>
+        )}
+        {/* Parent marker (enhanced) */}
+        {enhanced && data.parentValue !== undefined && (
+          <div style={{ position: 'absolute', top: -4, left: `${(data.parentValue / data.max) * 100}%`, transform: 'translateX(-50%)', zIndex: 1 }}>
+            <div style={{ width: 2, height: 32, background: T.ink, opacity: 0.25, borderRadius: 1 }} />
+            <div style={{ fontFamily: T.mono, fontSize: 7, color: T.inkFaint, whiteSpace: 'nowrap', marginTop: 1 }}>{AREA.parent}</div>
           </div>
         )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
         <span style={{ fontFamily: T.mono, fontSize: 10, color: T.inkFaint }}>0</span>
+        {enhanced && <span style={{ fontFamily: T.mono, fontSize: 10, fontWeight: 600, color: isGood ? T.good : T.bad }}>{isGood ? 'Good' : 'Exceeds limit'}</span>}
         <span style={{ fontFamily: T.mono, fontSize: 10, color: T.inkFaint }}>{data.max}</span>
       </div>
     </div>
   );
 }
 
-function NoiseChart({ data }: { data: { source: string; db: number; category: string }[] }) {
+function NoiseChart({ data, enhanced = false }: { data: { source: string; db: number; category: string; parentDb?: number }[]; enhanced?: boolean }) {
   const dbColor = (db: number) => db <= 40 ? T.good : db <= 55 ? T.caution : db <= 65 ? '#f59e0b' : T.bad;
+  const thresholds = [
+    { label: 'Quiet', pos: 0 }, { label: 'Moderate', pos: 45 / 80 * 100 },
+    { label: 'Noisy', pos: 55 / 80 * 100 }, { label: 'Very Noisy', pos: 65 / 80 * 100 },
+  ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-      {data.map(n => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: enhanced ? 14 : 10, marginTop: 12 }}>
+      {data.map((n, i) => (
         <div key={n.source}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
             <span style={{ fontFamily: T.sans, fontSize: 11, color: T.inkMuted }}>{n.source}</span>
             <span style={{ fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.ink }}>{n.db} dB</span>
           </div>
-          <div style={{ height: 8, borderRadius: 4, background: T.dividerSoft, overflow: 'hidden' }}>
-            <div style={{ width: `${(n.db / 80) * 100}%`, height: '100%', borderRadius: 4, background: dbColor(n.db), transition: 'width 0.6s ease-out' }} />
+          <div style={{ position: 'relative', height: enhanced ? 12 : 8, borderRadius: enhanced ? 6 : 4,
+            background: enhanced ? 'linear-gradient(90deg, #059669 0%, #84cc16 56%, #facc15 69%, #fb923c 81%, #ef4444 100%)' : T.dividerSoft,
+            overflow: 'visible',
+          }}>
+            {enhanced ? (
+              // Clip overlay
+              <div style={{
+                position: 'absolute', top: 0, right: 0, height: '100%', borderRadius: '0 6px 6px 0',
+                width: `${100 - (n.db / 80) * 100}%`, background: 'rgba(250,248,245,0.7)',
+                transition: 'width 0.7s ease-out', transitionDelay: `${i * 80}ms`,
+              }} />
+            ) : (
+              <div style={{ width: `${(n.db / 80) * 100}%`, height: '100%', borderRadius: 4, background: dbColor(n.db), transition: 'width 0.6s ease-out' }} />
+            )}
+            {/* Parent marker (enhanced) */}
+            {enhanced && n.parentDb !== undefined && (
+              <div style={{ position: 'absolute', top: -2, left: `${(n.parentDb / 80) * 100}%`, transform: 'translateX(-50%)' }}>
+                <div style={{ width: 2, height: 16, background: T.ink, opacity: 0.3, borderRadius: 1 }} />
+              </div>
+            )}
           </div>
-          <div style={{ fontFamily: T.sans, fontSize: 9, color: T.inkFaint, marginTop: 1 }}>{n.category}</div>
+          {enhanced && i === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+              {thresholds.map(t => (
+                <span key={t.label} style={{ fontFamily: T.mono, fontSize: 7, color: T.inkFaint, position: 'relative', left: `${t.pos * 0.6}%` }}>{t.label}</span>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontFamily: T.sans, fontSize: 9, color: T.inkFaint, marginTop: 1 }}>{n.category}</div>
+          )}
         </div>
       ))}
     </div>
   );
 }
 
-function BreakdownChart({ data }: { data: { type: string; count: number; pct: number }[] }) {
+function BreakdownChart({ data, enhanced = false }: { data: { type: string; count: number; pct: number; parentCount?: number }[]; enhanced?: boolean }) {
   const maxPct = Math.max(...data.map(c => c.pct));
+  const maxCount = Math.max(...data.map(c => c.count));
+  // Crime-type colour map (enhanced)
+  const crimeColor = (type: string) => {
+    if (type.includes('Violen')) return '#b91c1c';
+    if (type.includes('Burgl') || type.includes('Vehicle') || type.includes('Shoplift')) return '#d97706';
+    if (type.includes('Anti-social')) return '#ea580c';
+    if (type.includes('Drug')) return '#7c3aed';
+    return '#6b7280';
+  };
+  // Mini sparkline for crime trend (enhanced)
+  const trendPoints = [74.2, 65.1, 68.9, 71.3, 67.8, 62.4]; // mock 6yr
+  const sparkW = 60, sparkH = 20;
+  const sparkMax = Math.max(...trendPoints), sparkMin = Math.min(...trendPoints), sparkRange = sparkMax - sparkMin || 1;
+  const sparkPath = trendPoints.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i / (trendPoints.length - 1)) * sparkW},${sparkH - ((v - sparkMin) / sparkRange) * sparkH}`).join(' ');
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-      {data.map(c => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: enhanced ? 10 : 8, marginTop: 12 }}>
+      {/* Mini trend sparkline (enhanced) */}
+      {enhanced && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, padding: '8px 12px', borderRadius: 10, background: T.dividerSoft }}>
+          <svg width={sparkW} height={sparkH} viewBox={`0 0 ${sparkW} ${sparkH}`}>
+            <path d={sparkPath} fill="none" stroke={T.good} strokeWidth={1.5} strokeLinecap="round" />
+          </svg>
+          <span style={{ fontFamily: T.sans, fontSize: 11, color: T.good, fontWeight: 600 }}>↓ 16% decline over 6 years</span>
+          <span style={{ fontFamily: T.sans, fontSize: 10, color: T.inkFaint, marginLeft: 'auto' }}>30% below {AREA.parent} avg</span>
+        </div>
+      )}
+      {data.map((c, i) => (
         <div key={c.type} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 120, fontFamily: T.sans, fontSize: 11, color: T.inkMuted, textAlign: 'right', flexShrink: 0 }}>{c.type}</div>
-          <div style={{ flex: 1, height: 18, borderRadius: 5, background: T.dividerSoft, overflow: 'hidden' }}>
-            <div style={{ width: `${(c.pct / maxPct) * 100}%`, height: '100%', borderRadius: 5, background: `linear-gradient(90deg, ${T.bad}90, ${T.bad}60)`, transition: 'width 0.6s ease-out' }} />
+          <div style={{ flex: 1, height: 18, borderRadius: 5, background: T.dividerSoft, overflow: 'visible', position: 'relative' }}>
+            <div style={{
+              width: `${(c.pct / maxPct) * 100}%`, height: '100%', borderRadius: 5,
+              background: enhanced ? crimeColor(c.type) : `linear-gradient(90deg, ${T.bad}90, ${T.bad}60)`,
+              transition: 'width 0.7s ease-out', transitionDelay: enhanced ? `${i * 60}ms` : '0ms',
+              opacity: enhanced ? 0.8 : 1,
+            }} />
+            {/* Parent marker (enhanced) */}
+            {enhanced && c.parentCount !== undefined && (
+              <div style={{
+                position: 'absolute', top: -2, left: `${(c.parentCount / maxCount) * (c.pct / maxPct) * 100}%`,
+                transform: 'translateX(-50%)',
+              }}>
+                <div style={{ width: 1.5, height: 22, background: T.ink, opacity: 0.25, borderRadius: 1 }} />
+              </div>
+            )}
           </div>
           <div style={{ width: 36, fontFamily: T.mono, fontSize: 11, fontWeight: 600, color: T.ink, textAlign: 'right' }}>{c.pct}%</div>
           <div style={{ width: 36, fontFamily: T.mono, fontSize: 9, color: T.inkFaint, textAlign: 'right' }}>{c.count}</div>
@@ -581,14 +811,29 @@ function BreakdownChart({ data }: { data: { type: string; count: number; pct: nu
   );
 }
 
-function StackedChart({ data }: { data: { label: string; pct: number; color: string }[] }) {
+function StackedChart({ data, enhanced = false }: { data: { label: string; pct: number; color: string; parentPct?: number }[]; enhanced?: boolean }) {
+  // Mock parent data for enhanced dual bar
+  const parentData = data.map(d => ({ ...d, pct: d.parentPct ?? Math.round(d.pct * (0.7 + Math.random() * 0.6)) }));
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', height: 22, borderRadius: 11, overflow: 'hidden', marginBottom: 10 }}>
+      {/* Local bar */}
+      {enhanced && <div style={{ fontFamily: T.sans, fontSize: 9, color: T.inkMuted, marginBottom: 3, fontWeight: 600 }}>{AREA.name}</div>}
+      <div style={{ display: 'flex', height: 22, borderRadius: 11, overflow: 'hidden', marginBottom: enhanced ? 4 : 10 }}>
         {data.map(d => (
-          <div key={d.label} style={{ width: `${d.pct}%`, height: '100%', background: d.color, transition: 'width 0.5s ease-out' }} title={`${d.label}: ${d.pct}%`} />
+          <div key={d.label} style={{ width: `${d.pct}%`, height: '100%', background: d.color, transition: 'width 0.7s ease-out' }} title={`${d.label}: ${d.pct}%`} />
         ))}
       </div>
+      {/* Parent comparison bar (enhanced only) */}
+      {enhanced && (
+        <>
+          <div style={{ fontFamily: T.sans, fontSize: 9, color: T.inkFaint, marginBottom: 3 }}>{AREA.parent}</div>
+          <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 10, opacity: 0.5 }}>
+            {parentData.map(d => (
+              <div key={d.label} style={{ width: `${d.pct}%`, height: '100%', background: d.color, transition: 'width 0.7s ease-out' }} title={`${d.label}: ${d.pct}%`} />
+            ))}
+          </div>
+        </>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
         {data.map(d => (
           <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -602,15 +847,15 @@ function StackedChart({ data }: { data: { label: string; pct: number; color: str
   );
 }
 
-function renderChart(m: MockMetric) {
+function renderChart(m: MockMetric, enhanced = false) {
   if (!m.chartType || m.chartType === 'none' || !m.chartData) return null;
   switch (m.chartType) {
-    case 'trend': return <TrendChart data={m.chartData} />;
-    case 'bars': return <BarsChart data={m.chartData} />;
-    case 'gauge': return <GaugeChart data={m.chartData} />;
-    case 'noise': return <NoiseChart data={m.chartData} />;
-    case 'breakdown': return <BreakdownChart data={m.chartData} />;
-    case 'stacked': return <StackedChart data={m.chartData} />;
+    case 'trend': return <TrendChart data={m.chartData} enhanced={enhanced} />;
+    case 'bars': return <BarsChart data={m.chartData} enhanced={enhanced} />;
+    case 'gauge': return <GaugeChart data={m.chartData} enhanced={enhanced} />;
+    case 'noise': return <NoiseChart data={m.chartData} enhanced={enhanced} />;
+    case 'breakdown': return <BreakdownChart data={m.chartData} enhanced={enhanced} />;
+    case 'stacked': return <StackedChart data={m.chartData} enhanced={enhanced} />;
     default: return null;
   }
 }
@@ -619,11 +864,23 @@ function renderChart(m: MockMetric) {
    GENERIC METRIC ROW — used for all metrics in all tabs
    ══════════════════════════════════════════════════════════════════════ */
 
-function MetricRow({ m }: { m: MockMetric }) {
+function MetricRow({ m, enhanced = false, index = 0 }: { m: MockMetric; enhanced?: boolean; index?: number }) {
   const [expanded, setExpanded] = useState(false);
   const hasChart = m.chartType && m.chartType !== 'none' && m.chartData;
+
+  // Mini inline sparkline/HBar for generic fallback metrics (enhanced only)
+  const isNumeric = /^[\d£.+\-,%]+/.test(m.value.replace(/\s/g, ''));
+  const numVal = parseFloat(m.value.replace(/[^0-9.\-]/g, ''));
+  const numParent = parseFloat(m.parent.replace(/[^0-9.\-]/g, ''));
+  const isPct = m.value.includes('%') || m.unit?.includes('%');
+  const showMiniBar = enhanced && !hasChart && isNumeric && !isNaN(numVal) && numVal > 0;
+  const miniBarMax = isPct ? 100 : Math.max(numVal, numParent || 0) * 1.3;
+
   return (
-    <div style={{ borderBottom: `1px solid ${T.dividerSoft}` }}>
+    <div style={{
+      borderBottom: `1px solid ${T.dividerSoft}`,
+      animation: enhanced ? `fadeInUp 0.3s ease-out ${index * 50}ms both` : undefined,
+    }}>
       <div
         onClick={hasChart ? () => setExpanded(!expanded) : undefined}
         style={{
@@ -635,6 +892,15 @@ function MetricRow({ m }: { m: MockMetric }) {
       >
         <div style={{ flex: 1, fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink }}>{m.label}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Mini HBar for generic metrics (enhanced) */}
+          {showMiniBar && (
+            <div style={{ width: 48, height: 6, borderRadius: 3, background: T.dividerSoft, position: 'relative', overflow: 'visible' }}>
+              <div style={{ width: `${(numVal / miniBarMax) * 100}%`, height: '100%', borderRadius: 3, background: T.accent, opacity: 0.6, transition: 'width 0.7s ease-out' }} />
+              {!isNaN(numParent) && numParent > 0 && (
+                <div style={{ position: 'absolute', top: -2, left: `${(numParent / miniBarMax) * 100}%`, width: 1.5, height: 10, background: T.ink, opacity: 0.25, borderRadius: 1, transform: 'translateX(-50%)' }} />
+              )}
+            </div>
+          )}
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontFamily: T.mono, fontSize: 15, fontWeight: 700, color: T.ink }}>{m.value}</div>
             {m.unit && <div style={{ fontFamily: T.sans, fontSize: 9, color: T.inkFaint }}>{m.unit}</div>}
@@ -652,7 +918,7 @@ function MetricRow({ m }: { m: MockMetric }) {
       </div>
       {expanded && hasChart && (
         <div style={{ padding: '0 0 16px', animation: 'fadeInUp 0.2s ease-out' }}>
-          {renderChart(m)}
+          {renderChart(m, enhanced)}
         </div>
       )}
     </div>
@@ -663,7 +929,7 @@ function MetricRow({ m }: { m: MockMetric }) {
    SECTION ACCORDION — collapsible section with summary pills
    ══════════════════════════════════════════════════════════════════════ */
 
-function SectionAccordion({ section, defaultOpen = false }: { section: MockSection; defaultOpen?: boolean }) {
+function SectionAccordion({ section, defaultOpen = false, enhanced = false }: { section: MockSection; defaultOpen?: boolean; enhanced?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   const Icon = section.icon;
   return (
@@ -700,7 +966,7 @@ function SectionAccordion({ section, defaultOpen = false }: { section: MockSecti
       </div>
       {open && (
         <div style={{ padding: '0 20px 16px' }}>
-          {section.metrics.map(m => <MetricRow key={m.id} m={m} />)}
+          {section.metrics.map((m, i) => <MetricRow key={m.id} m={m} enhanced={enhanced} index={i} />)}
         </div>
       )}
     </Card>
@@ -711,7 +977,7 @@ function SectionAccordion({ section, defaultOpen = false }: { section: MockSecti
    TRANSACTION TABLE — Expandable rows with detail panel
    ══════════════════════════════════════════════════════════════════════ */
 
-function TransactionTable() {
+function TransactionTable({ enhanced = false }: { enhanced?: boolean }) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const thStyle: React.CSSProperties = {
     fontFamily: T.sans, fontSize: 10, fontWeight: 700, color: T.inkFaint,
@@ -744,19 +1010,38 @@ function TransactionTable() {
             </tr>
           </thead>
           <tbody>
-            {TRANSACTIONS.map((tx, i) => (
-              <tr key={i} style={{ cursor: 'pointer', background: expandedRow === i ? T.accentLight : 'transparent' }}
+            {TRANSACTIONS.map((tx, i) => {
+              const pctChange = tx.prevPrice ? ((tx.price - tx.prevPrice) / tx.prevPrice * 100) : null;
+              return (
+              <tr key={i} style={{
+                cursor: 'pointer',
+                background: expandedRow === i ? T.accentLight : (enhanced && i % 2 === 1 ? 'rgba(245,240,235,0.3)' : 'transparent'),
+                animation: enhanced ? `fadeInUp 0.3s ease-out ${i * 40}ms both` : undefined,
+              }}
                 onClick={() => setExpandedRow(expandedRow === i ? null : i)}>
                 <td style={{ ...tdStyle, fontFamily: T.mono, fontSize: 11, color: T.inkMuted, whiteSpace: 'nowrap' }}>{fmtDate(tx.date)}</td>
                 <td style={{ ...tdStyle, fontWeight: 500, color: T.ink }}>{tx.address}</td>
-                <td style={{ ...tdStyle, fontFamily: T.mono, fontWeight: 700, color: T.ink, textAlign: 'right' }}>{fmtPrice(tx.price)}</td>
+                <td style={{ ...tdStyle, fontFamily: T.mono, fontWeight: 700, color: T.ink, textAlign: 'right' }}>
+                  {fmtPrice(tx.price)}
+                  {enhanced && pctChange !== null && (
+                    <span style={{
+                      display: 'inline-block', marginLeft: 6, fontFamily: T.mono, fontSize: 9, fontWeight: 700,
+                      padding: '1px 6px', borderRadius: 4,
+                      background: pctChange >= 0 ? T.goodBg : T.badBg,
+                      color: pctChange >= 0 ? T.good : T.bad,
+                    }}>
+                      {pctChange >= 0 ? '+' : ''}{pctChange.toFixed(0)}%
+                    </span>
+                  )}
+                </td>
                 <td style={tdStyle}><span style={{ fontFamily: T.sans, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: T.dividerSoft, color: T.inkMuted }}>{typeLabel(tx.type)}</span></td>
                 <td style={{ ...tdStyle, fontFamily: T.mono, fontSize: 12 }}>{tx.beds}</td>
                 <td style={{ ...tdStyle, fontSize: 12, color: T.inkMuted }}>{tx.tenure}</td>
                 <td style={tdStyle}><span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 5, background: epcColour(tx.epc), color: 'white', fontFamily: T.mono, fontSize: 10, fontWeight: 700 }}>{tx.epc}</span></td>
                 <td style={tdStyle}>{expandedRow === i ? <ChevronUp size={14} color={T.inkFaint} /> : <ChevronDown size={14} color={T.inkFaint} />}</td>
               </tr>
-            ))}
+              );
+            })}
             {expandedRow !== null && (
               <tr>
                 <td colSpan={8} style={{ padding: 0 }}>
@@ -800,7 +1085,7 @@ function TransactionTable() {
    SCHOOL TABLE — Expandable rows with detail tabs
    ══════════════════════════════════════════════════════════════════════ */
 
-function SchoolTable() {
+function SchoolTable({ enhanced = false }: { enhanced?: boolean }) {
   const [phaseFilter, setPhaseFilter] = useState('All');
   const [expandedSchool, setExpandedSchool] = useState<number | null>(null);
   const [detailTab, setDetailTab] = useState('overview');
@@ -849,8 +1134,34 @@ function SchoolTable() {
                   <div style={{ fontFamily: T.sans, fontSize: 11, color: T.inkFaint, marginTop: 2 }}>{s.phase} · {s.distance} · {s.pupils} pupils</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {s.ks2 !== undefined && <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.ink }}>KS2: {s.ks2}%</span>}
-                  {s.p8 !== undefined && <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: s.p8 >= 0 ? T.good : T.bad }}>P8: {s.p8 > 0 ? '+' : ''}{s.p8}</span>}
+                  {/* Enhanced: mini performance bars inline */}
+                  {enhanced && s.ks2 !== undefined && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={`KS2 RWM: ${s.ks2}%`}>
+                      {[{ label: 'R', val: s.ks2 + 2 }, { label: 'W', val: s.ks2 - 3 }, { label: 'M', val: s.ks2 + 1 }].map(sub => (
+                        <div key={sub.label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontFamily: T.mono, fontSize: 7, color: T.inkFaint }}>{sub.label}</span>
+                          <div style={{ width: 28, height: 5, borderRadius: 2.5, background: T.dividerSoft, overflow: 'hidden' }}>
+                            <div style={{ width: `${sub.val}%`, height: '100%', borderRadius: 2.5, background: sub.val >= 65 ? T.good : T.caution }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {enhanced && s.p8 !== undefined && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={`Progress 8: ${s.p8}`}>
+                      {[{ label: 'A8', val: 48 }, { label: 'P8', val: s.p8 >= 0 ? 65 : 40 }].map(sub => (
+                        <div key={sub.label} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontFamily: T.mono, fontSize: 7, color: T.inkFaint }}>{sub.label}</span>
+                          <div style={{ width: 28, height: 5, borderRadius: 2.5, background: T.dividerSoft, overflow: 'hidden' }}>
+                            <div style={{ width: `${sub.val}%`, height: '100%', borderRadius: 2.5, background: sub.val >= 50 ? T.good : T.caution }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Current: text-based scores */}
+                  {!enhanced && s.ks2 !== undefined && <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: T.ink }}>KS2: {s.ks2}%</span>}
+                  {!enhanced && s.p8 !== undefined && <span style={{ fontFamily: T.mono, fontSize: 12, fontWeight: 600, color: s.p8 >= 0 ? T.good : T.bad }}>P8: {s.p8 > 0 ? '+' : ''}{s.p8}</span>}
                   <span style={{ fontFamily: T.sans, fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: oc.bg, color: oc.text }}>{s.ofsted}</span>
                   {isExpanded ? <ChevronUp size={14} color={T.inkFaint} /> : <ChevronDown size={14} color={T.inkFaint} />}
                 </div>
@@ -1092,7 +1403,7 @@ function PersonaFitBanner() {
   );
 }
 
-function SnapshotGrid() {
+function SnapshotGrid({ enhanced = false }: { enhanced?: boolean }) {
   return (
     <section style={{ padding: '0 0 32px' }}>
       <h2 style={{ fontFamily: T.serif, fontWeight: 700, fontSize: 22, color: T.ink, letterSpacing: '-0.02em', marginBottom: 16 }}>Area Snapshot</h2>
@@ -1114,7 +1425,22 @@ function SnapshotGrid() {
             </div>
             <div style={{ fontFamily: T.mono, fontSize: 20, fontWeight: 700, color: T.ink, lineHeight: 1.1 }}>{m.value}</div>
             {m.unit && <div style={{ fontFamily: T.sans, fontSize: 10, color: T.inkFaint, marginTop: 2 }}>{m.unit}</div>}
-            <div style={{ marginTop: 8 }}><ComparisonArrow value={m.value} parentValue={m.parent} direction={m.direction} /></div>
+            {/* Mini HBar (enhanced only) */}
+            {enhanced && (() => {
+              const nv = parseFloat(m.value.replace(/[^0-9.\-]/g, ''));
+              const np = parseFloat(m.parent.replace(/[^0-9.\-]/g, ''));
+              if (isNaN(nv) || nv <= 0) return null;
+              const mx = Math.max(nv, np || 0) * 1.3;
+              return (
+                <div style={{ position: 'relative', height: 4, borderRadius: 2, background: T.dividerSoft, marginTop: 8, overflow: 'visible' }}>
+                  <div style={{ width: `${(nv / mx) * 100}%`, height: '100%', borderRadius: 2, background: T.accent, opacity: 0.5, transition: 'width 0.7s ease-out' }} />
+                  {!isNaN(np) && np > 0 && (
+                    <div style={{ position: 'absolute', top: -2, left: `${(np / mx) * 100}%`, width: 1.5, height: 8, background: T.ink, opacity: 0.25, borderRadius: 1, transform: 'translateX(-50%)' }} title={`${AREA.parent}: ${m.parent}`} />
+                  )}
+                </div>
+              );
+            })()}
+            <div style={{ marginTop: enhanced ? 6 : 8 }}><ComparisonArrow value={m.value} parentValue={m.parent} direction={m.direction} /></div>
           </div>
         ))}
       </div>
@@ -1199,16 +1525,16 @@ const TAB_CONFIG: Record<string, { sections: MockSection[]; icon: React.ElementT
   'Local Governance': { sections: GOVERNANCE_SECTIONS, icon: Landmark, colour: '#0891B2' },
 };
 
-function TabContentView({ tab }: { tab: string }) {
+function TabContentView({ tab, enhanced = false }: { tab: string; enhanced?: boolean }) {
   const config = TAB_CONFIG[tab];
   if (!config) return null;
   const totalMetrics = config.sections.reduce((acc, s) => acc + s.metrics.length, 0);
   return (
     <div>
       <div style={{ fontFamily: T.sans, fontSize: 12, color: T.inkMuted, marginBottom: 16 }}>{totalMetrics} metrics across {config.sections.length} sections</div>
-      {config.sections.map(s => <SectionAccordion key={s.id} section={s} />)}
-      {tab === 'Property & Market' && <TransactionTable />}
-      {tab === 'Community & Education' && <SchoolTable />}
+      {config.sections.map(s => <SectionAccordion key={s.id} section={s} enhanced={enhanced} />)}
+      {tab === 'Property & Market' && <TransactionTable enhanced={enhanced} />}
+      {tab === 'Community & Education' && <SchoolTable enhanced={enhanced} />}
     </div>
   );
 }
@@ -1217,7 +1543,7 @@ function TabContentView({ tab }: { tab: string }) {
    RESULTS VIEW — Tab bar + tab content
    ══════════════════════════════════════════════════════════════════════ */
 
-function ResultsView({ onHome }: { onHome: () => void }) {
+function ResultsView({ onHome, enhanced, onToggle }: { onHome: () => void; enhanced: boolean; onToggle: () => void }) {
   const [activeTab, setActiveTab] = useState<TabName>('Overview');
 
   const totalMetrics = useMemo(() => {
@@ -1253,8 +1579,30 @@ function ResultsView({ onHome }: { onHome: () => void }) {
             );
           })}
         </div>
-        <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkFaint, marginTop: 4, textAlign: 'right' }}>
-          {totalMetrics} total metrics
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 11, color: T.inkFaint }}>
+            {totalMetrics} total metrics
+          </div>
+          {/* Before/After toggle */}
+          <button onClick={onToggle} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 20,
+            border: `1.5px solid ${enhanced ? T.accent : T.divider}`,
+            background: enhanced ? T.accentLight : T.cardBg, cursor: 'pointer',
+            fontFamily: T.sans, fontSize: 11, fontWeight: 700,
+            color: enhanced ? T.accent : T.inkMuted, transition: 'all 0.2s',
+          }}>
+            <div style={{
+              width: 32, height: 16, borderRadius: 8, position: 'relative',
+              background: enhanced ? T.accent : T.divider, transition: 'background 0.2s',
+            }}>
+              <div style={{
+                width: 12, height: 12, borderRadius: 6, background: T.cardBg, position: 'absolute', top: 2,
+                left: enhanced ? 18 : 2, transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+              }} />
+            </div>
+            {enhanced ? 'Enhanced (BurbScore-inspired)' : 'Current Design'}
+          </button>
         </div>
       </div>
 
@@ -1264,12 +1612,12 @@ function ResultsView({ onHome }: { onHome: () => void }) {
         <div style={{ flex: 3, minWidth: 0 }}>
           {activeTab === 'Overview' ? (
             <>
-              <SnapshotGrid />
+              <SnapshotGrid enhanced={enhanced} />
               <TabScoreCards onTabClick={(t) => setActiveTab(t as TabName)} />
               <ComparableAreasSection />
             </>
           ) : (
-            <TabContentView tab={activeTab} />
+            <TabContentView tab={activeTab} enhanced={enhanced} />
           )}
         </div>
 
@@ -1415,6 +1763,24 @@ function InjectStyles() {
         from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
       }
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      .skeleton-shimmer {
+        background: linear-gradient(90deg, #f5f5f4 25%, #e7e5e4 50%, #f5f5f4 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s ease-in-out infinite;
+        border-radius: 6px;
+      }
+      /* Respect reduced motion preference */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
       /* Hide map column on mobile / narrow screens */
       @media (max-width: 1023px) {
         .proto2-map-col { display: none !important; }
@@ -1428,13 +1794,14 @@ function InjectStyles() {
    ══════════════════════════════════════════════════════════════════════ */
 export default function Prototype2() {
   const [view, setView] = useState<'home' | 'results'>('home');
+  const [enhanced, setEnhanced] = useState(false);
   return (
     <>
       <InjectStyles />
       {view === 'home' ? (
         <HomePage onSearch={() => setView('results')} />
       ) : (
-        <ResultsView onHome={() => setView('home')} />
+        <ResultsView onHome={() => setView('home')} enhanced={enhanced} onToggle={() => setEnhanced(e => !e)} />
       )}
     </>
   );
