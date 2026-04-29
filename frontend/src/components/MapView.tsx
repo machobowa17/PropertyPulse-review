@@ -152,7 +152,7 @@ const clusterPool: HTMLDivElement[] = [];
 const MAX_POOL_SIZE = 200;
 
 function recyclePill(el: HTMLDivElement): void {
-  // Strip event listeners by cloning — cheap for simple pill elements
+  // Handlers (onclick, onmouseenter, onmouseleave) are overwritten in createPricePillElement
   if (pillPool.length < MAX_POOL_SIZE) pillPool.push(el);
 }
 function recycleCluster(el: HTMLDivElement): void {
@@ -164,7 +164,6 @@ function createPricePillElement(price: number, propertyType?: string): HTMLDivEl
   const el = pillPool.pop() || document.createElement('div');
   // Outer div: MapLibre controls its `transform` for positioning — NEVER set transform on this element.
   el.style.cssText = 'cursor: pointer;';
-  el.textContent = '';
   // Inner span: carries all visual styling + hover scale (safe — doesn't conflict with MapLibre's transform)
   let inner = el.firstElementChild as HTMLSpanElement | null;
   if (!inner) {
