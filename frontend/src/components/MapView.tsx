@@ -162,18 +162,28 @@ function recycleCluster(el: HTMLDivElement): void {
 function createPricePillElement(price: number, propertyType?: string): HTMLDivElement {
   const bg = (propertyType && PROPERTY_TYPE_COLOURS[propertyType]) || '#0891b2';
   const el = pillPool.pop() || document.createElement('div');
-  el.style.cssText = `
+  // Outer div: MapLibre controls its `transform` for positioning — NEVER set transform on this element.
+  el.style.cssText = 'cursor: pointer;';
+  el.textContent = '';
+  // Inner span: carries all visual styling + hover scale (safe — doesn't conflict with MapLibre's transform)
+  let inner = el.firstElementChild as HTMLSpanElement | null;
+  if (!inner) {
+    inner = document.createElement('span');
+    el.appendChild(inner);
+  }
+  inner.style.cssText = `
+    display: inline-block;
     background: ${bg}; color: white; font-size: 11px; font-weight: 700;
     padding: 2px 7px; border-radius: 9999px; white-space: nowrap;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3); cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     line-height: 1.4; border: 1.5px solid rgba(255,255,255,0.6);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   `;
-  el.textContent = formatPrice(price);
+  inner.textContent = formatPrice(price);
   el.onclick = null;
-  el.onmouseenter = () => { el.style.transform = 'scale(1.15)'; el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)'; };
-  el.onmouseleave = () => { el.style.transform = ''; el.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)'; };
+  el.onmouseenter = () => { inner!.style.transform = 'scale(1.15)'; inner!.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)'; };
+  el.onmouseleave = () => { inner!.style.transform = ''; inner!.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)'; };
   return el;
 }
 
