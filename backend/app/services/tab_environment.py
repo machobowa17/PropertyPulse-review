@@ -131,17 +131,25 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             pop_row = pop_result.mappings().first()
             local_pop = int(pop_row["total_population"]) if pop_row and pop_row["total_population"] else None
 
-    # Parent average crime rate — from pre-computed MV (avoids 6M row scan)
+    # Parent average crime rate — from pre-computed MV (per-LAD rows)
     parent_result = await db.execute(
         text("""
-            SELECT SUM(total_crimes) as total_crimes,
-                   COUNT(DISTINCT month) as months_count,
-                   MAX(total_pop) as total_pop
-            FROM mv_parent_crime_rate
-            WHERE parent_comparison = :parent_name
-              AND month > :window_start AND month <= :window_end
+            WITH crime AS (
+                SELECT SUM(total_crimes) as total_crimes,
+                       COUNT(DISTINCT month) as months_count
+                FROM mv_parent_crime_rate
+                WHERE lad_code = ANY(:parent_lads)
+                  AND month > :window_start AND month <= :window_end
+            ), pop AS (
+                SELECT SUM(total_pop) as total_pop
+                FROM (SELECT DISTINCT lad_code, total_pop
+                      FROM mv_parent_crime_rate
+                      WHERE lad_code = ANY(:parent_lads)) sub
+            )
+            SELECT crime.total_crimes, crime.months_count, pop.total_pop
+            FROM crime, pop
         """),
-        {"parent_name": parent_name,
+        {"parent_lads": parent_lads,
          "window_start": latest_month - relativedelta(years=1),
          "window_end": latest_month},
     )
@@ -467,16 +475,16 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
             {"codes": lsoa_codes},
         )
     noise_row = noise_result.mappings().first()
-    # Parent noise average — from pre-computed MV (avoids 1.4M row seq scan)
+    # Parent noise average — from pre-computed MV (per-LAD rows, weighted by postcode count)
     parent_noise = None
     if noise_row and noise_row["road_noise_db"] and parent_lads:
         noise_parent_res = await db.execute(
             text("""
-                SELECT avg_road
+                SELECT SUM(avg_road * postcode_count) / NULLIF(SUM(postcode_count), 0) AS avg_road
                 FROM mv_parent_noise_avg
-                WHERE parent_comparison = :parent_name
+                WHERE lad_code = ANY(:parent_lads)
             """),
-            {"parent_name": parent_name},
+            {"parent_lads": parent_lads},
         )
         noise_parent_row = noise_parent_res.mappings().first()
         parent_noise = round(float(noise_parent_row["avg_road"]), 1) if noise_parent_row and noise_parent_row["avg_road"] else None

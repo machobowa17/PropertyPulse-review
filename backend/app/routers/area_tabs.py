@@ -29,7 +29,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v34"  # bumped: ceremonial county parent comparison fix
+AREA_CACHE_VERSION = "v35"  # bumped: universal per-LAD MV parent comparison architecture
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,

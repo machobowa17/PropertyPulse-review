@@ -121,13 +121,15 @@ async def fetch_property_market(
         raw_parent = await db.execute(
             text(
                 """
-                SELECT avg_price, median_price, avg_ppsf
+                SELECT ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
+                       ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
+                       AVG(avg_ppsf) AS avg_ppsf
                 FROM mv_parent_rolling_price_stats
-                WHERE parent_comparison = :parent_name
+                WHERE lad_code = ANY(:parent_lads)
                   AND property_type = 'ALL'
                 """
             ),
-            {"parent_name": parent_name},
+            {"parent_lads": parent_lads},
         )
         raw_parent_row = raw_parent.mappings().first()
     else:
@@ -171,15 +173,16 @@ async def fetch_property_market(
         text(
             """
             SELECT property_type,
-                   avg_price::numeric AS avg_price,
-                   median_price::numeric AS median_price,
-                   transactions AS transaction_count
+                   ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::numeric AS avg_price,
+                   ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::numeric AS median_price,
+                   SUM(transactions) AS transaction_count
             FROM mv_parent_rolling_price_stats
-            WHERE parent_comparison = :parent_name
+            WHERE lad_code = ANY(:parent_lads)
               AND property_type != 'ALL'
+            GROUP BY property_type
             """
         ),
-        {"parent_name": parent_name},
+        {"parent_lads": parent_lads},
     )
     parent_rows = parent_prices.mappings().all()
 
@@ -317,14 +320,14 @@ async def fetch_property_market(
     ppsm_parent = await db.execute(
         text(
             """
-            SELECT avg_ppsf * 10.7639 AS avg_ppsm
+            SELECT AVG(avg_ppsf) * 10.7639 AS avg_ppsm
             FROM mv_parent_rolling_price_stats
-            WHERE parent_comparison = :parent_name
+            WHERE lad_code = ANY(:parent_lads)
               AND property_type = 'ALL'
               AND avg_ppsf IS NOT NULL
             """
         ),
-        {"parent_name": parent_name},
+        {"parent_lads": parent_lads},
     )
     ppsm_parent_row = ppsm_parent.mappings().first()
 
@@ -579,15 +582,17 @@ async def fetch_property_market(
             parent_trend_result = await db.execute(
                 text(
                     """
-                    SELECT avg_price
+                    SELECT year,
+                           ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price
                     FROM mv_parent_yearly_price_stats
-                    WHERE parent_comparison = :parent_name
+                    WHERE lad_code = ANY(:parent_lads)
                       AND property_type = 'ALL'
+                    GROUP BY year
                     ORDER BY year DESC
                     LIMIT 2
                     """
                 ),
-                {"parent_name": parent_name},
+                {"parent_lads": parent_lads},
             )
             parent_rows_yoy = parent_trend_result.mappings().all()
             if len(parent_rows_yoy) >= 2:

@@ -835,14 +835,16 @@ Examples:
             else:
                 failed.append(name)
 
-    # Refresh materialized views (parent price stats for fast median lookups)
+    # Refresh materialized views (all per-LAD MVs for parent comparison + LAD-level aggregates)
     print("\n--- Refreshing materialized views ---", flush=True)
     try:
         conn = psycopg2.connect(DB_DSN)
         conn.autocommit = True
         cur = conn.cursor()
         for view in (
-            "mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_lad_comparable_features",
+            "mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_parent_yearly_ppsf",
+            "mv_parent_crime_rate", "mv_parent_noise_avg",
+            "mv_lad_comparable_features",
             "mv_lad_crime_stats", "mv_lad_amenity_counts", "mv_lad_transport_mode_counts", "mv_lad_green_space_stats",
         ):
             t_mv = time.time()
