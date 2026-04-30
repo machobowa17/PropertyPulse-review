@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-30 (session 70)
+Last updated: 2026-04-30 (session 71)
 
 **This is the SINGLE source of truth for all pending tasks. Completed work is in CHANGELOG.md.**
 
@@ -30,8 +30,35 @@ Last updated: 2026-04-30 (session 70)
 | D28 | Per-property datasets for address-level search (P53) | Pending | See spec below. |
 | D30 | Surface INSPIRE + LLC at property level (feeds P53) | Pending | `ST_Contains(geom, property_point)` for parcel boundary, LLC charges. Data already ingested and indexed. |
 | D32 | P53 EPC Lookup: current EPC + EPC at time of sale | Pending | Bypass matching engine, query `bronze.raw_epc_domestic` directly by address. ~92% coverage. |
-| D33 | NPD Workaround: catchment probability model | Pending | Reconstruct ~80% of school catchment insight from LDO + admissions + capacity + geography. `compute_catchment.py` on Hetzner. |
-| D34 | School Intelligence Module (full plan) | Pending | 13 tables, 16 ETL scripts, 7 phases (~12-16 sessions). See spec below. |
+| D33 | NPD Workaround: catchment probability model | Pending | Reconstruct ~80% of school catchment insight from LDO + admissions + capacity + geography. `compute_catchment.py` on Hetzner. Depends on D35 (LA scraping for LDO data). |
+| D35 | LA admissions booklet scraping | In Progress | Scrape 150 LA admission booklets. PoC complete (Croydon, session 71). See D35 spec below. |
+| D36 | SEND / ELP directory | Pending | Special schools + Enhanced Learning Provisions. Specialism, age range, address, contact. Extracted per-LA from admissions booklets (D35). "No one caters to SEND families — we will." |
+
+### D35 Spec — LA Admissions Booklet Scraping
+
+**PoC (session 71):** Croydon secondary — 23 schools, 13 with LDO, full allocation breakdowns. Parser: `pdfplumber` + positional text parsing. Output: `/tmp/croydon_admissions_extracted.json`.
+
+**Core extraction per LA:**
+
+| Field | Priority | Source |
+|-------|----------|--------|
+| PAN (Published Admission Number) | Must have | School list table |
+| Applications received | Must have | School list table |
+| Oversubscription ratio (derived) | Must have | apps / PAN |
+| Allocation breakdown per criterion | Must have | Allocation overview table |
+| LDO (Furthest Distance Offered) | Must have | Allocation overview table |
+| Distance measurement method | Must have | Policy text (straight-line vs walking) |
+| SIF required (Yes/No) | Must have | School list table |
+| Open days/evenings | Must have | Dates, times, booking info per school |
+| SEND / ELP provisions | Must have | Special schools section (feeds D36) |
+
+**Risks:** Format varies wildly per LA. ~30% clean tables, ~40% semi-structured prose, ~15% image PDFs (OCR needed), ~15% HTML. Confidence scoring needed. Per-LA parsers likely required for non-standard formats.
+
+**Presentation plan:** Admissions Intelligence section per school — horizontal allocation bar chart, LDO comparison ("your distance vs cutoff"), sibling caveat, LDO circle on map with measurement method label, source + year caveat.
+
+**Scale plan:** Tier 1 = top 30-40 LAs (~60% of England's school-age population). Tier 2 = remaining ~110 LAs.
+
+---
 
 ### D28 Spec — Per-Property Data Sources
 
@@ -162,12 +189,9 @@ Source: Audit of `~/Desktop/geodepth/` codebase (session 68). That project had 7
 | # | Pattern | Description | Effort |
 |---|---------|-------------|--------|
 | GD-U2 | Question-based metric framing | "What's the crime rate?" instead of `crime_rate`. Add `question` field to registry. | Low |
-| GD-U3 | VerdictPill with hover tooltip | "Why" explainer tooltip on takeaway pills. | Low |
-| GD-U5 | DataFreshness footer | Per-card "ONS Census 2021 · March 2023" source attribution. | Low |
 | GD-U6 | "If you love this area..." framing | Comparable areas with similarity %, trajectory grade, natural-language WHY. | Low |
 | GD-U7 | IntelligenceCard structure | 6-layer card: question heading, headline, summary, reassurance tip, expandable detail, source footer. | Medium |
 | GD-U8 | GeoToggle — per-card geographic level switcher | Pill bar to switch metrics between postcode/ward/borough/county. | High |
-| GD-U9 | ScoreRing / GlowRing | SVG arc gauge with gradient fill + glow aura. Animated stroke-dasharray. | Low |
 
 ### 10D — Narrative/Content Architecture
 
@@ -203,6 +227,7 @@ Source: Audit of `~/Desktop/geodepth/` codebase (session 68). That project had 7
 | R23 | PgBouncer connection pooling | DEFER | Revisit when connections bottleneck. |
 | D8 | financial_health/S114 data source | DEFERRED | Needs provenance-backed data source. |
 | D9 | Commute estimator (501 Not Implemented) | WON'T FIX | No local data source. Frontend-only via TfL/Google APIs. |
+| D34 | School Intelligence Module | COMPLETE | Closed session 71. 17 tables, 16 ETL scripts, 10 API endpoints, 7 SchoolTable tabs — all operational. Independent fees parked (no public data source). |
 
 ---
 

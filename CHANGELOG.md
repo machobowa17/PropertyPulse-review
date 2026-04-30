@@ -414,6 +414,18 @@ D23 (age distribution), D24 (household size), D25 (born abroad), D26 (commute di
 | GD-V3 | Animated pulse badge | "Free · Open Data · Every Postcode" pill with pulsing green dot above headline in `Home.tsx`. |
 | GD-V5 | `active:scale-95` on buttons | Press-down effect on Home quick links, theme tiles, TabBar pills, MetricCard rows. |
 
+**Commit:** `5052293`.
+
+| # | Task | Notes |
+|---|------|-------|
+| GD-U3 | VerdictPill hover tooltip | Pure CSS tooltips on takeaway pills (desktop + mobile) showing "So what" and "Watch out" context. `group/pill` + `group-hover/pill:opacity-100` pattern. |
+| GD-U5 | Source attribution gap-fill | Added 24 missing entries to `METRIC_SOURCES` in MetricCard.tsx — 82/82 metrics now have source badges. |
+| GD-U9 | ScoreRing component | `frontend/src/components/ScoreRing.tsx` — 270° SVG arc gauge with gradient fill, glow aura, parent marker dot. |
+| D34 | School Intelligence Module — CLOSED | Audit confirmed 95%+ complete: 17 Hetzner DB tables, 16 ETL scripts, 10 API endpoints, 7 SchoolTable tabs all operational. Independent fees parked (no public data source). |
+| D35 | LA admissions scraping — PoC complete | Croydon secondary: 23 schools (PAN, apps, allocation breakdown, LDO, SIF, open days). 13/23 have LDO. Parser: pdfplumber + positional text. SEND/ELP committed as D36. |
+
+**Commit:** `2b79b0d`.
+
 ---
 
 ## Session 67: Competitive Analyses (Reference)
