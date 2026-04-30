@@ -227,7 +227,49 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
                 "street": street_like,
             },
         )
+    elif area_hint:
+        # Broader search with area filter: push town/locality into SQL WHERE so
+        # LIMIT doesn't exclude the right town (e.g. "73 High Street, Barnsley"
+        # must not return random towns before Barnsley).
+        area_hint_upper = area_hint.upper()
+        area_hint_like = "%" + area_hint_upper.replace("%", "\\%").replace("_", "\\_") + "%"
+        result = await db.execute(
+            text("""
+                SELECT paon, saon, street, postcode, locality, town,
+                       latitude, longitude, lsoa_code
+                FROM core_addresses
+                WHERE paon = :paon
+                  AND street LIKE :street
+                  AND (town LIKE :area_hint OR locality LIKE :area_hint)
+                LIMIT 20
+            """),
+            {
+                "paon": paon,
+                "street": street_like,
+                "area_hint": area_hint_like,
+            },
+        )
+        # Check if area-filtered query returned results; if not, fall back to
+        # unfiltered search (address might not exist in that town)
+        _area_rows = result.mappings().all()
+        if not _area_rows:
+            result = await db.execute(
+                text("""
+                    SELECT paon, saon, street, postcode, locality, town,
+                           latitude, longitude, lsoa_code
+                    FROM core_addresses
+                    WHERE paon = :paon
+                      AND street LIKE :street
+                    LIMIT 20
+                """),
+                {
+                    "paon": paon,
+                    "street": street_like,
+                },
+            )
+            _area_rows = None
     else:
+        _area_rows = None
         # Broader search: PAON + street (uses idx_addresses_paon_street)
         result = await db.execute(
             text("""
@@ -244,7 +286,7 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             },
         )
 
-    rows = result.mappings().all()
+    rows = _area_rows if _area_rows is not None else result.mappings().all()
     if not rows:
         return None
 
@@ -268,17 +310,18 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             seen.add(key)
             unique_addresses.append(dict(r))
 
-    # If area hint provided, filter by postcode area, street, locality, or town
-    if area_hint and len(unique_addresses) > 1:
-        filtered = [
+    # If area hint provided and no postcode (area_hint was already pushed into
+    # SQL WHERE clause above), do a secondary Python filter only as a tiebreaker
+    # when multiple results still remain from the SQL query.
+    if area_hint and not postcode and len(unique_addresses) > 1:
+        # Prefer exact town/locality match over partial
+        exact_filtered = [
             a for a in unique_addresses
-            if area_hint in (a["postcode"] or "").lower()
-            or area_hint in (a["street"] or "").lower()
-            or area_hint in (a.get("locality") or "").lower()
-            or area_hint in (a.get("town") or "").lower()
+            if area_hint == (a.get("town") or "").lower()
+            or area_hint == (a.get("locality") or "").lower()
         ]
-        if filtered:
-            unique_addresses = filtered
+        if exact_filtered:
+            unique_addresses = exact_filtered
 
     if len(unique_addresses) == 0:
         return None
