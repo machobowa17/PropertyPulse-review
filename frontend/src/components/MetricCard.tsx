@@ -118,6 +118,32 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   controlling_party:      { label: 'Electoral Commission', licence: 'OGL v3' },
   water_company:          { label: 'Ofwat / Environment Agency', licence: 'OGL v3' },
   financial_health:       { label: 'MHCLG S114 Notices', licence: 'OGL v3' },
+  electricity_dno:        { label: 'Ofgem / Energy Networks Association', licence: 'OGL v3' },
+  gas_gdn:                { label: 'Ofgem / Energy Networks Association', licence: 'OGL v3' },
+  // Missing from original list
+  official_hpi:           { label: 'ONS UK House Price Index', licence: 'OGL v3' },
+  price_spread:           { label: 'HM Land Registry PPD', licence: 'OGL v3' },
+  epc_rating_c_plus:      { label: 'MHCLG EPC Register', licence: 'OGL v3' },
+  esg_score:              { label: 'MHCLG EPC / DEFRA / EA', licence: 'OGL v3' },
+  land_designations:      { label: 'HM Land Registry LLC', licence: 'OGL v3' },
+  stations_in_area:       { label: 'NaPTAN / Network Rail', licence: 'OGL v3' },
+  fifteen_min_score:      { label: 'OpenStreetMap / NaPTAN', licence: 'OGL v3 / ODbL' },
+  connectivity_index:     { label: 'Derived from NaPTAN / Ofcom', licence: 'OGL v3' },
+  commuter_connectivity:  { label: 'Derived from MOTIS routing', licence: 'OGL v3' },
+  household_size:         { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  wfh:                    { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  outstanding_schools_walk: { label: 'Ofsted / MOTIS', licence: 'OGL v3' },
+  // Overview tab (same sources as parent metrics)
+  overview_avg_price:     { label: 'HM Land Registry PPD', licence: 'OGL v3' },
+  overview_council_tax:   { label: 'MHCLG Council Tax Levels', licence: 'OGL v3' },
+  overview_nearest_station: { label: 'NaPTAN / Network Rail', licence: 'OGL v3' },
+  overview_broadband:     { label: 'Ofcom Connected Nations', licence: 'OGL v3' },
+  overview_crime_rate:    { label: 'Home Office Crime Statistics', licence: 'OGL v3' },
+  overview_air_quality:   { label: 'DEFRA AURN', licence: 'OGL v3' },
+  overview_median_age:    { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  overview_deprivation:   { label: 'MHCLG English Indices of Deprivation', licence: 'OGL v3' },
+  overview_pop_density:   { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
+  overview_degree_educated: { label: 'Census 2021 (ONS)', licence: 'OGL v3' },
 };
 
 export const COLOUR_STYLES = {
@@ -287,9 +313,16 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
 
         {/* Takeaway pill (merged So What + Watch Out) */}
         <div className="w-44 shrink-0 hidden lg:block">
-          {takeawayText ? (
-            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border} max-w-full truncate`}>
+          {takeawayText && takeaway ? (
+            <span className={`group/pill relative inline-block px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border} max-w-full truncate cursor-default`}>
               {takeawayText}
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 rounded-lg bg-gray-900 text-white text-[11px] font-normal leading-snug px-3 py-2 shadow-xl opacity-0 group-hover/pill:opacity-100 transition-opacity duration-150 whitespace-normal">
+                <span className="block"><span className="font-semibold text-white/70">So what:</span> {takeaway.soWhat}</span>
+                {takeaway.watchOut && takeaway.watchOut !== 'None' && (
+                  <span className="block mt-0.5"><span className="font-semibold text-white/70">Watch out:</span> {takeaway.watchOut}</span>
+                )}
+                <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+              </span>
             </span>
           ) : null}
         </div>
@@ -310,11 +343,18 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
           )}
         </div>
       )}
-      {takeawayText && (
+      {takeawayText && takeaway && (
         <div className="lg:hidden flex flex-wrap gap-2 px-5 pb-3 -mt-1">
-          <div className={`px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border}`}>
+          <span className={`group/pill relative px-2.5 py-1 rounded-lg text-xs font-medium ${colours.bg} ${colours.text} border ${colours.border} cursor-default`}>
             {takeawayText}
-          </div>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 rounded-lg bg-gray-900 text-white text-[11px] font-normal leading-snug px-3 py-2 shadow-xl opacity-0 group-hover/pill:opacity-100 transition-opacity duration-150 whitespace-normal">
+              <span className="block"><span className="font-semibold text-white/70">So what:</span> {takeaway.soWhat}</span>
+              {takeaway.watchOut && takeaway.watchOut !== 'None' && (
+                <span className="block mt-0.5"><span className="font-semibold text-white/70">Watch out:</span> {takeaway.watchOut}</span>
+              )}
+              <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+            </span>
+          </span>
         </div>
       )}
 
