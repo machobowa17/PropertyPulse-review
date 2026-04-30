@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Bookmark, FileDown, Loader2, MapPin, X } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import { LSOA_SUFFIX } from '../../utils/resultsConstants';
