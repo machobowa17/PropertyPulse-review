@@ -201,9 +201,11 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         else:
             area_hint = trailing.lower()
 
-    # Escape LIKE wildcards in street before wrapping with %
-    street_escaped = street_raw.upper().replace("%", "\\%").replace("_", "\\_")
-    street_like = "%" + street_escaped + "%"
+    # Build fuzzy LIKE pattern: split words and join with % to allow
+    # extra characters between words (e.g. "ST%JAMES%STREET" matches "ST JAMES'S STREET")
+    street_words_raw = street_raw.upper().split()
+    street_parts = [w.replace("%", "\\%").replace("_", "\\_") for w in street_words_raw]
+    street_like = "%" + "%".join(street_parts) + "%"
 
     if postcode:
         # Format compact postcode to standard form (e.g. "SW1A1PH" → "SW1A 1PH")
