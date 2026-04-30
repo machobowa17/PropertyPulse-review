@@ -19,7 +19,7 @@ interface Takeaway {
 }
 
 /** Bible Part 5.2 — Full takeaway matrix for all 42 metrics × 6 personas. */
-export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
+export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway | null {
   const { id, comparison_flag, local_value } = metric;
   const isHigher = comparison_flag === 'higher_than_parent';
   const isLower = comparison_flag === 'lower_than_parent';
@@ -827,7 +827,7 @@ export function getTakeaway(metric: Metric, persona: PersonaId): Takeaway {
   // ═══════════════════════════════════════════
   // DEFAULT FALLBACK
   // ═══════════════════════════════════════════
-  if (comparison_flag === null) return { soWhat: 'Data available', watchOut: 'No comparison', colour: 'neutral' };
+  if (comparison_flag === null) return null;
   if (isHigher) return { soWhat: 'Above parent average', watchOut: 'Worth investigating', colour: 'amber' };
   if (isLower) return { soWhat: 'Below parent average', watchOut: 'Worth investigating', colour: 'amber' };
   return { soWhat: 'In line with average', watchOut: 'None', colour: 'neutral' };

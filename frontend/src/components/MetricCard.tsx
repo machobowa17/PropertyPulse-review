@@ -184,7 +184,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
   const [detailsReady, setDetailsReady] = useState(false);
   const detailsRef = useRef<HTMLDivElement>(null);
   const takeaway = getTakeaway(metric, persona);
-  const takeawayText = takeaway.soWhat
+  const takeawayText = takeaway?.soWhat
     ? takeaway.watchOut && takeaway.watchOut !== 'None'
       ? `${takeaway.soWhat} — ${takeaway.watchOut.charAt(0).toLowerCase()}${takeaway.watchOut.slice(1)}`
       : takeaway.soWhat
@@ -194,7 +194,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
     ? { direction: metric.trend.direction, pct: typeof metric.trend.value === 'number' ? metric.trend.value : 0 }
     : null;
   const trend: Trend | undefined = trendNested ?? (metric.details ? rec<Trend>(metric.details, 'trend') ?? undefined : undefined);
-  const colours = COLOUR_STYLES[takeaway.colour];
+  const colours = COLOUR_STYLES[takeaway?.colour ?? 'neutral'];
   const hasDetails = metric.details && Object.keys(metric.details).length > 0;
   const handleToggle = useCallback(() => {
     if (!hasDetails) return;
@@ -235,7 +235,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
   return (
     <div
       className={`
-        rounded-2xl bg-white transition-all duration-200
+        rounded-2xl bg-white transition-all duration-200 overflow-hidden
         ${expanded ? 'shadow-md ring-1 ring-brand-200/50 bg-brand-50/30 border-l-2 border-l-brand-500' : 'shadow-sm hover:shadow-md hover:-translate-y-px'}
       `}
     >
@@ -280,8 +280,6 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
                 ? fmtTxnVol(num(metric.details, 'parent_absolute'), metric.parent_value as number | null)
                 : formatValue(metric.parent_value, metric.unit)}
             </span>
-          ) : metric.comparison_status === 'not_modelled_yet' ? (
-            <span className="text-[11px] text-ink-faint/40 italic">vs {parentName} — coming soon</span>
           ) : (
             <span className="text-ink-faint">—</span>
           )}

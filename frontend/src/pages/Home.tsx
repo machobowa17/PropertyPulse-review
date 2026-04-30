@@ -61,15 +61,15 @@ export default function Home() {
             {/* Left: headline + search */}
             <div className="flex-1 max-w-2xl">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-gray-900 leading-[0.95] mb-4">
-                Know your{'\n'}
+                Move with{'\n'}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-brand-400">
-                  neighbourhood.
+                  certainty.
                 </span>
               </h1>
 
               <p className="text-base text-gray-500 mb-8 max-w-md leading-relaxed">
-                The most complete area analysis for UK property.
-                Every postcode, every metric, personalised for you.
+                The right home isn't just about the property — it's about the life
+                that comes with the address.
               </p>
 
               {/* Search */}

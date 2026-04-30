@@ -207,6 +207,7 @@ function buildSignal(metric: Metric, persona: PersonaId, decisionMode: DecisionM
   if (weight === 0) return null;
 
   const takeaway = getTakeaway(metric, persona);
+  if (!takeaway) return null;
   const colour = (takeaway.colour || 'neutral') as PersonalizationSignal['colour'];
 
   return {
