@@ -554,6 +554,7 @@ async def make_lsoa_session(
     entity_type: str | None = None,
     entity_name: str | None = None,
     query_text: str | None = None,
+    property_data: dict | None = None,
     **expand_kwargs,
 ) -> tuple:
     """Call expand_lsoa_codes and store comprehensive session in Redis.
@@ -669,6 +670,9 @@ async def make_lsoa_session(
             "entity": {"display_name": display_name or entity_name or None},
             "comparison_scope": {"name": parent_name},
         },
+        # Property-specific data (only set for address searches)
+        "property_mode": property_data is not None,
+        "property": property_data,
     }, ttl=86400)
 
     return lsoa_codes, lat, lon, mode, local_lads, session_key
@@ -700,7 +704,7 @@ async def get_parent_lad_info(db, lad_code: str, *, entity_type: str | None = No
         return [], fallback_country
 
     # Sub-LAD searches: parent = the LAD itself (except London boroughs → Greater London)
-    _SUB_LAD_TYPES = {"postcode", "ward", "place", "postcode_district"}
+    _SUB_LAD_TYPES = {"postcode", "ward", "place", "postcode_district", "address"}
     if entity_type in _SUB_LAD_TYPES and not lad_code.startswith("E09"):
         row = await db.execute(
             text("SELECT lad_name FROM core_lad_county_lookup WHERE lad_code = :lad"),

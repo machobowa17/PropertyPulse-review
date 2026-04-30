@@ -8,11 +8,12 @@ import {
   resolveSearch, fetchAreaTab, fetchBoundary,
   fetchPriceHistory, fetchAqHistory, fetchComparable,
   fetchMapPois, fetchPriceByType, fetchChoropleth, buildChoroplethUrl, SessionExpiredError,
+  fetchPropertyData,
 } from '../api/client';
 import type { ResolveResponse, AreaResponse, TabName, PersonaId, Metric } from '../types';
 import type {
   PriceHistoryResponse, AqHistoryResponse, PriceByTypeResponse, ComparableResponse, ChoroplethResponse,
-  MapPoisResponse,
+  MapPoisResponse, PropertyDataResponse,
 } from '../api/client';
 import type { DecisionMode } from '../components/DecisionModeSelector';
 import { saveArea, removeSavedArea, isAreaSaved, buildSavedAreaId } from '../utils/savedAreas';
@@ -26,6 +27,18 @@ export const ALL_TABS: TabName[] = [
   'Community & Education',
   'Local Governance',
 ];
+
+/** Property selection state for P53 single-address drill-down */
+export interface SelectedProperty {
+  lat: number;
+  lon: number;
+  postcode: string | null;
+  paon: string | null;
+  saon: string | null;
+  street: string | null;
+  uprn: number | null;
+  addressDisplay?: string;
+}
 
 type ResolvedCodes = NonNullable<ResolveResponse['resolved_codes']>;
 type Viewport = { center: [number, number]; zoom: number };
@@ -71,6 +84,14 @@ export interface ResultsDataContextValue {
   mapPoisLoading: boolean;
   choroplethData: ChoroplethResponse | undefined | null;
   choroplethUrl: string | null;
+
+  // ── Property selection (P53) ─────────────────────────────────────────────
+  selectedProperty: SelectedProperty | null;
+  selectProperty: (prop: SelectedProperty) => void;
+  clearProperty: () => void;
+  propertyData: PropertyDataResponse | null | undefined;
+  propertyLoading: boolean;
+  propertyError: boolean;
 
   // ── Saved areas ───────────────────────────────────────────────────────────
   isSaved: boolean;
@@ -195,6 +216,57 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     }
     setIsSaved((prev) => !prev);
   };
+
+  // ── Property selection state (P53) ────────────────────────────────────────
+  const [selectedProperty, setSelectedProperty] = useState<SelectedProperty | null>(null);
+
+  const selectProperty = useCallback((prop: SelectedProperty) => {
+    setSelectedProperty(prop);
+    // Switch to Property tab (first position) — but Property tab doesn't exist
+    // as a server tab, so we render it client-side when selectedProperty is set
+  }, []);
+
+  const clearProperty = useCallback(() => {
+    setSelectedProperty(null);
+    // Switch back to Overview when property is dismissed
+    setActiveTab('Overview');
+  }, [setActiveTab]);
+
+  // Fetch property-specific data (parcel, flood, noise, broadband, LLC)
+  const { data: propertyData, isLoading: propertyLoading, isError: propertyError } = useQuery({
+    queryKey: ['propertyData', sessionKey, selectedProperty?.lat, selectedProperty?.lon, selectedProperty?.paon, selectedProperty?.saon, selectedProperty?.uprn],
+    queryFn: () => fetchPropertyData(
+      sessionKey!,
+      selectedProperty!.lat,
+      selectedProperty!.lon,
+      selectedProperty!.postcode,
+      selectedProperty!.paon,
+      selectedProperty!.saon,
+      selectedProperty!.street,
+      selectedProperty!.uprn,
+    ),
+    enabled: !!sessionKey && !!selectedProperty,
+  });
+
+  // If resolve returns property data (address search), auto-select it.
+  // If it's a non-address resolve, clear any stale property selection.
+  useEffect(() => {
+    if (resolved?.type === 'address' && resolved?.property) {
+      const p = resolved.property;
+      setSelectedProperty({
+        lat: p.lat,
+        lon: p.lon,
+        postcode: p.postcode,
+        paon: p.paon,
+        saon: p.saon ?? null,
+        street: p.street,
+        uprn: p.uprn ?? null,
+        addressDisplay: p.address_display,
+      });
+    } else if (resolved && resolved.type !== 'address') {
+      setSelectedProperty(null);
+    }
+  }, [resolved]);
 
   // Pre-fetch remaining tabs with staggered delays to avoid a 4-request burst.
   // Adjacent tab fires immediately; others stagger at 2s intervals.
@@ -357,6 +429,12 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     mapPoisLoading,
     choroplethData,
     choroplethUrl,
+    selectedProperty,
+    selectProperty,
+    clearProperty,
+    propertyData,
+    propertyLoading,
+    propertyError,
     isSaved,
     toggleSave,
     isDesktop,
@@ -365,7 +443,9 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     activeTab, setActiveTab, persona, setPersona, decisionMode, handleDecisionModeChange,
     tabData, tabLoading, allMetrics, priceHistory, aqHistory, priceByType, comparable,
     boundaryData, effectiveBoundary, effectiveLsoaBoundary, mapPois, mapPoisLoading,
-    choroplethData, choroplethUrl, isSaved, toggleSave, isDesktop,
+    choroplethData, choroplethUrl,
+    selectedProperty, selectProperty, clearProperty, propertyData, propertyLoading, propertyError,
+    isSaved, toggleSave, isDesktop,
   ]);
 
   const uiValue: ResultsUIContextValue = useMemo(

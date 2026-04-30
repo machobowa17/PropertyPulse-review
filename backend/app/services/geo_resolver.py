@@ -23,6 +23,26 @@ DISTRICT_POSTCODE_RE = re.compile(
     r"^[A-Z]{1,2}[0-9][0-9A-Z]?$", re.IGNORECASE
 )
 
+# Address pattern: optional flat/unit prefix, then number + street, optionally followed by comma + postcode/area
+# Group 1: sub-building prefix (e.g. "Flat 2" / "Unit 3A") — optional
+# Group 2: PAON number (e.g. "42", "42A", "10-12")
+# Group 3: street name
+# Group 4: trailing part after comma (postcode or area hint)
+ADDRESS_RE = re.compile(
+    r"^(?:(?:flat|unit|apt|apartment)\s+(\w+),?\s*)?(\d+(?:[a-zA-Z]|-\d+)?)\s+(.+?)(?:,\s*(.+))?$",
+    re.IGNORECASE,
+)
+
+# Words that indicate the "street" part is actually a street name (not "Bed Semi")
+_STREET_WORDS = frozenset({
+    "street", "st", "road", "rd", "lane", "ln", "avenue", "ave", "drive", "dr",
+    "close", "cl", "court", "ct", "crescent", "cres", "place", "pl", "way",
+    "terrace", "gardens", "grove", "park", "hill", "rise", "row", "square",
+    "mews", "walk", "green", "gate", "passage", "yard", "mount", "vale",
+    "broadway", "circus", "high", "bridge", "church", "chapel", "manor",
+    "field", "meadow", "wood", "heath", "common", "view", "end",
+})
+
 # Place types we consider "area" types for place-name resolution
 AREA_PLACE_TYPES = (
     'City', 'Town', 'Suburban Area', 'Village', 'Other Settlement', 'Hamlet'
@@ -57,7 +77,22 @@ async def resolve_search(db: AsyncSession, query: str) -> dict:
     if POSTCODE_RE.match(q):
         return await _resolve_postcode(db, q)
 
-    # Rule 1b: District/outward-code-only postcode (e.g. E1W, SW9, EC2A)
+    # Rule 1b: Address search (e.g. "42 High Street, CR5 1RA", "Flat 2, 42 High Street")
+    # Must come before district postcode and place name — detected by leading number.
+    addr_match = ADDRESS_RE.match(q)
+    if addr_match:
+        # Validate: the street part must contain at least one recognised street word
+        # to avoid false positives like "3 Bed Semi" or "4 Bedroom House"
+        street_part = addr_match.group(3)  # group 3 is street in updated regex
+        street_words = {w.lower().rstrip(".,") for w in street_part.split()}
+        if street_words & _STREET_WORDS or addr_match.group(4):
+            # Has a street word or a trailing comma section (e.g. ", CR5 1RA")
+            addr_result = await _resolve_address(db, q, addr_match)
+            if addr_result:
+                return addr_result
+        # Fall through to place/ward resolution if address not found
+
+    # Rule 1c: District/outward-code-only postcode (e.g. E1W, SW9, EC2A)
     if DISTRICT_POSTCODE_RE.match(q):
         return await _resolve_district_postcode(db, q)
 
@@ -140,6 +175,220 @@ async def _resolve_postcode(db: AsyncSession, query: str) -> dict:
         "boundary_source": "ward_lsoa",
         "boundary_id": row["ward_code"],
         "country": _resolved_country_metadata(row["lsoa_code"], row["ward_code"], row["lad_code"]),
+    }
+
+
+async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dict | None:
+    """Resolve an address search (e.g. '42 High Street, CR5 1RA').
+
+    Parses PAON + street from the regex match. If a postcode is present in the
+    trailing group, uses it for an exact lookup. Otherwise searches by PAON + street.
+
+    Returns a property-type resolve result, or None if no match found (caller
+    should fall through to place-name resolution).
+    """
+    saon_raw = match.group(1)  # sub-building (Flat 2, Unit 3A) — may be None
+    paon = match.group(2).upper()
+    street_raw = match.group(3).strip().rstrip(",")
+    trailing = (match.group(4) or "").strip()
+
+    # Check if trailing text is a postcode
+    postcode = None
+    area_hint = None
+    if trailing:
+        if POSTCODE_RE.match(trailing):
+            postcode = trailing.replace(" ", "").upper()
+        else:
+            area_hint = trailing.lower()
+
+    # Escape LIKE wildcards in street before wrapping with %
+    street_escaped = street_raw.upper().replace("%", "\\%").replace("_", "\\_")
+    street_like = "%" + street_escaped + "%"
+
+    if postcode:
+        # Exact lookup: PAON + street + postcode
+        result = await db.execute(
+            text("""
+                SELECT paon, saon, street, postcode, locality, town,
+                       latitude, longitude, lsoa_code
+                FROM core_property_transactions
+                WHERE UPPER(REPLACE(postcode, ' ', '')) = :postcode
+                  AND UPPER(paon) = :paon
+                  AND UPPER(street) LIKE :street
+                  AND latitude IS NOT NULL
+                ORDER BY date_of_transfer DESC
+                LIMIT 5
+            """),
+            {
+                "postcode": postcode,
+                "paon": paon,
+                "street": street_like,
+            },
+        )
+    else:
+        # Broader search: PAON + street (optionally filtered by area)
+        result = await db.execute(
+            text("""
+                SELECT paon, saon, street, postcode, locality, town,
+                       latitude, longitude, lsoa_code
+                FROM core_property_transactions
+                WHERE UPPER(paon) = :paon
+                  AND UPPER(street) LIKE :street
+                  AND latitude IS NOT NULL
+                ORDER BY date_of_transfer DESC
+                LIMIT 20
+            """),
+            {
+                "paon": paon,
+                "street": street_like,
+            },
+        )
+
+    rows = result.mappings().all()
+    if not rows:
+        return None
+
+    # If SAON was specified (e.g. "Flat 2"), filter results to matching sub-address
+    if saon_raw:
+        saon_upper = saon_raw.upper()
+        saon_filtered = [
+            r for r in rows
+            if saon_upper in (r["saon"] or "").upper()
+            or (r["saon"] or "").upper().endswith(saon_upper)
+        ]
+        if saon_filtered:
+            rows = saon_filtered
+
+    # Deduplicate by (postcode, paon, street) to get unique addresses
+    seen = set()
+    unique_addresses = []
+    for r in rows:
+        key = (r["postcode"], r["paon"], r["street"])
+        if key not in seen:
+            seen.add(key)
+            unique_addresses.append(dict(r))
+
+    # If area hint provided, filter by postcode area, street, locality, or town
+    if area_hint and len(unique_addresses) > 1:
+        filtered = [
+            a for a in unique_addresses
+            if area_hint in (a["postcode"] or "").lower()
+            or area_hint in (a["street"] or "").lower()
+            or area_hint in (a.get("locality") or "").lower()
+            or area_hint in (a.get("town") or "").lower()
+        ]
+        if filtered:
+            unique_addresses = filtered
+
+    if len(unique_addresses) == 0:
+        return None
+
+    # Use the first (most recent) match
+    prop = unique_addresses[0]
+
+    # Clean PPD saon="N" (means "no sub-address") to null
+    for addr in unique_addresses:
+        if addr.get("saon") == "N":
+            addr["saon"] = None
+
+    # Resolve LSOA → LAD → parent for this property
+    lsoa_code = prop.get("lsoa_code")
+    if not lsoa_code and prop["latitude"] and prop["longitude"]:
+        # Spatial lookup if lsoa_code not on transaction
+        lsoa_result = await db.execute(
+            text("""
+                SELECT lsoa_code FROM core_lsoa_boundaries
+                WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+                LIMIT 1
+            """),
+            {"lon": float(prop["longitude"]), "lat": float(prop["latitude"])},
+        )
+        lsoa_row = lsoa_result.mappings().first()
+        if lsoa_row:
+            lsoa_code = lsoa_row["lsoa_code"]
+
+    if not lsoa_code:
+        return None
+
+    # Get LAD + MSOA from core_lsoa_boundaries (single query)
+    lsoa_info = await db.execute(
+        text("SELECT lad_code, msoa_code FROM core_lsoa_boundaries WHERE lsoa_code = :lsoa LIMIT 1"),
+        {"lsoa": lsoa_code},
+    )
+    lsoa_info_row = lsoa_info.mappings().first()
+    if not lsoa_info_row:
+        return None
+    lad_code = lsoa_info_row["lad_code"]
+    msoa_code = lsoa_info_row["msoa_code"]
+
+    if not lad_code:
+        return None
+
+    # Get ward from core_postcodes (postcode-keyed)
+    ward_code = None
+    if prop.get("postcode"):
+        pc_compact = prop["postcode"].replace(" ", "").upper()
+        ward_result = await db.execute(
+            text("SELECT ward_code FROM core_postcodes WHERE postcode_compact = :pc LIMIT 1"),
+            {"pc": pc_compact},
+        )
+        ward_row = ward_result.mappings().first()
+        if ward_row:
+            ward_code = ward_row["ward_code"]
+
+    parent = await _resolve_parent(db, lad_code, entity_type="address")
+
+    # Build address display string
+    parts = [prop["paon"]]
+    if prop.get("saon"):
+        parts.insert(0, prop["saon"])
+    if prop.get("street"):
+        parts.append(prop["street"].title())
+    if prop.get("postcode"):
+        parts.append(prop["postcode"])
+    address_display = ", ".join(parts)
+
+    return {
+        "query": query,
+        "type": "address",
+        "search_mode": "property",
+        "resolved_codes": {
+            "lsoa": lsoa_code,
+            "msoa": msoa_code,
+            "ward": ward_code,
+            "lad": lad_code,
+            "parent": parent,
+        },
+        "coordinates": {
+            "lat": float(prop["latitude"]),
+            "lon": float(prop["longitude"]),
+        },
+        "boundary_source": "ward_lsoa",
+        "boundary_id": lsoa_code,
+        "country": _resolved_country_metadata(lsoa_code, lad_code),
+        # Property-specific fields
+        "property": {
+            "paon": prop["paon"],
+            "saon": prop.get("saon"),
+            "street": prop.get("street"),
+            "postcode": prop.get("postcode"),
+            "uprn": None,
+            "lat": float(prop["latitude"]),
+            "lon": float(prop["longitude"]),
+            "address_display": address_display,
+        },
+        # Disambiguation: if multiple addresses matched, include alternatives
+        "alternatives": [
+            {
+                "paon": a["paon"],
+                "saon": a.get("saon"),
+                "street": a.get("street"),
+                "postcode": a.get("postcode"),
+                "lat": float(a["latitude"]) if a.get("latitude") else None,
+                "lon": float(a["longitude"]) if a.get("longitude") else None,
+            }
+            for a in unique_addresses[1:5]  # Up to 4 alternatives
+        ] if len(unique_addresses) > 1 else [],
     }
 
 

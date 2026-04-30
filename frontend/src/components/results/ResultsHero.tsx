@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Bookmark, FileDown, Loader2 } from 'lucide-react';
+import { useState, useCallback, useMemo } from 'react';
+import { Bookmark, FileDown, Loader2, MapPin, X } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import { LSOA_SUFFIX } from '../../utils/resultsConstants';
 
@@ -45,7 +45,7 @@ function LsoaContextBlurb({ resolved, areaName }: { resolved: any; areaName: str
 }
 
 export function ResultsHero() {
-  const { areaName, parentName, isSaved, toggleSave, sessionKey, resolved } = useResults();
+  const { areaName, parentName, isSaved, toggleSave, sessionKey, resolved, selectedProperty, clearProperty } = useResults();
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -83,6 +83,21 @@ export function ResultsHero() {
                 <span className="text-base sm:text-lg lg:text-xl font-medium text-white/50">, {parentName}</span>
               )}
             </h1>
+            {selectedProperty && (
+              <div className="mt-1.5 flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                <span className="text-sm text-blue-200 font-medium">
+                  {selectedProperty.addressDisplay || [selectedProperty.paon, selectedProperty.street, selectedProperty.postcode].filter(Boolean).join(', ')}
+                </span>
+                <button
+                  onClick={clearProperty}
+                  className="ml-1 p-0.5 rounded hover:bg-white/10 transition-colors"
+                  title="Dismiss property"
+                >
+                  <X className="w-3.5 h-3.5 text-white/50 hover:text-white/80" />
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2 self-start">
             <button

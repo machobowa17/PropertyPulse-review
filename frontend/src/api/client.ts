@@ -424,6 +424,87 @@ export async function fetchTransactions(
   return res.json();
 }
 
+// ── Property-specific data (P53) ─────────────────────────────────────────────
+
+export interface PropertyDataResponse {
+  coordinates: { lat: number; lon: number };
+  address: {
+    paon: string | null;
+    saon: string | null;
+    street: string | null;
+    postcode: string | null;
+    uprn: number | null;
+  };
+  parcel: {
+    inspire_id: string;
+    authority: string;
+    geojson: GeoJSON.Geometry;
+  } | null;
+  flood_zone: string | null;
+  llc_charges: Array<{ charge_type: string }>;
+  noise: { road_db: number | null; rail_db: number | null } | null;
+  broadband: {
+    avg_download: number | null;
+    avg_upload: number | null;
+    superfast_pct: number | null;
+    ultrafast_pct: number | null;
+    gigabit_pct: number | null;
+    fttp_pct: number | null;
+  } | null;
+}
+
+export async function fetchPropertyData(
+  sessionKey: string,
+  lat: number,
+  lon: number,
+  postcode?: string | null,
+  paon?: string | null,
+  saon?: string | null,
+  street?: string | null,
+  uprn?: number | null,
+): Promise<PropertyDataResponse> {
+  const qs = new URLSearchParams({
+    session_key: sessionKey,
+    lat: lat.toString(),
+    lon: lon.toString(),
+  });
+  if (postcode) qs.set('postcode', postcode);
+  if (paon) qs.set('paon', paon);
+  if (saon) qs.set('saon', saon);
+  if (street) qs.set('street', street);
+  if (uprn) qs.set('uprn', uprn.toString());
+  const res = await fetchWithRetry(`${BASE}/area/property?${qs}`, { cache: 'no-store' });
+  if (res.status === 410) throw new SessionExpiredError();
+  if (!res.ok) throw new Error(`Property data fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export interface ReverseGeocodeResponse {
+  type: 'property' | 'area';
+  property?: {
+    paon: string;
+    saon: string | null;
+    street: string;
+    postcode: string;
+    lat: number;
+    lon: number;
+    lsoa_code: string;
+    uprn: number | null;
+  };
+  lsoa_code?: string | null;
+  coordinates?: { lat: number; lon: number };
+  distance_m?: number;
+}
+
+export async function fetchReverseGeocode(lat: number, lon: number): Promise<ReverseGeocodeResponse> {
+  const res = await fetchWithRetry(
+    `${BASE}/reverse-geocode?lat=${lat}&lon=${lon}`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) throw new Error(`Reverse geocode failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchPropertyHistory(
   sessionKey: string,
   postcode: string,

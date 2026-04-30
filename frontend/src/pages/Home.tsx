@@ -1,14 +1,9 @@
+import { lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, TrendingUp, Shield, Users, Building2, Leaf } from 'lucide-react';
+import { Leaf } from 'lucide-react';
 import SearchBox from '../components/SearchBox';
 
-const THEMES = [
-  { icon: TrendingUp, title: 'Property & Market', hint: 'Prices, yields, trends' },
-  { icon: MapPin, title: 'Lifestyle & Connectivity', hint: 'Transport, broadband, amenities' },
-  { icon: Shield, title: 'Environment & Safety', hint: 'Flood, air quality, crime' },
-  { icon: Users, title: 'Community & Education', hint: 'Schools, NHS, demographics' },
-  { icon: Building2, title: 'Local Governance', hint: 'Council tax, politics, utilities' },
-];
+const HomeMap = lazy(() => import('../components/HomeMap'));
 
 const EXAMPLE_PLACES = [
   { q: 'SW1A 1AA', hint: 'Westminster' },
@@ -78,7 +73,7 @@ export default function Home() {
 
               {/* Search */}
               <div className="max-w-xl">
-                <SearchBox size="lg" placeholder="Enter a postcode or place name..." variant="light" />
+                <SearchBox size="lg" placeholder="Search postcode, place, or address..." variant="light" />
               </div>
 
               {/* Quick links */}
@@ -98,25 +93,20 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right: 5 theme tiles */}
-            <div className="flex-1 max-w-md mt-10 lg:mt-0">
-              <div className="grid grid-cols-1 gap-2.5">
-                {THEMES.map(({ icon: Icon, title, hint }) => (
-                  <div
-                    key={title}
-                    className="group flex items-center gap-4 px-4 py-3.5 rounded-xl bg-gray-50/80 border border-gray-100
-                               hover:bg-white hover:border-gray-200 hover:shadow-md hover:shadow-gray-100/50 active:scale-[0.98] transition-all duration-200"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center shrink-0 group-hover:bg-brand-100 transition-colors">
-                      <Icon className="w-5 h-5 text-brand-500 group-hover:text-brand-600 transition-colors" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm text-gray-800 group-hover:text-gray-900 transition-colors">{title}</div>
-                      <div className="text-xs text-gray-400 group-hover:text-gray-500 transition-colors">{hint}</div>
-                    </div>
+            {/* Right: Interactive map — browse by zooming in */}
+            <div className="flex-1 max-w-lg mt-10 lg:mt-0">
+              <div className="rounded-2xl overflow-hidden shadow-lg border border-gray-200" style={{ height: '420px' }}>
+                <Suspense fallback={
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center text-sm text-gray-400">
+                    Loading map…
                   </div>
-                ))}
+                }>
+                  <HomeMap />
+                </Suspense>
               </div>
+              <p className="text-[11px] text-gray-400 mt-2 text-center">
+                Or zoom into the map and click any property to explore it
+              </p>
             </div>
           </div>
 

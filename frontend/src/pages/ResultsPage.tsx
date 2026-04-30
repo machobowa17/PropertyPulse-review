@@ -1,3 +1,4 @@
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, SearchX } from 'lucide-react';
 
@@ -9,6 +10,8 @@ import { ResultsDesktopMap } from '../components/results/ResultsMapPanel';
 import { ResultsMetricsPanel } from '../components/results/ResultsMetricsPanel';
 
 import { ResultsProvider, useResults } from '../context/ResultsContext';
+
+const PropertyTab = lazy(() => import('../components/results/PropertyTab'));
 
 // ── Inner component (reads from context) ────────────────────────────────────
 
@@ -22,7 +25,33 @@ function ResultsInner() {
     sessionKey,
     activeTab,
     setActiveTab,
+    selectedProperty,
+    clearProperty,
   } = useResults();
+
+  // Whether the Property panel is showing (vs area MetricsPanel).
+  // Starts true when a property is selected; user can switch to area tabs.
+  const [propertyPanelOverride, setPropertyPanelOverride] = useState<boolean | null>(null);
+  const propertyPanelActive = propertyPanelOverride ?? !!selectedProperty;
+
+  // Reset override when selectedProperty changes (new property → show it; cleared → hide)
+  useEffect(() => {
+    setPropertyPanelOverride(null);
+  }, [selectedProperty]);
+
+  const handlePropertyTabClick = useCallback(() => {
+    setPropertyPanelOverride(true);
+  }, []);
+
+  const handleAreaTabChange = useCallback((tab: typeof activeTab) => {
+    setPropertyPanelOverride(false);
+    setActiveTab(tab);
+  }, [setActiveTab]);
+
+  const handlePropertyDismiss = useCallback(() => {
+    setPropertyPanelOverride(null);
+    clearProperty();
+  }, [clearProperty]);
 
   return (
     <div className="min-h-dvh flex flex-col bg-surface">
@@ -84,13 +113,26 @@ function ResultsInner() {
           {/* Tabs — sticky below header */}
           <div className="sticky top-[53px] z-40 bg-white/95 backdrop-blur-md border-b border-divider/60">
             <div className="max-w-[1400px] mx-auto px-4 lg:px-6">
-              <TabBar active={activeTab} onChange={setActiveTab} />
+              <TabBar
+                active={activeTab}
+                onChange={handleAreaTabChange}
+                showPropertyTab={!!selectedProperty}
+                propertyActive={propertyPanelActive}
+                onPropertyClick={handlePropertyTabClick}
+                onPropertyDismiss={handlePropertyDismiss}
+              />
             </div>
           </div>
 
           {/* Main layout: content + map side panel */}
           <div className="max-w-[1400px] mx-auto w-full flex-1 flex flex-col lg:flex-row">
-            <ResultsMetricsPanel />
+            {propertyPanelActive ? (
+              <Suspense fallback={null}>
+                <PropertyTab />
+              </Suspense>
+            ) : (
+              <ResultsMetricsPanel />
+            )}
             <ResultsDesktopMap />
           </div>
         </>

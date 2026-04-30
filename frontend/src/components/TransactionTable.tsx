@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUp, ArrowDown, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { fetchTransactions, fetchPropertyHistory, fetchTransactionEpc, SessionExpiredError } from '../api/client';
 import type { Transaction, PropertyHistoryEntry, TransactionEpc } from '../api/client';
 import { useResults } from '../context/ResultsContext';
@@ -274,7 +274,7 @@ export default function TransactionTable({ sessionKey }: Props) {
   const [searchParams] = useSearchParams();
   const q = searchParams.get('q') ?? '';
   const queryClient = useQueryClient();
-  const { mapFlyToRef, mapViewportRef, mapHighlightRef, clearMapHighlight } = useResults();
+  const { mapFlyToRef, mapViewportRef, mapHighlightRef, clearMapHighlight, selectProperty } = useResults();
   // Save the map viewport before zooming to a property, so we can restore on collapse
   const preZoomViewportRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
@@ -570,6 +570,34 @@ export default function TransactionTable({ sessionKey }: Props) {
                           </tr>
                         )}
                         <EpcDetailPanel transactionId={txn.transaction_id} sessionKey={sessionKey} />
+                        {txn.lat != null && txn.lon != null && (
+                          <tr className="bg-brand-50/10">
+                            <td className="px-0 py-0 w-[3%]">
+                              <div className="border-l-2 border-brand-200 ml-4 h-full">&nbsp;</div>
+                            </td>
+                            <td colSpan={SORT_COLUMNS.length} className="px-3 py-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectProperty({
+                                    lat: txn.lat!,
+                                    lon: txn.lon!,
+                                    postcode: txn.postcode,
+                                    paon: txn.paon,
+                                    saon: txn.saon,
+                                    street: txn.street,
+                                    uprn: null,
+                                    addressDisplay: txn.address,
+                                  });
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                              >
+                                <MapPin className="w-3.5 h-3.5" />
+                                View Property Details
+                              </button>
+                            </td>
+                          </tr>
+                        )}
                       </>
                     )}
                   </Fragment>

@@ -32,8 +32,8 @@ export interface ResolveGeo {
 
 export interface ResolveResponse {
   query: string;
-  type: 'postcode' | 'postcode_district' | 'place' | 'ward' | 'lad' | 'county' | 'place_name';
-  search_mode?: 'postcode' | 'area';
+  type: 'postcode' | 'postcode_district' | 'place' | 'ward' | 'lad' | 'county' | 'place_name' | 'address';
+  search_mode?: 'postcode' | 'area' | 'property';
   resolved_codes?: {
     lsoa: string | null;
     msoa?: string | null;
@@ -53,6 +53,17 @@ export interface ResolveResponse {
    *  Present on all successful resolves; absent on error/not-found responses. */
   session_key?: string;
   error?: string;
+  /** Property data returned for address-type resolves */
+  property?: {
+    paon: string;
+    saon: string | null;
+    street: string;
+    postcode: string;
+    lat: number;
+    lon: number;
+    uprn: number | null;
+    address_display?: string;
+  };
   suggestions?: ResolveSuggestion[];
 }
 

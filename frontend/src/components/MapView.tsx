@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import Supercluster from 'supercluster';
 import type { ChoroplethResponse } from '../api/client';
+import type { SelectedProperty } from '../context/ResultsContext';
 
 interface Viewport {
   center: [number, number];
@@ -24,6 +25,8 @@ interface Props {
   choroplethUrl?: string | null;
   onMapReady?: (flyTo: ((lng: number, lat: number, zoom?: number) => void) | null) => void;
   onHighlightReady?: (cb: ((lng: number, lat: number, props?: Record<string, unknown>) => void) | null) => void;
+  onPropertySelect?: (prop: SelectedProperty) => void;
+  selectedPropertyParcel?: GeoJSON.Feature | null;
 }
 
 const POI_COLOURS: Record<string, string> = {
@@ -256,7 +259,7 @@ function soldPricePopupHtml(props: Record<string, unknown>): string {
   </div>`;
 }
 
-export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData, choroplethUrl, onMapReady, onHighlightReady }: Props) {
+export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, activeTab, visibleLayers = {}, searchLsoa, initialViewport, onViewportChange, choroplethData, choroplethUrl, onMapReady, onHighlightReady, onPropertySelect, selectedPropertyParcel }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -318,6 +321,10 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
   useEffect(() => { boundaryRef.current = boundary; }, [boundary]);
   const lsoaBoundaryRef = useRef(lsoaBoundary);
   useEffect(() => { lsoaBoundaryRef.current = lsoaBoundary; }, [lsoaBoundary]);
+  const onPropertySelectRef = useRef(onPropertySelect);
+  useEffect(() => { onPropertySelectRef.current = onPropertySelect; }, [onPropertySelect]);
+  const selectedPropertyParcelRef = useRef(selectedPropertyParcel);
+  useEffect(() => { selectedPropertyParcelRef.current = selectedPropertyParcel; }, [selectedPropertyParcel]);
 
   const applyIsochronesToMap = useCallback((map: maplibregl.Map, tab: string | undefined, latVal: number, lonVal: number) => {
     ISOCHRONE_LAYERS.forEach((l) => { if (map.getLayer(l)) map.removeLayer(l); });
@@ -1264,6 +1271,120 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         });
       }
 
+      // ── INSPIRE parcel polygons (vector tiles from Martin, z16+) ──
+      const tilesBaseUrl = window.location.origin + '/tiles';
+      map.addSource('inspire-parcels', {
+        type: 'vector',
+        tiles: [`${tilesBaseUrl}/core_inspire_parcels/{z}/{x}/{y}`],
+        minzoom: 16,
+        maxzoom: 22,
+      });
+      map.addLayer({
+        id: 'inspire-parcels-fill',
+        type: 'fill',
+        source: 'inspire-parcels',
+        'source-layer': 'core_inspire_parcels',
+        minzoom: 16,
+        paint: {
+          'fill-color': '#3b82f6',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.04, 18, 0.08],
+        },
+      });
+      map.addLayer({
+        id: 'inspire-parcels-line',
+        type: 'line',
+        source: 'inspire-parcels',
+        'source-layer': 'core_inspire_parcels',
+        minzoom: 16,
+        paint: {
+          'line-color': '#3b82f6',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 16, 0.5, 18, 1.2],
+          'line-opacity': 0.6,
+        },
+      });
+
+      // ── Address point labels (vector tiles from Martin, z17+) ──
+      map.addSource('address-points', {
+        type: 'vector',
+        tiles: [`${tilesBaseUrl}/address_points/{z}/{x}/{y}`],
+        minzoom: 17,
+        maxzoom: 22,
+      });
+      map.addLayer({
+        id: 'address-labels',
+        type: 'symbol',
+        source: 'address-points',
+        'source-layer': 'address_points',
+        minzoom: 17,
+        layout: {
+          'text-field': ['coalesce', ['get', 'paon'], ''],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 17, 10, 19, 13],
+          'text-anchor': 'center',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+        },
+        paint: {
+          'text-color': '#1e293b',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // ── Selected property parcel highlight (GeoJSON overlay) ──
+      map.addSource('selected-parcel', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'selected-parcel-fill',
+        type: 'fill',
+        source: 'selected-parcel',
+        paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.2 },
+      });
+      map.addLayer({
+        id: 'selected-parcel-line',
+        type: 'line',
+        source: 'selected-parcel',
+        paint: { 'line-color': '#2563eb', 'line-width': 3, 'line-opacity': 0.9 },
+      });
+
+      // ── Click handler for INSPIRE parcels / address points → reverse geocode → property select ──
+      const handleParcelOrAddressClick = async (e: maplibregl.MapMouseEvent) => {
+        if (!onPropertySelectRef.current) return;
+        const { lat: clickLat, lng: clickLng } = e.lngLat;
+        try {
+          const { fetchReverseGeocode } = await import('../api/client');
+          const result = await fetchReverseGeocode(clickLat, clickLng);
+          if (result.type === 'property' && result.property) {
+            const p = result.property;
+            const parts = [p.saon, p.paon, p.street, p.postcode].filter(Boolean);
+            onPropertySelectRef.current({
+              lat: p.lat,
+              lon: p.lon,
+              postcode: p.postcode,
+              paon: p.paon,
+              saon: p.saon,
+              street: p.street,
+              uprn: p.uprn,
+              addressDisplay: parts.join(', '),
+            });
+          }
+        } catch { /* ignore */ }
+      };
+      map.on('click', 'inspire-parcels-fill', handleParcelOrAddressClick);
+      map.on('click', 'address-labels', handleParcelOrAddressClick);
+
+      // Cursor change on hover over parcels / address labels
+      map.on('mouseenter', 'inspire-parcels-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'inspire-parcels-fill', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'address-labels', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'address-labels', () => { map.getCanvas().style.cursor = ''; });
+
+      // Apply initial selected parcel if available
+      if (selectedPropertyParcelRef.current?.geometry) {
+        (map.getSource('selected-parcel') as maplibregl.GeoJSONSource).setData(selectedPropertyParcelRef.current);
+      }
+
       // Render any POIs that arrived before or during map creation
       renderPoisOnMap(map, poisRef.current, visibleLayersRef.current, searchLsoaRef.current);
 
@@ -1325,6 +1446,19 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     };
   // boundary + lsoaBoundary handled by their own effects; exclude from deps to avoid map recreation
   }, [applyIsochronesToMap, clearSpider, lat, lon, renderPoisOnMap, renderSoldPriceMarkers]);
+
+  // Update selected property parcel overlay when it changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const src = map.getSource('selected-parcel') as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    if (selectedPropertyParcel?.geometry) {
+      src.setData(selectedPropertyParcel);
+    } else {
+      src.setData({ type: 'FeatureCollection', features: [] });
+    }
+  }, [selectedPropertyParcel]);
 
   return <div ref={containerRef} className="w-full h-full" role="application" aria-label="Interactive map" />;
 }

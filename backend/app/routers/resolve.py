@@ -43,6 +43,7 @@ TYPE_LABELS = {
     "borough": "Borough",
     "district": "District",
     "county": "County",
+    "address": "Address",
 }
 
 
@@ -128,6 +129,11 @@ async def resolve(
             "lsoa_codes": lsoa_codes if lsoa_count <= 8 else [],
             "geo": session.get("geo") if session else None,
         }
+        # For address searches, include property data and alternatives in response
+        if result.get("type") == "address" and result.get("property"):
+            result["property"] = result["property"]
+            if result.get("alternatives"):
+                result["alternatives"] = result["alternatives"]
     result = {**result, "coverage": _coverage_metadata()}
     await cache_set(cache_key, result, ttl=86400)
     return result
@@ -172,10 +178,83 @@ async def _build_and_store_session(db, result: dict, codes: dict) -> tuple:
         entity_type=result.get("type"),
         entity_name=result.get("place_name") or result.get("boundary_id") or result.get("query"),
         query_text=result.get("query"),
+        property_data=result.get("property"),
         **expand_kwargs,
     )
     session = await get_lsoa_session(session_key)
     return session_key, lsoa_codes, session
+
+
+@router.get("/reverse-geocode")
+@limiter.limit("120/minute")
+async def reverse_geocode(
+    request: Request,
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Find the nearest property to a given coordinate (for map clicks).
+
+    Returns property details if within 50m, otherwise returns the LSOA
+    at those coordinates for area-level resolution.
+    """
+    cache_key = f"revgeo:{lat:.6f}:{lon:.6f}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    # Find nearest property using KNN spatial index (<-> operator)
+    result = await db.execute(
+        sa_text("""
+            SELECT paon, saon, street, postcode, latitude, longitude, lsoa_code,
+                   ST_Distance(
+                       geom::geography,
+                       ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
+                   ) AS distance_m
+            FROM core_property_transactions
+            WHERE geom IS NOT NULL
+            ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+            LIMIT 1
+        """),
+        {"lat": lat, "lon": lon},
+    )
+    row = result.mappings().first()
+
+    if row and row["distance_m"] is not None and row["distance_m"] <= 50:
+        # Property match — within 50m
+        response = {
+            "type": "property",
+            "property": {
+                "paon": row["paon"],
+                "saon": row["saon"] if row["saon"] != "N" else None,
+                "street": row["street"],
+                "postcode": row["postcode"],
+                "lat": float(row["latitude"]) if row["latitude"] else lat,
+                "lon": float(row["longitude"]) if row["longitude"] else lon,
+                "lsoa_code": row["lsoa_code"],
+                "uprn": None,
+            },
+            "distance_m": round(row["distance_m"], 1),
+        }
+    else:
+        # No nearby property — resolve LSOA from coordinates
+        lsoa_result = await db.execute(
+            sa_text("""
+                SELECT lsoa_code FROM core_lsoa_boundaries
+                WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+                LIMIT 1
+            """),
+            {"lat": lat, "lon": lon},
+        )
+        lsoa_row = lsoa_result.mappings().first()
+        response = {
+            "type": "area",
+            "lsoa_code": lsoa_row["lsoa_code"] if lsoa_row else None,
+            "coordinates": {"lat": lat, "lon": lon},
+        }
+
+    await cache_set(cache_key, response, ttl=3600)
+    return response
 
 
 @router.get("/search/suggest")
@@ -298,6 +377,36 @@ async def suggest(
                 {"prefix": compact + "%"},
             )
         results += [dict(r) for r in res.mappings().all()]
+
+    # 1b. Address suggestions (if input starts with a number, e.g. "42 High")
+    if len(results) < 8 and q_clean and q_clean[0].isdigit() and " " in q_clean:
+        # Parse: first token is PAON, rest is partial street
+        parts = q_clean.split(None, 1)
+        if len(parts) == 2:
+            addr_paon = parts[0].upper()
+            addr_street = parts[1].upper().replace(",", "").strip()
+            # Remove trailing postcode if present
+            addr_street_like = "%" + addr_street.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            res = await db.execute(
+                sa_text("""
+                    SELECT DISTINCT ON (t.paon, t.street, t.postcode)
+                           t.paon || ' ' || t.street || ', ' || t.postcode AS label,
+                           'address' AS type,
+                           COALESCE(lb.lad_name, '') AS area,
+                           NULL AS comparison,
+                           'Address' AS secondary
+                    FROM core_property_transactions t
+                    LEFT JOIN core_lsoa_boundaries lsoa ON lsoa.lsoa_code = t.lsoa_code
+                    LEFT JOIN core_lad_boundaries lb ON lb.lad_code = lsoa.lad_code
+                    WHERE UPPER(t.paon) = :paon
+                      AND UPPER(t.street) LIKE :street
+                      AND t.latitude IS NOT NULL
+                    ORDER BY t.paon, t.street, t.postcode, t.date_of_transfer DESC
+                    LIMIT :lim
+                """),
+                {"paon": addr_paon, "street": addr_street_like, "lim": 8 - len(results)},
+            )
+            results += [dict(r) for r in res.mappings().all()]
 
     AREA_TYPES = ['Town','City','Suburban Area','Village','Other Settlement','Hamlet']
 
@@ -494,13 +603,14 @@ async def suggest(
         )
         results += [dict(r) for r in res.mappings().all()]
 
-    # Re-sort: postcodes first, then counties/LADs, then places/wards
+    # Re-sort: addresses first (if present), then postcodes, then counties/LADs, then places/wards
     TYPE_RANK = {
-        'postcode': 0, 'postcode_district': 0,
-        'county': 1,
-        'borough': 2, 'district': 2,
-        'place': 3,
-        'ward': 4,
+        'address': 0,
+        'postcode': 1, 'postcode_district': 1,
+        'county': 2,
+        'borough': 3, 'district': 3,
+        'place': 4,
+        'ward': 5,
     }
     # Prefix matches (no _contains flag) sort before substring matches within the same type
     results.sort(key=lambda r: (TYPE_RANK.get(r["type"], 10), 1 if r.get("_contains") else 0, len(r["label"])))

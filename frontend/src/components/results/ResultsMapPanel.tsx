@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronDown, Map, Maximize2, Minimize2 } from 'lucide-react';
 import MapView from '../MapView';
 import MapLayerControl from '../MapLayerControl';
@@ -30,7 +30,14 @@ export function ResultsMobileMap() {
     handleLayerToggle,
     mapFlyToRef,
     mapHighlightRef,
+    selectProperty,
+    propertyData,
   } = useResults();
+
+  const selectedParcelFeature = useMemo<GeoJSON.Feature | null>(() => {
+    if (!propertyData?.parcel?.geojson) return null;
+    return { type: 'Feature', properties: {}, geometry: propertyData.parcel.geojson };
+  }, [propertyData?.parcel?.geojson]);
 
   if (isDesktop) return null;
 
@@ -76,6 +83,8 @@ export function ResultsMobileMap() {
               choroplethUrl={activeChoropleth ? choroplethUrl : null}
               onMapReady={(flyTo) => { mapFlyToRef.current = flyTo; }}
               onHighlightReady={(cb) => { mapHighlightRef.current = cb; }}
+              onPropertySelect={selectProperty}
+              selectedPropertyParcel={selectedParcelFeature}
             />
             <MapLayerControl
               activeTab={activeTab}
@@ -133,7 +142,14 @@ export function ResultsDesktopMap() {
     setAutoFollowEnabled,
     mapFlyToRef,
     mapHighlightRef,
+    selectProperty,
+    propertyData,
   } = useResults();
+
+  const selectedParcelFeature = useMemo<GeoJSON.Feature | null>(() => {
+    if (!propertyData?.parcel?.geojson) return null;
+    return { type: 'Feature', properties: {}, geometry: propertyData.parcel.geojson };
+  }, [propertyData?.parcel?.geojson]);
 
   if (!isDesktop || !resolved?.coordinates?.lat) return null;
 
@@ -155,6 +171,8 @@ export function ResultsDesktopMap() {
           choroplethUrl={activeChoropleth ? choroplethUrl : null}
           onMapReady={(flyTo) => { mapFlyToRef.current = flyTo; }}
           onHighlightReady={(cb) => { mapHighlightRef.current = cb; }}
+          onPropertySelect={selectProperty}
+          selectedPropertyParcel={selectedParcelFeature}
         />
         <MapLayerControl
           activeTab={activeTab}

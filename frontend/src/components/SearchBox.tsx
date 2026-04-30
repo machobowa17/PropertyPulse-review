@@ -193,6 +193,7 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
   const isDark = variant === 'dark';
 
   const typeIcon = (type: string) => {
+    if (type === 'address') return <MapPin className="w-3.5 h-3.5 text-blue-500" />;
     if (type === 'postcode' || type === 'postcode_district') return <MapPin className="w-3.5 h-3.5 text-brand-400" />;
     if (type === 'borough' || type === 'district' || type === 'county' || type === 'ward') return <Landmark className="w-3.5 h-3.5 text-brand-400" />;
     if (type === 'City' || type === 'Town' || type === 'place') return <Building2 className="w-3.5 h-3.5 text-brand-400" />;
@@ -228,7 +229,7 @@ export default function SearchBox({ initialValue = '', size = 'lg', placeholder,
             setRecentSearches(readRecentSearches());
             setShowDropdown(true);
           }}
-          placeholder={placeholder || 'Search postcode or place...'}
+          placeholder={placeholder || 'Search postcode, place, or address...'}
           className={`w-full focus:outline-none transition-all ${
             isDark
               ? isLg

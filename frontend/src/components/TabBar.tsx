@@ -1,18 +1,26 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Home, Coffee, TreePine, Users, Landmark, LayoutDashboard } from 'lucide-react';
+import { Home, Coffee, TreePine, Users, Landmark, LayoutDashboard, MapPin, X } from 'lucide-react';
 import type { TabName } from '../types';
 import { TABS } from '../utils/tabs';
 
 const ICONS: Record<string, React.ElementType> = {
-  LayoutDashboard, Home, Coffee, TreePine, Users, Landmark,
+  LayoutDashboard, Home, Coffee, TreePine, Users, Landmark, MapPin,
 };
 
 interface Props {
   active: TabName;
   onChange: (tab: TabName) => void;
+  /** When true, show a "Property" pseudo-tab at the end */
+  showPropertyTab?: boolean;
+  /** Whether the Property tab is currently active */
+  propertyActive?: boolean;
+  /** Callback when Property tab is clicked */
+  onPropertyClick?: () => void;
+  /** Callback to dismiss the Property tab */
+  onPropertyDismiss?: () => void;
 }
 
-export default function TabBar({ active, onChange }: Props) {
+export default function TabBar({ active, onChange, showPropertyTab, propertyActive, onPropertyClick, onPropertyDismiss }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pillStyle, setPillStyle] = useState({ left: 0, width: 0 });
@@ -54,14 +62,18 @@ export default function TabBar({ active, onChange }: Props) {
         <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-20 pointer-events-none lg:hidden" />
       )}
       <div ref={scrollRef} role="tablist" aria-label="Data tabs" className="flex overflow-x-auto gap-1 py-2 scrollbar-none -mx-1 px-1 relative">
-        {/* Sliding pill background */}
+        {/* Sliding pill background — hidden when Property pseudo-tab is active */}
         <div
           className="absolute top-2 h-[calc(100%-16px)] bg-brand-50 rounded-xl transition-all duration-300 ease-out"
-          style={{ left: pillStyle.left, width: pillStyle.width }}
+          style={{
+            left: pillStyle.left,
+            width: propertyActive ? 0 : pillStyle.width,
+            opacity: propertyActive ? 0 : 1,
+          }}
         />
         {TABS.map((tab) => {
           const Icon = ICONS[tab.icon] || Home;
-          const isActive = active === tab.name;
+          const isActive = active === tab.name && !propertyActive;
           return (
             <button
               key={tab.name}
@@ -85,6 +97,37 @@ export default function TabBar({ active, onChange }: Props) {
             </button>
           );
         })}
+        {/* Dynamic Property tab — appears when a property is selected */}
+        {showPropertyTab && (
+          <button
+            role="tab"
+            aria-selected={propertyActive}
+            data-tab="Property"
+            onClick={onPropertyClick}
+            className={`
+              relative z-10 flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap
+              transition-colors duration-200 active:scale-95 cursor-pointer shrink-0
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+              ${propertyActive
+                ? 'text-blue-700 bg-blue-50'
+                : 'text-ink-muted hover:text-ink'
+              }
+            `}
+          >
+            <MapPin className={`w-4 h-4 ${propertyActive ? 'text-blue-600' : ''}`} />
+            <span>Property</span>
+            {onPropertyDismiss && (
+              <span
+                role="button"
+                aria-label="Close property view"
+                onClick={(e) => { e.stopPropagation(); onPropertyDismiss(); }}
+                className="ml-1 p-0.5 rounded hover:bg-blue-100 transition"
+              >
+                <X className="w-3 h-3" />
+              </span>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
