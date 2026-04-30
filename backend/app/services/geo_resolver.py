@@ -207,6 +207,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
     street_parts = [w.replace("%", "\\%").replace("_", "\\_") for w in street_words_raw]
     street_like = "%" + "%".join(street_parts) + "%"
 
+    _area_rows = None  # Set by area_hint branch when rows are pre-consumed
+
     if postcode:
         # Format compact postcode to standard form (e.g. "SW1A1PH" → "SW1A 1PH")
         postcode_formatted = postcode[:-3] + " " + postcode[-3:] if len(postcode) > 3 else postcode
@@ -269,7 +271,6 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             )
             _area_rows = None
     else:
-        _area_rows = None
         # Broader search: PAON + street (uses idx_addresses_paon_street)
         result = await db.execute(
             text("""
