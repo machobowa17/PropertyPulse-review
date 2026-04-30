@@ -32,31 +32,82 @@ Last updated: 2026-04-30 (session 71)
 | D32 | P53 EPC Lookup: current EPC + EPC at time of sale | Pending | Bypass matching engine, query `bronze.raw_epc_domestic` directly by address. ~92% coverage. |
 | D33 | NPD Workaround: catchment probability model | Pending | Reconstruct ~80% of school catchment insight from LDO + admissions + capacity + geography. `compute_catchment.py` on Hetzner. Depends on D35 (LA scraping for LDO data). |
 | D35 | LA admissions booklet scraping | In Progress | Scrape 150 LA admission booklets. PoC complete (Croydon, session 71). See D35 spec below. |
-| D36 | SEND / ELP directory | Pending | Special schools + Enhanced Learning Provisions. Specialism, age range, address, contact. Extracted per-LA from admissions booklets (D35). "No one caters to SEND families — we will." |
+| D36 | SEND Intelligence for Parents | Pending | Full spec below. Three tiers of SEND data. "No one caters to SEND families — we will." |
+| D37 | DfE SEN2 returns (LA-level EHCP statistics) | Pending | CSV from DfE. EHCP timeliness, refusal rate, tribunal rate, placement mix, primary need breakdown. Feeds D36. |
 
 ### D35 Spec — LA Admissions Booklet Scraping
 
 **PoC (session 71):** Croydon secondary — 23 schools, 13 with LDO, full allocation breakdowns. Parser: `pdfplumber` + positional text parsing. Output: `/tmp/croydon_admissions_extracted.json`.
 
-**Core extraction per LA:**
+**Core extraction per LA (scrape ALL of this from every booklet):**
 
-| Field | Priority | Source |
-|-------|----------|--------|
-| PAN (Published Admission Number) | Must have | School list table |
-| Applications received | Must have | School list table |
-| Oversubscription ratio (derived) | Must have | apps / PAN |
-| Allocation breakdown per criterion | Must have | Allocation overview table |
-| LDO (Furthest Distance Offered) | Must have | Allocation overview table |
-| Distance measurement method | Must have | Policy text (straight-line vs walking) |
-| SIF required (Yes/No) | Must have | School list table |
-| Open days/evenings | Must have | Dates, times, booking info per school |
-| SEND / ELP provisions | Must have | Special schools section (feeds D36) |
+| Field | Source |
+|-------|--------|
+| PAN (Published Admission Number) | School list table |
+| Applications received | School list table |
+| Oversubscription ratio (derived) | apps / PAN |
+| Allocation breakdown per criterion | Allocation overview table |
+| LDO (Furthest Distance Offered) | Allocation overview table |
+| Distance measurement method | Policy text (straight-line vs walking) |
+| SIF required (Yes/No) | School list table |
+| Open days/evenings (dates, times, booking) | Open days section |
+| Special school directory (name, specialism, age range, address, contact) | SEND section |
+| ELP provisions (mainstream school, unit name, specialism, places) | SEND section |
+| EHCP transfer process + timeline | SEND section (prose) |
+| Neighbouring borough schools (name, DfE, address, LA) | Cross-border section |
+| In-year admissions process | Policy section (prose) |
 
 **Risks:** Format varies wildly per LA. ~30% clean tables, ~40% semi-structured prose, ~15% image PDFs (OCR needed), ~15% HTML. Confidence scoring needed. Per-LA parsers likely required for non-standard formats.
 
-**Presentation plan:** Admissions Intelligence section per school — horizontal allocation bar chart, LDO comparison ("your distance vs cutoff"), sibling caveat, LDO circle on map with measurement method label, source + year caveat.
+**Admissions presentation plan:** Admissions Intelligence section per school — horizontal allocation bar chart, LDO comparison ("your distance vs cutoff"), sibling caveat, LDO circle on map with measurement method label, source + year caveat.
 
 **Scale plan:** Tier 1 = top 30-40 LAs (~60% of England's school-age population). Tier 2 = remaining ~110 LAs.
+
+---
+
+### D36 Spec — SEND Intelligence for Parents
+
+**Philosophy:** No one aggregates SEND information for parents choosing where to live. The process is fragmented, the data is scattered, and families with SEND children have the hardest time. We will give them the highest quality information we can, even if it takes more effort.
+
+**Tier 1 — From admissions booklets + GIAS + Ofsted (rides along with D35):**
+
+| Data point | Source | What it tells parents |
+|-----------|--------|---------------------|
+| Special school name, specialism, age range, address | Admissions booklet + GIAS | "What special schools are near this house?" |
+| ELP provisions in mainstream schools (unit, specialism, places) | Admissions booklet | "Which mainstream schools have specialist units?" |
+| Ofsted rating for each special school | Our existing inspections table | Quality signal |
+| SIF required for special schools | Admissions booklet | Practical application tip |
+| Open days for special schools | Admissions booklet | Planning tool |
+
+**Tier 2 — DfE SEN2 returns (new data source D37, CSV download, high impact):**
+
+| Data point | What it tells parents |
+|-----------|---------------------|
+| EHCP assessment timeliness (% within 20 weeks) | "Will my child wait 5 months or 18 months for an EHCP?" |
+| EHCP refusal rate | "How likely is this LA to say no?" |
+| Tribunal appeal rate + parent success rate (SENDIST) | "If they say no, do parents win on appeal here?" |
+| Placement type breakdown (mainstream / special / independent / AP) | "Does this LA place kids in mainstream or special?" |
+| Primary need breakdown (ASD / SLCN / MLD / SEMH / SLD / PMLD / physical / sensory) | "Does this LA have experience with my child's need?" |
+| Total EHCPs per capita | Density of SEND support in the area |
+
+**Tier 3 — LA Local Offer websites (hardest, highest human impact):**
+
+| Data point | What it tells parents |
+|-----------|---------------------|
+| Speech & language therapy wait times | "How long before my child gets help?" |
+| Occupational therapy / physiotherapy availability | Often the biggest blocker for physical needs |
+| CAMHS waiting times | Mental health support access — varies 6 weeks to 24+ months by LA |
+| Home-to-school transport policy for SEND pupils | "Will they provide transport?" — critical for special schools far from home |
+| Short breaks / respite provision | "Can I get a break?" — carer burnout is real |
+| Parent carer forum links | Local peer support — connect families |
+
+**Presentation plan — "SEND in this area" section:**
+
+1. **LA-level SEND summary card** — EHCP timeliness gauge (red/amber/green), refusal rate, tribunal win rate, placement pie chart. Comparable to parent LA. "Croydon completes 72% of EHCPs within 20 weeks (national avg: 58%)"
+2. **Special schools nearby** — list with specialism pills (ASD, MLD, SLD, etc.), Ofsted rating, distance, age range, open days. Filterable by specialism.
+3. **Mainstream schools with ELP units** — integrated into main school list with ELP badge and specialism tag. "This school has a 12-place ASD unit."
+4. **"What SEND support looks like here"** — Tier 3 data when available: therapy wait times, transport policy summary, respite provision. Honest about gaps: "Data not available for this LA" rather than silence.
+5. **Tribunal track record** — "In 2024, X% of Croydon EHCP appeals were upheld by SENDIST. National average: Y%." Parents need to know if the LA fights them or works with them.
 
 ---
 
