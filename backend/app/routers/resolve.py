@@ -385,23 +385,23 @@ async def suggest(
         if len(parts) == 2:
             addr_paon = parts[0].upper()
             addr_street = parts[1].upper().replace(",", "").strip()
-            # Remove trailing postcode if present
-            addr_street_like = "%" + addr_street.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            # Escape LIKE wildcards, use prefix match for text_pattern_ops index
+            addr_street_escaped = addr_street.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            addr_street_like = addr_street_escaped + "%"
             res = await db.execute(
                 sa_text("""
-                    SELECT DISTINCT ON (t.paon, t.street, t.postcode)
-                           t.paon || ' ' || t.street || ', ' || t.postcode AS label,
+                    SELECT DISTINCT ON (a.paon, a.street, a.postcode)
+                           a.paon || ' ' || a.street || ', ' || a.postcode AS label,
                            'address' AS type,
                            COALESCE(lb.lad_name, '') AS area,
                            NULL AS comparison,
                            'Address' AS secondary
-                    FROM core_property_transactions t
-                    LEFT JOIN core_lsoa_boundaries lsoa ON lsoa.lsoa_code = t.lsoa_code
+                    FROM core_addresses a
+                    LEFT JOIN core_lsoa_boundaries lsoa ON lsoa.lsoa_code = a.lsoa_code
                     LEFT JOIN core_lad_boundaries lb ON lb.lad_code = lsoa.lad_code
-                    WHERE UPPER(t.paon) = :paon
-                      AND UPPER(t.street) LIKE :street
-                      AND t.latitude IS NOT NULL
-                    ORDER BY t.paon, t.street, t.postcode, t.date_of_transfer DESC
+                    WHERE a.paon = :paon
+                      AND a.street LIKE :street
+                    ORDER BY a.paon, a.street, a.postcode
                     LIMIT :lim
                 """),
                 {"paon": addr_paon, "street": addr_street_like, "lim": 8 - len(results)},

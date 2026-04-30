@@ -208,17 +208,15 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
     if postcode:
         # Format compact postcode to standard form (e.g. "SW1A1PH" → "SW1A 1PH")
         postcode_formatted = postcode[:-3] + " " + postcode[-3:] if len(postcode) > 3 else postcode
-        # Exact lookup: PAON + street + postcode (uses idx_transactions_postcode)
+        # Exact lookup: PAON + street + postcode (uses idx_addresses_paon_postcode)
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
                        latitude, longitude, lsoa_code
-                FROM core_property_transactions
+                FROM core_addresses
                 WHERE postcode = :postcode
-                  AND UPPER(paon) = :paon
-                  AND UPPER(street) LIKE :street
-                  AND latitude IS NOT NULL
-                ORDER BY date_of_transfer DESC
+                  AND paon = :paon
+                  AND street LIKE :street
                 LIMIT 5
             """),
             {
@@ -228,16 +226,14 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             },
         )
     else:
-        # Broader search: PAON + street (optionally filtered by area)
+        # Broader search: PAON + street (uses idx_addresses_paon_street)
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
                        latitude, longitude, lsoa_code
-                FROM core_property_transactions
-                WHERE UPPER(paon) = :paon
-                  AND UPPER(street) LIKE :street
-                  AND latitude IS NOT NULL
-                ORDER BY date_of_transfer DESC
+                FROM core_addresses
+                WHERE paon = :paon
+                  AND street LIKE :street
                 LIMIT 20
             """),
             {
