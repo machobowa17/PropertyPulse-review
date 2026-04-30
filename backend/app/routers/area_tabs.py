@@ -29,7 +29,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v36"  # bumped: population-weighted parent comparison averages
+AREA_CACHE_VERSION = "v37"  # bumped: weighted local multi-LAD queries (council tax, AQ)
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,

@@ -43,18 +43,19 @@ async def fetch_local_governance(
     ct_local = await db.execute(
         text(
             """
-            SELECT AVG(band_a) AS band_a,
-                   AVG(band_b) AS band_b,
-                   AVG(band_c) AS band_c,
-                   AVG(band_d) AS band_d,
-                   AVG(band_e) AS band_e,
-                   AVG(band_f) AS band_f,
-                   AVG(band_g) AS band_g,
-                   AVG(band_h) AS band_h,
-                   AVG(band_i) AS band_i,
+            SELECT SUM(ct.band_a * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_a,
+                   SUM(ct.band_b * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_b,
+                   SUM(ct.band_c * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_c,
+                   SUM(ct.band_d * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_d,
+                   SUM(ct.band_e * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_e,
+                   SUM(ct.band_f * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_f,
+                   SUM(ct.band_g * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_g,
+                   SUM(ct.band_h * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_h,
+                   SUM(ct.band_i * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_i,
                    COUNT(*) AS authority_count
-            FROM core_council_tax_lad
-            WHERE lad_code = ANY(:lads)
+            FROM core_council_tax_lad ct
+            LEFT JOIN mv_lad_population p ON p.lad_code = ct.lad_code
+            WHERE ct.lad_code = ANY(:lads)
             """
         ),
         {"lads": local_lads},

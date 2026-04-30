@@ -217,10 +217,11 @@ async def _overview_safety(db, lsoa_codes, local_lads, parent_lads):
     # Air quality PM2.5 (latest year, LAD-level)
     aq_result = await db.execute(
         text("""
-            SELECT AVG(pm25_ugm3) AS pm25
-            FROM core_air_quality_lad
-            WHERE lad_code = ANY(:lads)
-              AND year = (SELECT MAX(year) FROM core_air_quality_lad WHERE lad_code = ANY(:lads))
+            SELECT SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pm25
+            FROM core_air_quality_lad a
+            LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+            WHERE a.lad_code = ANY(:lads)
+              AND a.year = (SELECT MAX(year) FROM core_air_quality_lad WHERE lad_code = ANY(:lads))
         """),
         {"lads": local_lads},
     )
