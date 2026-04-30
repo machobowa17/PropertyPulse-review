@@ -878,11 +878,10 @@ async def fetch_property_market(
             parent_hpi_result = await db.execute(
                 text(
                     """
-                    SELECT SUM(yearly_change_pct * sales_volume) / NULLIF(SUM(sales_volume), 0) AS avg_yoy
+                    SELECT SUM(yearly_change_pct * COALESCE(sales_volume, 1)) / NULLIF(SUM(COALESCE(sales_volume, 1)), 0) AS avg_yoy
                     FROM core_hpi_lad
                     WHERE lad_code = ANY(:lads)
                       AND date = (SELECT MAX(date) FROM core_hpi_lad WHERE lad_code = ANY(:lads))
-                      AND sales_volume IS NOT NULL
                     """
                 ),
                 {"lads": parent_lads},
