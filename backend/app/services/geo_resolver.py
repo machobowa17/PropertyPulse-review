@@ -206,13 +206,15 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
     street_like = "%" + street_escaped + "%"
 
     if postcode:
-        # Exact lookup: PAON + street + postcode
+        # Format compact postcode to standard form (e.g. "SW1A1PH" → "SW1A 1PH")
+        postcode_formatted = postcode[:-3] + " " + postcode[-3:] if len(postcode) > 3 else postcode
+        # Exact lookup: PAON + street + postcode (uses idx_transactions_postcode)
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
                        latitude, longitude, lsoa_code
                 FROM core_property_transactions
-                WHERE UPPER(REPLACE(postcode, ' ', '')) = :postcode
+                WHERE postcode = :postcode
                   AND UPPER(paon) = :paon
                   AND UPPER(street) LIKE :street
                   AND latitude IS NOT NULL
@@ -220,7 +222,7 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
                 LIMIT 5
             """),
             {
-                "postcode": postcode,
+                "postcode": postcode_formatted,
                 "paon": paon,
                 "street": street_like,
             },
