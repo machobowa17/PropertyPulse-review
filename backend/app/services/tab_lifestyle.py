@@ -155,9 +155,10 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     if parent_lads:
         parent_station_res = await db.execute(
             text("""
-                SELECT AVG(t.nearest_station_m) AS avg_station_m
+                SELECT SUM(t.nearest_station_m * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_station_m
                 FROM core_lsoa_transport t
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = t.lsoa_code
+                JOIN core_census_lsoa c ON c.lsoa_code = t.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},
@@ -491,9 +492,10 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
 
     ptal_parent = await db.execute(
         text("""
-            SELECT AVG(COALESCE(p.avg_ptai, p.computed_ptai)) AS avg_ptai
+            SELECT SUM(COALESCE(p.avg_ptai, p.computed_ptai) * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_ptai
             FROM core_ptal_lsoa p
             JOIN core_lsoa_boundaries l ON l.lsoa_code = p.lsoa_code
+            LEFT JOIN core_census_lsoa c ON c.lsoa_code = p.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
               AND COALESCE(p.avg_ptai, p.computed_ptai) IS NOT NULL
         """),
@@ -548,9 +550,10 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     if connectivity_row and connectivity_row["overall_score"] is not None:
         connectivity_parent = await db.execute(
             text(f"""
-                SELECT AVG(c.overall_score) AS overall_score
-                FROM {TABLE_NAMES['connectivity_lsoa']} c
-                JOIN core_lsoa_boundaries l ON l.lsoa_code = c.lsoa_code
+                SELECT SUM(cn.overall_score * cs.total_population) / NULLIF(SUM(cs.total_population), 0) AS overall_score
+                FROM {TABLE_NAMES['connectivity_lsoa']} cn
+                JOIN core_lsoa_boundaries l ON l.lsoa_code = cn.lsoa_code
+                JOIN core_census_lsoa cs ON cs.lsoa_code = cn.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},
@@ -651,10 +654,13 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     # Parent broadband average — use pre-aggregated LAD table for speed
     bb_parent = await db.execute(
         text("""
-            SELECT AVG(superfast_pct) as sfbb, AVG(ultrafast_pct) as ufbb,
-                   AVG(gigabit_pct) as gigabit, AVG(full_fibre_pct) as fttp
-            FROM core_broadband_lad
-            WHERE lad_code = ANY(:parent_lads)
+            SELECT SUM(b.superfast_pct * p.total_hh) / NULLIF(SUM(p.total_hh), 0) as sfbb,
+                   SUM(b.ultrafast_pct * p.total_hh) / NULLIF(SUM(p.total_hh), 0) as ufbb,
+                   SUM(b.gigabit_pct * p.total_hh) / NULLIF(SUM(p.total_hh), 0) as gigabit,
+                   SUM(b.full_fibre_pct * p.total_hh) / NULLIF(SUM(p.total_hh), 0) as fttp
+            FROM core_broadband_lad b
+            LEFT JOIN mv_lad_population p ON p.lad_code = b.lad_code
+            WHERE b.lad_code = ANY(:parent_lads)
         """),
         {"parent_lads": parent_lads},
     )
@@ -778,13 +784,13 @@ async def fetch_lifestyle_connectivity(db, *, lad_code, ward_code, lsoa_codes, c
     # --- Mobile Coverage ---
     # Bible: "Default shows 4G/5G availability (Indoor/Outdoor)"
     mobile_result = await db.execute(
-        text("SELECT AVG(pct_4g_outdoor) AS pct_4g_outdoor, AVG(pct_4g_indoor) AS pct_4g_indoor, AVG(pct_5g_outdoor) AS pct_5g_outdoor FROM core_mobile_coverage_lad WHERE lad_code = ANY(:lads)"),
+        text("SELECT SUM(m.pct_4g_outdoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pct_4g_outdoor, SUM(m.pct_4g_indoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pct_4g_indoor, SUM(m.pct_5g_outdoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pct_5g_outdoor FROM core_mobile_coverage_lad m LEFT JOIN mv_lad_population p ON p.lad_code = m.lad_code WHERE m.lad_code = ANY(:lads)"),
         {"lads": local_lads},
     )
     mobile_row = mobile_result.mappings().first()
     if mobile_row and mobile_row["pct_4g_outdoor"] is not None:
         mobile_parent = await db.execute(
-            text("SELECT AVG(pct_4g_outdoor) as avg_4g, AVG(pct_4g_indoor) as avg_4g_indoor, AVG(pct_5g_outdoor) as avg_5g FROM core_mobile_coverage_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT SUM(m.pct_4g_outdoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as avg_4g, SUM(m.pct_4g_indoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as avg_4g_indoor, SUM(m.pct_5g_outdoor * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as avg_5g FROM core_mobile_coverage_lad m LEFT JOIN mv_lad_population p ON p.lad_code = m.lad_code WHERE m.lad_code = ANY(:lads)"),
             {"lads": parent_lads},
         )
         mp_row = mobile_parent.mappings().first()

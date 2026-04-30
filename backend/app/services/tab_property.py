@@ -123,7 +123,7 @@ async def fetch_property_market(
                 """
                 SELECT ROUND(SUM(avg_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_price,
                        ROUND(SUM(median_price::bigint * transactions) / NULLIF(SUM(transactions), 0))::int AS median_price,
-                       AVG(avg_ppsf) AS avg_ppsf
+                       SUM(avg_ppsf * transactions) / NULLIF(SUM(transactions), 0) AS avg_ppsf
                 FROM mv_parent_rolling_price_stats
                 WHERE lad_code = ANY(:parent_lads)
                   AND property_type = 'ALL'
@@ -320,7 +320,7 @@ async def fetch_property_market(
     ppsm_parent = await db.execute(
         text(
             """
-            SELECT AVG(avg_ppsf) * 10.7639 AS avg_ppsm
+            SELECT SUM(avg_ppsf * transactions) / NULLIF(SUM(transactions), 0) * 10.7639 AS avg_ppsm
             FROM mv_parent_rolling_price_stats
             WHERE lad_code = ANY(:parent_lads)
               AND property_type = 'ALL'
@@ -640,14 +640,15 @@ async def fetch_property_market(
         rent_local = await db.execute(
             text(
                 """
-                SELECT AVG(median_rent_all) AS median_rent_all,
-                       AVG(median_rent_1bed) AS median_rent_1bed,
-                       AVG(median_rent_2bed) AS median_rent_2bed,
-                       AVG(median_rent_3bed) AS median_rent_3bed,
-                       AVG(median_rent_4bed) AS median_rent_4bed
-                FROM core_voa_rents_lad
-                WHERE lad_code = ANY(:lads)
-                  AND period = :period
+                SELECT SUM(r.median_rent_all * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS median_rent_all,
+                       SUM(r.median_rent_1bed * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS median_rent_1bed,
+                       SUM(r.median_rent_2bed * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS median_rent_2bed,
+                       SUM(r.median_rent_3bed * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS median_rent_3bed,
+                       SUM(r.median_rent_4bed * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS median_rent_4bed
+                FROM core_voa_rents_lad r
+                LEFT JOIN mv_lad_population p ON p.lad_code = r.lad_code
+                WHERE r.lad_code = ANY(:lads)
+                  AND r.period = :period
                 """
             ),
             {"lads": voa_local, "period": rent_period},
@@ -657,10 +658,11 @@ async def fetch_property_market(
         rent_parent = await db.execute(
             text(
                 """
-                SELECT AVG(median_rent_all) AS avg_rent
-                FROM core_voa_rents_lad
-                WHERE lad_code = ANY(:lads)
-                  AND period = :period
+                SELECT SUM(r.median_rent_all * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS avg_rent
+                FROM core_voa_rents_lad r
+                LEFT JOIN mv_lad_population p ON p.lad_code = r.lad_code
+                WHERE r.lad_code = ANY(:lads)
+                  AND r.period = :period
                 """
             ),
             {"lads": voa_parent, "period": rent_period},
@@ -741,12 +743,12 @@ async def fetch_property_market(
                 )
 
         earnings_result = await db.execute(
-            text("SELECT AVG(median_annual_earnings) AS median_annual_earnings FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT SUM(e.median_annual_earnings * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS median_annual_earnings FROM core_earnings_lad e LEFT JOIN mv_lad_population p ON p.lad_code = e.lad_code WHERE e.lad_code = ANY(:lads)"),
             {"lads": local_lads},
         )
         earnings_row = earnings_result.mappings().first()
         earnings_parent = await db.execute(
-            text("SELECT AVG(median_annual_earnings) AS avg_earn FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT SUM(e.median_annual_earnings * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS avg_earn FROM core_earnings_lad e LEFT JOIN mv_lad_population p ON p.lad_code = e.lad_code WHERE e.lad_code = ANY(:lads)"),
             {"lads": parent_lads},
         )
         earnings_parent_row = earnings_parent.mappings().first()
@@ -876,10 +878,11 @@ async def fetch_property_market(
             parent_hpi_result = await db.execute(
                 text(
                     """
-                    SELECT AVG(yearly_change_pct) AS avg_yoy
+                    SELECT SUM(yearly_change_pct * sales_volume) / NULLIF(SUM(sales_volume), 0) AS avg_yoy
                     FROM core_hpi_lad
                     WHERE lad_code = ANY(:lads)
                       AND date = (SELECT MAX(date) FROM core_hpi_lad WHERE lad_code = ANY(:lads))
+                      AND sales_volume IS NOT NULL
                     """
                 ),
                 {"lads": parent_lads},

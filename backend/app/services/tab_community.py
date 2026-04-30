@@ -561,17 +561,18 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
 
     imd_parent = await db.execute(
         text("""
-            SELECT AVG(imd_score) as avg_score,
-                   AVG(imd_decile) as avg_decile,
-                   AVG(income_score) as avg_income,
-                   AVG(employment_score) as avg_employment,
-                   AVG(education_score) as avg_education,
-                   AVG(health_score) as avg_health,
-                   AVG(crime_score) as avg_crime,
-                   AVG(barriers_score) as avg_barriers,
-                   AVG(living_env_score) as avg_living_environment
+            SELECT SUM(i.imd_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_score,
+                   SUM(i.imd_decile * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_decile,
+                   SUM(i.income_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_income,
+                   SUM(i.employment_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_employment,
+                   SUM(i.education_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_education,
+                   SUM(i.health_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_health,
+                   SUM(i.crime_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_crime,
+                   SUM(i.barriers_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_barriers,
+                   SUM(i.living_env_score * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_living_environment
             FROM core_imd_lsoa i
             JOIN core_lsoa_boundaries l ON l.lsoa_code = i.lsoa_code
+            LEFT JOIN core_census_lsoa c ON c.lsoa_code = i.lsoa_code
             WHERE l.lad_code = ANY(:parent_lads)
         """),
         {"parent_lads": parent_lads},
@@ -662,9 +663,10 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         # Parent avg NHS count (from pre-computed LSOA table)
         nhs_area_parent_result = await db.execute(
             text("""
-                SELECT AVG(n.nhs_count_2km) as avg_count
+                SELECT SUM(n.nhs_count_2km * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_count
                 FROM core_nhs_lsoa n
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = n.lsoa_code
+                JOIN core_census_lsoa c ON c.lsoa_code = n.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},
@@ -699,9 +701,10 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
         # Parent comparison: precomputed counts per LSOA (no spatial work at query time)
         nhs_parent_result = await db.execute(
             text("""
-                SELECT AVG(n.nhs_count_2km) as avg_count
+                SELECT SUM(n.nhs_count_2km * c.total_population) / NULLIF(SUM(c.total_population), 0) as avg_count
                 FROM core_nhs_lsoa n
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = n.lsoa_code
+                JOIN core_census_lsoa c ON c.lsoa_code = n.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},
@@ -752,12 +755,12 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
     # Median Annual Earnings (ONS ASHE — LAD level)
     # ------------------------------------------------------------------
     earn_result = await db.execute(
-        text("SELECT AVG(median_annual_earnings) AS median_annual_earnings FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+        text("SELECT SUM(e.median_annual_earnings * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS median_annual_earnings FROM core_earnings_lad e LEFT JOIN mv_lad_population p ON p.lad_code = e.lad_code WHERE e.lad_code = ANY(:lads)"),
         {"lads": local_lads},
     )
     earn_row = earn_result.mappings().first()
     earn_parent_result = await db.execute(
-        text("SELECT AVG(median_annual_earnings) AS avg_earn FROM core_earnings_lad WHERE lad_code = ANY(:lads)"),
+        text("SELECT SUM(e.median_annual_earnings * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS avg_earn FROM core_earnings_lad e LEFT JOIN mv_lad_population p ON p.lad_code = e.lad_code WHERE e.lad_code = ANY(:lads)"),
         {"lads": parent_lads},
     )
     earn_parent_row = earn_parent_result.mappings().first()

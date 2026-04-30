@@ -17,7 +17,7 @@ from app.services.session_helpers import require_session
 router = APIRouter()
 
 # Must match area_tabs.py — bump both when session schema changes
-PRICE_CACHE_VERSION = "v35"
+PRICE_CACHE_VERSION = "v36"
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ async def get_price_history(
         parent_ppsf_res = await db.execute(
             text("""
                 SELECT year::text AS yr,
-                       ROUND(AVG(avg_ppsf))::int AS avg_ppsf
+                       ROUND(SUM(avg_ppsf * transactions) / NULLIF(SUM(transactions), 0))::int AS avg_ppsf
                 FROM mv_parent_yearly_ppsf
                 WHERE lad_code = ANY(:lads)
                 GROUP BY year ORDER BY year
@@ -392,7 +392,7 @@ async def get_price_by_type(
         ppsf_rolling_res = await db.execute(
             text("""
                 SELECT property_type,
-                       ROUND(AVG(avg_ppsf)::numeric, 2) AS avg_ppsf
+                       ROUND((SUM(avg_ppsf * transactions) / NULLIF(SUM(transactions), 0))::numeric, 2) AS avg_ppsf
                 FROM mv_parent_rolling_price_stats
                 WHERE lad_code = ANY(:lads)
                   AND property_type <> 'ALL'
@@ -462,7 +462,7 @@ async def get_price_by_type(
         parent_ppsf_rolling_res = await db.execute(
             text("""
                 SELECT property_type,
-                       ROUND(AVG(avg_ppsf)::numeric, 2) AS avg_ppsf
+                       ROUND((SUM(avg_ppsf * transactions) / NULLIF(SUM(transactions), 0))::numeric, 2) AS avg_ppsf
                 FROM mv_parent_rolling_price_stats
                 WHERE lad_code = ANY(:lads)
                   AND property_type <> 'ALL'

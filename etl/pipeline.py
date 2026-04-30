@@ -842,6 +842,7 @@ Examples:
         conn.autocommit = True
         cur = conn.cursor()
         for view in (
+            "mv_lad_population",
             "mv_parent_yearly_price_stats", "mv_parent_rolling_price_stats", "mv_parent_yearly_ppsf",
             "mv_parent_crime_rate", "mv_parent_noise_avg",
             "mv_lad_comparable_features",

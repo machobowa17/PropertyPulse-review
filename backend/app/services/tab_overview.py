@@ -81,7 +81,7 @@ async def _overview_property(db, lsoa_codes, local_lads, parent_lads):
 
     # Council tax Band D
     ct_result = await db.execute(
-        text("SELECT AVG(band_d) AS band_d FROM core_council_tax_lad WHERE lad_code = ANY(:lads)"),
+        text("SELECT SUM(ct.band_d * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_d FROM core_council_tax_lad ct LEFT JOIN mv_lad_population p ON p.lad_code = ct.lad_code WHERE ct.lad_code = ANY(:lads)"),
         {"lads": local_lads},
     )
     ct_row = ct_result.mappings().first()
@@ -90,7 +90,7 @@ async def _overview_property(db, lsoa_codes, local_lads, parent_lads):
     parent_ct = None
     if parent_lads:
         pct_result = await db.execute(
-            text("SELECT AVG(band_d) AS band_d FROM core_council_tax_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT SUM(ct.band_d * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS band_d FROM core_council_tax_lad ct LEFT JOIN mv_lad_population p ON p.lad_code = ct.lad_code WHERE ct.lad_code = ANY(:lads)"),
             {"lads": parent_lads},
         )
         pct_row = pct_result.mappings().first()
@@ -122,9 +122,10 @@ async def _overview_lifestyle(db, lsoa_codes, local_lads, parent_lads):
     if parent_lads:
         pst_result = await db.execute(
             text("""
-                SELECT AVG(t.nearest_station_m) AS avg_m
+                SELECT SUM(t.nearest_station_m * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_m
                 FROM core_lsoa_transport t
                 JOIN core_lsoa_boundaries b ON b.lsoa_code = t.lsoa_code
+                JOIN core_census_lsoa c ON c.lsoa_code = t.lsoa_code
                 WHERE b.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},
@@ -139,7 +140,7 @@ async def _overview_lifestyle(db, lsoa_codes, local_lads, parent_lads):
 
     # Broadband avg download (LAD-level)
     bb_result = await db.execute(
-        text("SELECT AVG(avg_download_mbps) AS dl FROM core_broadband_lad WHERE lad_code = ANY(:lads)"),
+        text("SELECT SUM(b.avg_download_mbps * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS dl FROM core_broadband_lad b LEFT JOIN mv_lad_population p ON p.lad_code = b.lad_code WHERE b.lad_code = ANY(:lads)"),
         {"lads": local_lads},
     )
     bb_row = bb_result.mappings().first()
@@ -148,7 +149,7 @@ async def _overview_lifestyle(db, lsoa_codes, local_lads, parent_lads):
     parent_dl = None
     if parent_lads:
         pbb_result = await db.execute(
-            text("SELECT AVG(avg_download_mbps) AS dl FROM core_broadband_lad WHERE lad_code = ANY(:lads)"),
+            text("SELECT SUM(b.avg_download_mbps * p.total_hh) / NULLIF(SUM(p.total_hh), 0) AS dl FROM core_broadband_lad b LEFT JOIN mv_lad_population p ON p.lad_code = b.lad_code WHERE b.lad_code = ANY(:lads)"),
             {"lads": parent_lads},
         )
         pbb_row = pbb_result.mappings().first()
@@ -230,10 +231,11 @@ async def _overview_safety(db, lsoa_codes, local_lads, parent_lads):
     if parent_lads:
         paq_result = await db.execute(
             text("""
-                SELECT AVG(pm25_ugm3) AS pm25
-                FROM core_air_quality_lad
-                WHERE lad_code = ANY(:parent_lads)
-                  AND year = (SELECT MAX(year) FROM core_air_quality_lad)
+                SELECT SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pm25
+                FROM core_air_quality_lad a
+                LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+                WHERE a.lad_code = ANY(:parent_lads)
+                  AND a.year = (SELECT MAX(year) FROM core_air_quality_lad)
             """),
             {"parent_lads": parent_lads},
         )

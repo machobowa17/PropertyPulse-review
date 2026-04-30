@@ -68,7 +68,8 @@ CREATE MATERIALIZED VIEW mv_parent_yearly_ppsf AS
 SELECT
     b.lad_code,
     EXTRACT(YEAR FROM t.date_of_transfer)::int AS year,
-    ROUND(AVG(t.price::numeric / NULLIF(t.floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf
+    ROUND(AVG(t.price::numeric / NULLIF(t.floor_area_sqm::numeric * 10.7639, 0)))::int AS avg_ppsf,
+    COUNT(*) AS transactions
 FROM core_property_transactions t
 JOIN core_lsoa_boundaries b ON b.lsoa_code = t.lsoa_code
 WHERE t.property_type IN ('D','S','T','F')

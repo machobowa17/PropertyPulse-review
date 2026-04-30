@@ -368,10 +368,12 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
         # LAD/county: use pre-computed LAD table (avoids spatial join on grid)
         aq_result = await db.execute(
             text("""
-                SELECT AVG(no2_ugm3) as no2_ugm3, AVG(pm25_ugm3) as pm25_ugm3,
-                       AVG(pm10_ugm3) as pm10_ugm3
-                FROM core_air_quality_lad
-                WHERE lad_code = ANY(:lads) AND year >= 2020
+                SELECT SUM(a.no2_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as no2_ugm3,
+                       SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as pm25_ugm3,
+                       SUM(a.pm10_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as pm10_ugm3
+                FROM core_air_quality_lad a
+                LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+                WHERE a.lad_code = ANY(:lads) AND a.year >= 2020
             """),
             {"lads": local_lads},
         )
@@ -408,10 +410,12 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     if aq_row:
         aq_parent = await db.execute(
             text("""
-                SELECT AVG(no2_ugm3) as avg_no2, AVG(pm25_ugm3) as avg_pm25
-                FROM core_air_quality_lad
-                WHERE lad_code = ANY(:parent_lads)
-                  AND year >= 2020
+                SELECT SUM(a.no2_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as avg_no2,
+                       SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) as avg_pm25
+                FROM core_air_quality_lad a
+                LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+                WHERE a.lad_code = ANY(:parent_lads)
+                  AND a.year >= 2020
             """),
             {"parent_lads": parent_lads},
         )
@@ -514,12 +518,13 @@ async def fetch_environment_safety(db, *, lad_code, ward_code, lsoa_codes, centr
     if parent_lads:
         parent_green_res = await db.execute(
             text("""
-                SELECT AVG(g.nearest_park_m) AS avg_park_m,
-                       AVG(g.parks_1km) AS avg_parks,
-                       AVG(g.green_cover_pct) AS avg_cover,
-                       AVG(g.sports_rec_1km) AS avg_sports
+                SELECT SUM(g.nearest_park_m * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_park_m,
+                       SUM(g.parks_1km * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_parks,
+                       SUM(g.green_cover_pct * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_cover,
+                       SUM(g.sports_rec_1km * c.total_population) / NULLIF(SUM(c.total_population), 0) AS avg_sports
                 FROM core_lsoa_green_space g
                 JOIN core_lsoa_boundaries l ON l.lsoa_code = g.lsoa_code
+                JOIN core_census_lsoa c ON c.lsoa_code = g.lsoa_code
                 WHERE l.lad_code = ANY(:parent_lads)
             """),
             {"parent_lads": parent_lads},

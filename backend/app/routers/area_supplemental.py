@@ -48,14 +48,15 @@ async def get_aq_history(
     if boundary_source == "county" and local_lads:
         local_res = await db.execute(
             text("""
-                SELECT year,
-                       AVG(pm25_ugm3) AS pm25_ugm3,
-                       AVG(no2_ugm3) AS no2_ugm3,
-                       AVG(pm10_ugm3) AS pm10_ugm3
-                FROM core_air_quality_lad
-                WHERE lad_code = ANY(:lads)
-                GROUP BY year
-                ORDER BY year
+                SELECT a.year,
+                       SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pm25_ugm3,
+                       SUM(a.no2_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS no2_ugm3,
+                       SUM(a.pm10_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0) AS pm10_ugm3
+                FROM core_air_quality_lad a
+                LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+                WHERE a.lad_code = ANY(:lads)
+                GROUP BY a.year
+                ORDER BY a.year
             """),
             {"lads": local_lads},
         )
@@ -74,12 +75,13 @@ async def get_aq_history(
     # National average per year
     national_res = await db.execute(
         text("""
-            SELECT year,
-                   ROUND(AVG(pm25_ugm3)::numeric, 2) AS pm25_ugm3,
-                   ROUND(AVG(no2_ugm3)::numeric, 2) AS no2_ugm3,
-                   ROUND(AVG(pm10_ugm3)::numeric, 2) AS pm10_ugm3
-            FROM core_air_quality_lad
-            GROUP BY year ORDER BY year
+            SELECT a.year,
+                   ROUND((SUM(a.pm25_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0))::numeric, 2) AS pm25_ugm3,
+                   ROUND((SUM(a.no2_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0))::numeric, 2) AS no2_ugm3,
+                   ROUND((SUM(a.pm10_ugm3 * p.total_pop) / NULLIF(SUM(p.total_pop), 0))::numeric, 2) AS pm10_ugm3
+            FROM core_air_quality_lad a
+            LEFT JOIN mv_lad_population p ON p.lad_code = a.lad_code
+            GROUP BY a.year ORDER BY a.year
         """),
     )
     national_rows = [dict(r) for r in national_res.mappings().all()]
