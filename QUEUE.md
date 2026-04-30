@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-30 (session 69)
+Last updated: 2026-04-30 (session 70)
 
 **This is the SINGLE source of truth for all pending tasks. Completed work is in CHANGELOG.md.**
 
@@ -12,7 +12,6 @@ Last updated: 2026-04-30 (session 69)
 |---|------|--------|-------|
 | P9 | Scotland + NI coverage | Pending | Scope, data sources, feasibility TBD. |
 | P53 | Single address search — show all data for a specific property | Pending | Full address search (e.g. "14 Acacia Avenue, SW1A 1AA"). Display transaction history, EPC, floor area, type, tenure, flood, LLC, INSPIRE, noise, broadband. Classic UK EPC arrow chart. Requires: resolve endpoint, address-level results view, DB scan for address-level data. Data plan: D28. |
-| P61 | Update landing page tagline | Pending | Current: "Know your neighbourhood." Candidate: **"Move with certainty."** + supporting copy. `frontend/src/pages/Home.tsx:63-73`. |
 
 ---
 
@@ -102,19 +101,6 @@ Source: Session 67 competitive analysis. User approved direction. Prototype2 exi
 
 ---
 
-## Pending — MetricCard Hover Bug (session 67)
-
-MetricCard expandable rows show a hover tint (`hover:bg-surface-warm/50`) that doesn't match the card's rounded corners — the button's rectangular hover background pokes out inside the `rounded-2xl` parent. Fix: match border-radius on the button to the card, or clip overflow.
-
----
-
-## Pending — Known Frontend Bugs
-
-- "coming soon" text in MetricCard.tsx:285 when `comparison_status === 'not_modelled_yet'`
-- "Data available - no comment" fallback in personas.ts:830 when `comparison_flag === null`
-
----
-
 ## Pending — Phase 10: GeoDepth/SimplySettled Retrospective — Stealable Ideas
 
 Source: Audit of `~/Desktop/geodepth/` codebase (session 68). That project had 76 datasets, 130+ DB tables, and features/patterns we never ported. **Compare notes against `~/Desktop/geodepth/` at implementation time.**
@@ -175,10 +161,8 @@ Source: Audit of `~/Desktop/geodepth/` codebase (session 68). That project had 7
 
 | # | Pattern | Description | Effort |
 |---|---------|-------------|--------|
-| GD-U1 | `useCountUp` hook | Animated number counter (ease-out cubic, 800ms, rAF). Feeds C6. | Trivial |
 | GD-U2 | Question-based metric framing | "What's the crime rate?" instead of `crime_rate`. Add `question` field to registry. | Low |
 | GD-U3 | VerdictPill with hover tooltip | "Why" explainer tooltip on takeaway pills. | Low |
-| GD-U4 | Sparkline component | Inline SVG sparkline (120×32px) with trend-coloured end dot. No deps. | Trivial |
 | GD-U5 | DataFreshness footer | Per-card "ONS Census 2021 · March 2023" source attribution. | Low |
 | GD-U6 | "If you love this area..." framing | Comparable areas with similarity %, trajectory grade, natural-language WHY. | Low |
 | GD-U7 | IntelligenceCard structure | 6-layer card: question heading, headline, summary, reassurance tip, expandable detail, source footer. | Medium |
@@ -205,9 +189,7 @@ Source: Audit of `~/Desktop/geodepth/` codebase (session 68). That project had 7
 |---|---------|-------------|
 | GD-V1 | Warm gradient mesh backgrounds | Multi-colour radial gradient orbs at 3-7% opacity with blur-3xl. |
 | GD-V2 | Glass card style (`gd-glass`) | Backdrop blur + border + shadow. Score-dependent glow. |
-| GD-V3 | Animated pulse badge | Tiny green pulsing dot for life indicator. |
 | GD-V4 | Card entrance animations | Staggered fade-in with `card-enter` CSS class. |
-| GD-V5 | `active:scale-95` on buttons | Subtle press-down effect. |
 | GD-V6 | Three-font system | Heading (serif) + mono (data) + sans (body). |
 | GD-V7 | Dot-grid background | Radial gradient dots at 40×40px, 25% opacity. |
 

@@ -60,6 +60,10 @@ export default function Home() {
           <div className="flex flex-col lg:flex-row lg:items-start lg:gap-16">
             {/* Left: headline + search */}
             <div className="flex-1 max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-50 border border-brand-200 text-brand-600 text-xs font-medium mb-5">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />
+                Free · Open Data · Every Postcode
+              </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-gray-900 leading-[0.95] mb-4">
                 Move with{'\n'}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-600 to-brand-400">
@@ -85,7 +89,7 @@ export default function Home() {
                     onClick={() => navigate(`/results?q=${encodeURIComponent(q)}`)}
                     className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm
                                bg-gray-50 border border-gray-200
-                               hover:bg-brand-50 hover:border-brand-200 transition-all cursor-pointer"
+                               hover:bg-brand-50 hover:border-brand-200 active:scale-95 transition-all duration-200 cursor-pointer"
                   >
                     <span className="font-mono font-semibold text-gray-700 group-hover:text-brand-700 text-xs">{q}</span>
                     <span className="text-gray-400 text-xs group-hover:text-brand-500">{hint}</span>
@@ -101,7 +105,7 @@ export default function Home() {
                   <div
                     key={title}
                     className="group flex items-center gap-4 px-4 py-3.5 rounded-xl bg-gray-50/80 border border-gray-100
-                               hover:bg-white hover:border-gray-200 hover:shadow-md hover:shadow-gray-100/50 transition-all duration-200"
+                               hover:bg-white hover:border-gray-200 hover:shadow-md hover:shadow-gray-100/50 active:scale-[0.98] transition-all duration-200"
                   >
                     <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center shrink-0 group-hover:bg-brand-100 transition-colors">
                       <Icon className="w-5 h-5 text-brand-500 group-hover:text-brand-600 transition-colors" />

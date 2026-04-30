@@ -2,7 +2,7 @@
 
 All items below are **confirmed completed** and deployed. Moved from QUEUE.md to keep the master queue clean.
 
-Last updated: 2026-04-30 (session 69)
+Last updated: 2026-04-30 (session 70)
 
 ---
 
@@ -392,6 +392,27 @@ D23 (age distribution), D24 (household size), D25 (born abroad), D26 (commute di
 **Commits:** `4d15c1b` (main batch), `60e013d` (HPI fix), `9dbabb4` (2 local fixes + cache bump).
 
 **Cache versions:** `AREA_CACHE_VERSION = "v37"`, `PRICE_CACHE_VERSION = "v36"`.
+
+---
+
+## Session 70: Quick Wins (Apr 30 2026)
+
+| # | Task | Notes |
+|---|------|-------|
+| P61 | Landing page tagline update | "Know your neighbourhood" → "Move with certainty." + new supporting copy in `Home.tsx`. |
+| — | MetricCard hover bug fix | Added `overflow-hidden` to card container — hover tint no longer pokes out of `rounded-2xl` corners. |
+| — | "coming soon" text bug fix | Removed `not_modelled_yet` → "coming soon" branch from MetricCard. Now shows em dash like other null comparisons. |
+| — | "Data available - no comment" bug fix | `getTakeaway()` returns `null` when `comparison_flag === null`. Callers guard with optional chaining. No takeaway pill rendered. |
+| GD-U1 | `useCountUp` hook | `frontend/src/hooks/useCountUp.ts` — ease-out cubic, rAF, `prefers-reduced-motion` respected. Drop-in for C6. |
+| — | QUEUE.md / CHANGELOG.md restructure | Split 940-line QUEUE.md into pending-only queue + completed-work changelog. |
+
+**Commit:** `60a80e4`.
+
+| # | Task | Notes |
+|---|------|-------|
+| GD-U4 | Sparkline component | `frontend/src/components/Sparkline.tsx` — pure SVG polyline, trend-coloured end dot, no deps. |
+| GD-V3 | Animated pulse badge | "Free · Open Data · Every Postcode" pill with pulsing green dot above headline in `Home.tsx`. |
+| GD-V5 | `active:scale-95` on buttons | Press-down effect on Home quick links, theme tiles, TabBar pills, MetricCard rows. |
 
 ---
 

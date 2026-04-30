@@ -244,7 +244,7 @@ export default function MetricCard({ metric, persona, parentName, priceByTypeDat
         onClick={handleToggle}
         aria-expanded={hasDetails ? expanded : undefined}
         aria-label={hasDetails ? `${metric.name} — ${expanded ? 'collapse' : 'expand'} details` : metric.name}
-        className={`w-full flex items-center gap-4 px-5 py-3.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl hover:bg-surface-warm/50 transition-colors ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full flex items-center gap-4 px-5 py-3.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:rounded-xl hover:bg-surface-warm/50 active:scale-[0.995] transition-all duration-200 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {/* Metric name + decision question */}
         <div className="flex-1 min-w-0">

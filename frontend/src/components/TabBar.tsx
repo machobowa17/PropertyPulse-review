@@ -71,7 +71,7 @@ export default function TabBar({ active, onChange }: Props) {
               onClick={() => onChange(tab.name)}
               className={`
                 relative z-10 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap
-                transition-colors duration-200 cursor-pointer shrink-0
+                transition-colors duration-200 active:scale-95 cursor-pointer shrink-0
                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
                 ${isActive
                   ? 'text-brand-700'
