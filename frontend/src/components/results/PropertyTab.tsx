@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   X, MapPin, Droplets, Volume2, Wifi, FileText, Landmark,
-  Home, Zap, Thermometer, PoundSterling, CalendarDays, ChevronDown,
-  Leaf, Building2,
+  Zap, PoundSterling, ChevronDown,
 } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import SkeletonCard from '../SkeletonCard';
