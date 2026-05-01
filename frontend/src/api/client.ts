@@ -426,6 +426,60 @@ export async function fetchTransactions(
 
 // ── Property-specific data (P53) ─────────────────────────────────────────────
 
+/** Transaction record from Hetzner Property API */
+export interface PropertyTransaction {
+  transaction_id?: string;
+  price?: number;
+  date_of_transfer?: string;
+  property_type?: string;
+  old_new?: string;
+  duration?: string;
+  paon?: string;
+  saon?: string;
+  street?: string;
+  postcode?: string;
+  lsoa_code?: string;
+  [key: string]: unknown;
+}
+
+/** EPC record — full 93-column domestic EPC from Hetzner */
+export interface PropertyEpc {
+  lodgement_date?: string;
+  current_energy_rating?: string;
+  potential_energy_rating?: string;
+  current_energy_efficiency?: number;
+  potential_energy_efficiency?: number;
+  property_type?: string;
+  built_form?: string;
+  construction_age_band?: string;
+  tenure?: string;
+  total_floor_area?: number;
+  number_habitable_rooms?: number;
+  main_heating_description?: string;
+  main_fuel?: string;
+  hotwater_description?: string;
+  floor_description?: string;
+  walls_description?: string;
+  roof_description?: string;
+  windows_description?: string;
+  lighting_description?: string;
+  solar_water_heating_flag?: string;
+  photo_supply?: number;
+  energy_consumption_current?: number;
+  co2_emissions_current?: number;
+  co2_emissions_potential?: number;
+  lighting_cost_current?: number;
+  lighting_cost_potential?: number;
+  heating_cost_current?: number;
+  heating_cost_potential?: number;
+  hot_water_cost_current?: number;
+  hot_water_cost_potential?: number;
+  environment_impact_current?: number;
+  environment_impact_potential?: number;
+  uprn?: number;
+  [key: string]: unknown;
+}
+
 export interface PropertyDataResponse {
   coordinates: { lat: number; lon: number };
   address: {
@@ -435,13 +489,16 @@ export interface PropertyDataResponse {
     postcode: string | null;
     uprn: number | null;
   };
+  transactions: PropertyTransaction[];
+  epc: PropertyEpc | null;
+  epc_history: PropertyEpc[];
   parcel: {
     inspire_id: string;
     authority: string;
     geojson: GeoJSON.Geometry;
   } | null;
   flood_zone: string | null;
-  llc_charges: Array<{ charge_type: string }>;
+  llc_charges: Array<{ charge_type: string; authority?: string; valid_from?: string | null }>;
   noise: { road_db: number | null; rail_db: number | null } | null;
   broadband: {
     avg_download: number | null;

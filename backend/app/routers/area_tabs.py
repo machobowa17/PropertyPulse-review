@@ -2,10 +2,11 @@
 GET /api/v1/area?session_key=&tab=
 GET /api/v1/area/property?session_key=&lat=&lon=&postcode=
 Tab data endpoint — dispatches to the 6 tab service handlers.
-Property endpoint returns property-specific data (EPC, parcel, flood, etc.).
+Property endpoint returns property-specific data (EPC, transactions, parcel, flood, etc.).
 """
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text as sa_text
@@ -98,6 +99,49 @@ async def get_area_data(
 logger = logging.getLogger(__name__)
 
 
+_hetzner_pool = ThreadPoolExecutor(max_workers=4)
+
+
+def _fetch_hetzner_property(postcode, paon, saon, street, uprn):
+    """Synchronous Hetzner API calls — run in thread pool from async context."""
+    try:
+        from etl_lib import property_api
+    except ImportError:
+        logger.warning("property_api unavailable — skipping Hetzner data")
+        return None, None
+
+    # 1. Transaction history by address
+    transactions = None
+    if postcode:
+        transactions = property_api.transactions_by_address(
+            postcode, paon=paon, saon=saon, street=street,
+        )
+
+    # 2. EPC data — by postcode + address match (UPRN endpoint has type-cast bug)
+    epc_records = None
+    if postcode:
+        pc_compact = postcode.replace(" ", "")
+        all_epcs = property_api.epc_by_postcode(pc_compact, limit=100)
+        if all_epcs and isinstance(all_epcs, list):
+            # Filter to matching address
+            paon_upper = (paon or "").upper().strip()
+            saon_upper = (saon or "").upper().strip()
+            street_upper = (street or "").upper().strip()
+            matched = []
+            for epc in all_epcs:
+                epc_paon = str(epc.get("building_reference_number") or epc.get("paon") or "").upper().strip()
+                epc_saon = str(epc.get("saon") or "").upper().strip()
+                epc_street = str(epc.get("street") or epc.get("address1") or "").upper().strip()
+                # Match on PAON + street (SAON if present)
+                if paon_upper and paon_upper in epc_paon:
+                    if not street_upper or street_upper[:8] in epc_street or epc_street[:8] in street_upper:
+                        if not saon_upper or saon_upper in epc_saon:
+                            matched.append(epc)
+            epc_records = matched if matched else all_epcs[:3]  # fallback: first 3
+
+    return transactions, epc_records
+
+
 @router.get("/area/property")
 async def get_property_data(
     session_key: str = Query(..., description="Session key from /resolve"),
@@ -110,20 +154,21 @@ async def get_property_data(
     uprn: int = Query(None, description="Unique Property Reference Number"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return property-specific data: INSPIRE parcel, flood, noise, broadband, LLC.
-
-    Transaction history and EPC data come from the Hetzner Property API
-    (called client-side or via a separate proxy endpoint), so this endpoint
-    focuses on spatial lookups against EC2's PostGIS tables.
-    """
+    """Return full property data: transactions, EPC, parcel, flood, noise, broadband, LLC."""
     await require_session(session_key)
 
-    cache_key = f"property:{AREA_CACHE_VERSION}:{lat:.6f}:{lon:.6f}"
+    cache_key = f"property:{AREA_CACHE_VERSION}:{lat:.6f}:{lon:.6f}:{paon}:{saon}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
     geo_params = {"lat": lat, "lon": lon}
+
+    # Start Hetzner API calls in thread pool (non-blocking)
+    loop = asyncio.get_event_loop()
+    hetzner_future = loop.run_in_executor(
+        _hetzner_pool, _fetch_hetzner_property, postcode, paon, saon, street, uprn,
+    )
 
     # Run spatial queries sequentially (async sessions cannot run concurrent queries)
     parcel_result = await db.execute(sa_text("""
@@ -143,10 +188,10 @@ async def get_property_data(
     """), geo_params)
 
     llc_result = await db.execute(sa_text("""
-        SELECT charge_type
+        SELECT charge_type, authority, valid_from
         FROM core_llc_charges
         WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-        LIMIT 10
+        LIMIT 20
     """), geo_params)
 
     # Postcode-keyed lookups (noise, broadband)
@@ -169,7 +214,7 @@ async def get_property_data(
             LIMIT 1
         """), {"pc": pc_clean})
 
-    # Parse results
+    # Parse spatial results
     parcel_row = parcel_result.mappings().first()
     parcel = None
     if parcel_row:
@@ -185,7 +230,11 @@ async def get_property_data(
 
     llc_rows = llc_result.mappings().all()
     llc_charges = [
-        {"charge_type": r["charge_type"]}
+        {
+            "charge_type": r["charge_type"],
+            "authority": r.get("authority"),
+            "valid_from": str(r["valid_from"]) if r.get("valid_from") else None,
+        }
         for r in llc_rows
     ]
 
@@ -211,6 +260,13 @@ async def get_property_data(
                 "fttp_pct": float(bb_row["fttp_pct"]) if bb_row["fttp_pct"] is not None else None,
             }
 
+    # Await Hetzner results
+    try:
+        transactions, epc_records = await hetzner_future
+    except Exception as e:
+        logger.warning("Hetzner property data failed: %s", e)
+        transactions, epc_records = None, None
+
     result = {
         "coordinates": {"lat": lat, "lon": lon},
         "address": {
@@ -220,6 +276,9 @@ async def get_property_data(
             "postcode": postcode,
             "uprn": uprn,
         },
+        "transactions": transactions or [],
+        "epc": epc_records[0] if epc_records else None,
+        "epc_history": epc_records or [],
         "parcel": parcel,
         "flood_zone": flood_zone,
         "llc_charges": llc_charges,

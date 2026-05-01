@@ -64,6 +64,15 @@ export interface ResolveResponse {
     uprn: number | null;
     address_display?: string;
   };
+  /** Alternative addresses for disambiguation (e.g. multiple flats at same address) */
+  alternatives?: Array<{
+    paon: string;
+    saon: string | null;
+    street: string;
+    postcode: string;
+    lat: number | null;
+    lon: number | null;
+  }>;
   suggestions?: ResolveSuggestion[];
 }
 

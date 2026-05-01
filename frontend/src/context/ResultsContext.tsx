@@ -248,21 +248,26 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     enabled: !!sessionKey && !!selectedProperty,
   });
 
-  // If resolve returns property data (address search), auto-select it.
-  // If it's a non-address resolve, clear any stale property selection.
+  // If resolve returns property data (address search), auto-select it —
+  // UNLESS there are alternatives needing disambiguation (e.g. multiple flats).
   useEffect(() => {
     if (resolved?.type === 'address' && resolved?.property) {
-      const p = resolved.property;
-      setSelectedProperty({
-        lat: p.lat,
-        lon: p.lon,
-        postcode: p.postcode,
-        paon: p.paon,
-        saon: p.saon ?? null,
-        street: p.street,
-        uprn: p.uprn ?? null,
-        addressDisplay: p.address_display,
-      });
+      // If alternatives exist (multiple flats), don't auto-select — PropertyTab shows picker
+      if (resolved.alternatives && resolved.alternatives.length > 0) {
+        setSelectedProperty(null);
+      } else {
+        const p = resolved.property;
+        setSelectedProperty({
+          lat: p.lat,
+          lon: p.lon,
+          postcode: p.postcode,
+          paon: p.paon,
+          saon: p.saon ?? null,
+          street: p.street,
+          uprn: p.uprn ?? null,
+          addressDisplay: p.address_display,
+        });
+      }
     } else if (resolved && resolved.type !== 'address') {
       setSelectedProperty(null);
     }
@@ -387,6 +392,14 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   // Ref for map temporary highlight marker — shows a marker at coordinates, removed on clear
   const mapHighlightRef = useRef<((lng: number, lat: number, props?: Record<string, unknown>) => void) | null>(null);
   const clearMapHighlight = useCallback(() => { mapHighlightRef.current?.(0, 0); }, []);
+
+  // Fly map to property when selected (P53)
+  useEffect(() => {
+    if (selectedProperty && mapFlyToRef.current) {
+      mapFlyToRef.current(selectedProperty.lon, selectedProperty.lat, 17);
+      mapHighlightRef.current?.(selectedProperty.lon, selectedProperty.lat, { title: 'Selected property' });
+    }
+  }, [selectedProperty]);
 
   // Lazy-fetch choropleth data only when a heatmap layer is active
   const choroplethLayer = mapState.activeChoropleth?.replace('choropleth_', '') || null;

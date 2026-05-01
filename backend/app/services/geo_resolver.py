@@ -302,14 +302,20 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         if saon_filtered:
             rows = saon_filtered
 
-    # Deduplicate by (postcode, paon, street) to get unique addresses
+    # Clean PPD saon="N" (means "no sub-address") to null — before dedup
+    for r in rows:
+        if isinstance(r, dict) and r.get("saon") == "N":
+            r["saon"] = None
+
+    # Deduplicate by (postcode, paon, saon, street) to preserve flats/units
     seen = set()
     unique_addresses = []
     for r in rows:
-        key = (r["postcode"], r["paon"], r["street"])
+        rd = dict(r)
+        key = (rd["postcode"], rd["paon"], rd.get("saon") or "", rd["street"])
         if key not in seen:
             seen.add(key)
-            unique_addresses.append(dict(r))
+            unique_addresses.append(rd)
 
     # If area hint provided and no postcode (area_hint was already pushed into
     # SQL WHERE clause above), do a secondary Python filter only as a tiebreaker
@@ -327,13 +333,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
     if len(unique_addresses) == 0:
         return None
 
-    # Use the first (most recent) match
+    # Use the first match
     prop = unique_addresses[0]
-
-    # Clean PPD saon="N" (means "no sub-address") to null
-    for addr in unique_addresses:
-        if addr.get("saon") == "N":
-            addr["saon"] = None
 
     # Resolve LSOA → LAD → parent for this property
     lsoa_code = prop.get("lsoa_code")
