@@ -201,6 +201,17 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         else:
             area_hint = trailing.lower()
 
+    # If no postcode found via trailing group, check if postcode is embedded
+    # at the end of street_raw (user typed "26 Fairdene Road CR5 1RA" without comma)
+    if not postcode:
+        _pc_suffix = re.search(
+            r"\s+([A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2})$",
+            street_raw, re.IGNORECASE,
+        )
+        if _pc_suffix:
+            postcode = _pc_suffix.group(1).replace(" ", "").upper()
+            street_raw = street_raw[: _pc_suffix.start()].strip()
+
     # Build fuzzy LIKE pattern: split words and join with % to allow
     # extra characters between words (e.g. "ST%JAMES%STREET" matches "ST JAMES'S STREET")
     street_words_raw = street_raw.upper().split()
