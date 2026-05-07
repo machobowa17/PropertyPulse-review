@@ -61,6 +61,11 @@ export interface SchoolRow {
   is_oversubscribed?: boolean | null;
   per_pupil_expenditure?: number | null;
   pct_budget_staff?: number | null;
+  // LA admissions detail (scraped from booklets)
+  la_ldo?: number | null;
+  la_ldo_unit?: string | null;
+  la_sif?: boolean | null;
+  la_allocation?: Record<string, number> | null;
   velocity?: 'rising' | 'stable' | 'declining' | null;
   quality_flags?: string[];
 }
@@ -148,6 +153,23 @@ interface AdmYear {
   is_oversubscribed?: boolean | null;
   last_distance_offered?: number | null;
 }
+interface AdmLaDetail {
+  academic_year?: string;
+  year_group?: string | null;
+  last_distance_offered?: number | null;
+  ldo_unit?: string | null;
+  ldo_detail?: Record<string, number> | null;
+  distance_method?: string | null;
+  allocation_breakdown?: Record<string, number> | null;
+  oversubscription_criteria?: string[] | null;
+  sif_required?: boolean | null;
+  open_days?: Array<{ date?: string; time?: string; type?: string }> | null;
+  appeals_heard?: number | null;
+  appeals_upheld?: number | null;
+  waiting_list_size?: number | null;
+  source_confidence?: string | null;
+  data_quality_flags?: Array<{ flag: string; detail?: string }> | null;
+}
 interface AbsYear {
   academic_year?: string;
   overall_absence_pct?: number | null;
@@ -219,6 +241,7 @@ interface SchoolDetailData {
   demographics?: DemYear[];
   workforce?: WorkforceYear[];
   admissions?: AdmYear[];
+  admissions_la_detail?: AdmLaDetail[];
   absence?: AbsYear[];
   finances?: FinYear[];
   destinations?: DestYear[];
@@ -1143,10 +1166,87 @@ function DemographicsTab({ school, detail }: { school: SchoolRow; detail: School
   );
 }
 
+/* ── LDO formatting ── */
+function formatLdo(value: number | null | undefined, unit: string | null | undefined): string {
+  if (value == null) return '—';
+  if (unit === 'miles') return `${value.toFixed(2)} mi`;
+  if (unit === 'metres') return `${Math.round(value)} m`;
+  if (unit === 'km') return `${value.toFixed(2)} km`;
+  return value.toFixed(2);
+}
+
+/* ── Allocation breakdown bar ── */
+const ALLOC_COLORS: Record<string, string> = {
+  'looked after': 'bg-purple-500',
+  'lac': 'bg-purple-500',
+  'sen': 'bg-rose-500',
+  'ehcp': 'bg-rose-500',
+  'medical': 'bg-rose-400',
+  'social': 'bg-rose-400',
+  'sibling': 'bg-blue-500',
+  'staff': 'bg-cyan-500',
+  'distance': 'bg-teal-500',
+  'faith': 'bg-amber-500',
+  'foundation': 'bg-amber-500',
+  'banding': 'bg-indigo-400',
+  'catchment': 'bg-emerald-500',
+  'feeder': 'bg-sky-500',
+};
+
+function getAllocColor(criterion: string): string {
+  const lower = criterion.toLowerCase();
+  for (const [key, color] of Object.entries(ALLOC_COLORS)) {
+    if (lower.includes(key)) return color;
+  }
+  return 'bg-gray-400';
+}
+
+function AllocationBar({ breakdown }: { breakdown: Record<string, number> }) {
+  const entries = Object.entries(breakdown)
+    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, [, v]) => sum + v, 0);
+  if (total === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-4 rounded overflow-hidden">
+        {entries.map(([criterion, count]) => {
+          const pct = (count / total) * 100;
+          return (
+            <div
+              key={criterion}
+              className={`${getAllocColor(criterion)} relative`}
+              style={{ width: `${Math.max(pct, 2)}%` }}
+              title={`${criterion}: ${count} (${pct.toFixed(0)}%)`}
+            />
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+        {entries.map(([criterion, count]) => {
+          const pct = ((count / total) * 100).toFixed(0);
+          return (
+            <div key={criterion} className="flex items-center justify-between text-[10px]">
+              <span className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-sm inline-block ${getAllocColor(criterion)}`} />
+                <span className="text-ink-muted truncate">{criterion}</span>
+              </span>
+              <span className="font-medium text-ink-base ml-1">{count} ({pct}%)</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDetailData | null }) {
   const admissions = detail?.admissions ?? [];
+  const laDetail = detail?.admissions_la_detail ?? [];
+  const latestLa = laDetail[0];
   const absences = detail?.absence ?? [];
-  const hasAdm = admissions.length > 0 || school.adm_applications != null;
+  const hasAdm = admissions.length > 0 || laDetail.length > 0 || school.adm_applications != null;
   const hasAbs = absences.length > 0 || school.overall_absence_pct != null;
 
   if (!hasAdm && !hasAbs) {
@@ -1154,7 +1254,7 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
     const isJunior = (school.age_low ?? 0) >= 7;
     const notes: string[] = [];
     if (isSpecial) notes.push('Special schools, PRUs, and alternative provision schools do not participate in the national co-ordinated admissions process.');
-    else if (isJunior) notes.push('Junior schools (Year 3–6) do not have a Reception intake and are not included in the national admissions dataset.');
+    else if (isJunior) notes.push('Junior schools (Year 3\u20136) do not have a Reception intake and are not included in the national admissions dataset.');
     else notes.push('Admissions data is published annually by the DfE. Newly converted academies and some smaller schools may not appear in the most recent published dataset.');
     notes.push('Attendance data is from the DfE School Absence Statistics. PRUs, special schools, and alternative provision report separately.');
     return (
@@ -1167,7 +1267,7 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
 
   return (
     <div className="space-y-3">
-      {/* Multi-year admissions */}
+      {/* Multi-year admissions (DfE) */}
       {admissions.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-ink-base">Applications & Offers</p>
@@ -1193,14 +1293,14 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
                   <tr key={`${a.academic_year}-${a.year_group}-${i}`} className={i === 0 ? 'font-medium' : 'text-ink-muted'}>
                     <td className="py-0.5">{shortYear(a.academic_year)}</td>
                     {admissions.some(aa => aa.year_group != null) && (
-                      <td className="py-0.5">{a.year_group ?? '—'}</td>
+                      <td className="py-0.5">{a.year_group ?? '\u2014'}</td>
                     )}
-                    <td className="text-right">{a.applications_received ?? '—'}</td>
-                    <td className="text-right">{a.first_preference ?? '—'}</td>
-                    <td className="text-right">{a.offers_made ?? '—'}</td>
-                    <td className="text-right">{a.is_oversubscribed != null ? (a.is_oversubscribed ? 'Yes' : 'No') : '—'}</td>
+                    <td className="text-right">{a.applications_received ?? '\u2014'}</td>
+                    <td className="text-right">{a.first_preference ?? '\u2014'}</td>
+                    <td className="text-right">{a.offers_made ?? '\u2014'}</td>
+                    <td className="text-right">{a.is_oversubscribed != null ? (a.is_oversubscribed ? 'Yes' : 'No') : '\u2014'}</td>
                     {admissions.some(aa => aa.last_distance_offered != null) && (
-                      <td className="text-right">{a.last_distance_offered != null ? `${a.last_distance_offered.toFixed(2)}km` : '—'}</td>
+                      <td className="text-right">{a.last_distance_offered != null ? `${a.last_distance_offered.toFixed(2)}km` : '\u2014'}</td>
                     )}
                   </tr>
                 ))}
@@ -1208,7 +1308,7 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
             </table>
           </div>
         </div>
-      ) : hasAdm && (
+      ) : (admissions.length === 0 && laDetail.length === 0 && hasAdm) && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-ink-base">Applications & Offers</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -1221,6 +1321,91 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
               <span className={`font-medium ${school.is_oversubscribed ? 'text-red-600' : 'text-emerald-600'}`}>
                 {school.is_oversubscribed ? 'Yes' : 'No'}
               </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* LA Admissions Detail (scraped from booklets) */}
+      {latestLa && (
+        <div className="pt-1 border-t border-border-base/50 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs font-medium text-ink-base">Allocation Detail</p>
+            {latestLa.academic_year && (
+              <span className="text-[10px] text-ink-faint">{shortYear(latestLa.academic_year)}</span>
+            )}
+            {latestLa.sif_required && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                SIF Required
+              </span>
+            )}
+            {latestLa.source_confidence && latestLa.source_confidence !== 'high' && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                {latestLa.source_confidence} confidence
+              </span>
+            )}
+          </div>
+
+          {/* LDO + Distance Method */}
+          {latestLa.last_distance_offered != null && (
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs text-ink-muted">Last Distance Offered:</span>
+              <span className="text-sm font-semibold text-ink-base">
+                {formatLdo(latestLa.last_distance_offered, latestLa.ldo_unit)}
+              </span>
+              {latestLa.distance_method && (
+                <span className="text-[10px] text-ink-faint">
+                  ({latestLa.distance_method.replace(/_/g, ' ')})
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* LDO detail (per-band/per-criterion breakdown) */}
+          {latestLa.ldo_detail && typeof latestLa.ldo_detail === 'object' && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {Object.entries(latestLa.ldo_detail).map(([k, v]) => (
+                <StatRow key={k} label={k.replace(/_/g, ' ')} value={formatLdo(v as number, latestLa.ldo_unit)} />
+              ))}
+            </div>
+          )}
+
+          {/* Allocation Breakdown */}
+          {latestLa.allocation_breakdown && Object.keys(latestLa.allocation_breakdown).length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] text-ink-faint font-medium uppercase tracking-wide">
+                Places allocated by criterion
+              </p>
+              <AllocationBar breakdown={latestLa.allocation_breakdown} />
+            </div>
+          )}
+
+          {/* Oversubscription Criteria Order */}
+          {latestLa.oversubscription_criteria && Array.isArray(latestLa.oversubscription_criteria) && latestLa.oversubscription_criteria.length > 0 && (
+            <div>
+              <p className="text-[10px] text-ink-faint font-medium uppercase tracking-wide mb-0.5">
+                Oversubscription criteria
+              </p>
+              <ol className="list-decimal list-inside text-[11px] text-ink-muted space-y-0.5">
+                {latestLa.oversubscription_criteria.map((c: string, i: number) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Appeals + Waiting List */}
+          {(latestLa.appeals_heard != null || latestLa.appeals_upheld != null || latestLa.waiting_list_size != null) && (
+            <div className="grid grid-cols-3 gap-x-4 gap-y-0.5">
+              {latestLa.appeals_heard != null && (
+                <StatRow label="Appeals Heard" value={latestLa.appeals_heard} />
+              )}
+              {latestLa.appeals_upheld != null && (
+                <StatRow label="Appeals Upheld" value={latestLa.appeals_upheld} />
+              )}
+              {latestLa.waiting_list_size != null && (
+                <StatRow label="Waiting List" value={latestLa.waiting_list_size} />
+              )}
             </div>
           )}
         </div>
@@ -1248,12 +1433,12 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
                 {absences.map((a, i) => (
                   <tr key={a.academic_year ?? i} className={i === 0 ? 'font-medium' : 'text-ink-muted'}>
                     <td className="py-0.5">{shortYear(a.academic_year)}</td>
-                    <td className="text-right">{a.overall_absence_pct != null ? `${a.overall_absence_pct.toFixed(1)}%` : '—'}</td>
-                    <td className="text-right">{a.authorised_absence_pct != null ? `${a.authorised_absence_pct.toFixed(1)}%` : '—'}</td>
-                    <td className="text-right">{a.unauthorised_absence_pct != null ? `${a.unauthorised_absence_pct.toFixed(1)}%` : '—'}</td>
-                    <td className="text-right">{a.persistent_absence_pct != null ? `${a.persistent_absence_pct.toFixed(1)}%` : '—'}</td>
+                    <td className="text-right">{a.overall_absence_pct != null ? `${a.overall_absence_pct.toFixed(1)}%` : '\u2014'}</td>
+                    <td className="text-right">{a.authorised_absence_pct != null ? `${a.authorised_absence_pct.toFixed(1)}%` : '\u2014'}</td>
+                    <td className="text-right">{a.unauthorised_absence_pct != null ? `${a.unauthorised_absence_pct.toFixed(1)}%` : '\u2014'}</td>
+                    <td className="text-right">{a.persistent_absence_pct != null ? `${a.persistent_absence_pct.toFixed(1)}%` : '\u2014'}</td>
                     {absences.some(aa => aa.severe_absence_pct != null) && (
-                      <td className="text-right">{a.severe_absence_pct != null ? `${a.severe_absence_pct.toFixed(1)}%` : '—'}</td>
+                      <td className="text-right">{a.severe_absence_pct != null ? `${a.severe_absence_pct.toFixed(1)}%` : '\u2014'}</td>
                     )}
                   </tr>
                 ))}
@@ -1270,6 +1455,7 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
       )}
       <DataNote notes={[
         hasAdm ? 'Admissions data covers co-ordinated LA admissions (Reception/Year 7). Some schools manage their own admissions — last distance offered may not apply.' : '',
+        laDetail.length > 0 ? 'Allocation detail is scraped from Local Authority admissions booklets. LDO = Last Distance Offered (furthest distance at which a place was offered). SIF = Supplementary Information Form (required by some faith schools).' : '',
         hasAbs ? 'Persistent absence = missing 10% or more of possible sessions. Severe absence = missing 50% or more.' : '',
         !hasAbs ? 'Attendance data not available. Newly converted academies and some schools may not appear in the DfE absence dataset until the following academic year.' : '',
       ].filter(Boolean)} />
@@ -1790,6 +1976,11 @@ export default function SchoolTable({ schools, summary, isArea }: Props) {
                     </div>
                   </div>
                   <div className="shrink-0"><OfstedBadge rating={school.ofsted_rating ?? null} /></div>
+                  {school.la_ldo != null && (
+                    <span className="shrink-0 text-[10px] text-ink-faint" title="Last Distance Offered">
+                      LDO {formatLdo(school.la_ldo, school.la_ldo_unit)}
+                    </span>
+                  )}
                   {school.distance_m != null && (
                     <span className="shrink-0 text-xs text-ink-faint w-12 text-right">
                       {school.distance_m < 1000 ? `${school.distance_m}m` : `${(school.distance_m / 1000).toFixed(1)}km`}

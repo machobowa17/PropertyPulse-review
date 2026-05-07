@@ -85,6 +85,11 @@ def nearby_schools(
                     adm.applications_received AS adm_applications,
                     adm.offers_made AS adm_offers,
                     adm.is_oversubscribed,
+                    -- LA Admissions Detail (scraped from booklets)
+                    la_adm.la_ldo,
+                    la_adm.la_ldo_unit,
+                    la_adm.la_sif,
+                    la_adm.la_allocation,
                     -- Finances
                     fin.per_pupil_expenditure,
                     fin.pct_budget_staff,
@@ -141,6 +146,15 @@ def nearby_schools(
                     FROM schools.admissions
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) adm ON true
+                LEFT JOIN LATERAL (
+                    SELECT last_distance_offered AS la_ldo,
+                           ldo_unit AS la_ldo_unit,
+                           sif_required AS la_sif,
+                           allocation_breakdown AS la_allocation
+                    FROM schools.admissions_la_detail
+                    WHERE urn = i.urn
+                    ORDER BY academic_year DESC LIMIT 1
+                ) la_adm ON true
                 LEFT JOIN LATERAL (
                     SELECT per_pupil_expenditure, pct_budget_staff
                     FROM schools.finances
@@ -277,6 +291,11 @@ def schools_by_lsoa(req: dict):
                     adm.applications_received AS adm_applications,
                     adm.offers_made AS adm_offers,
                     adm.is_oversubscribed,
+                    -- LA Admissions Detail (scraped from booklets)
+                    la_adm.la_ldo,
+                    la_adm.la_ldo_unit,
+                    la_adm.la_sif,
+                    la_adm.la_allocation,
                     -- Finances
                     fin.per_pupil_expenditure,
                     fin.pct_budget_staff,
@@ -333,6 +352,15 @@ def schools_by_lsoa(req: dict):
                     FROM schools.admissions
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) adm ON true
+                LEFT JOIN LATERAL (
+                    SELECT last_distance_offered AS la_ldo,
+                           ldo_unit AS la_ldo_unit,
+                           sif_required AS la_sif,
+                           allocation_breakdown AS la_allocation
+                    FROM schools.admissions_la_detail
+                    WHERE urn = i.urn
+                    ORDER BY academic_year DESC LIMIT 1
+                ) la_adm ON true
                 LEFT JOIN LATERAL (
                     SELECT per_pupil_expenditure, pct_budget_staff
                     FROM schools.finances
@@ -753,7 +781,7 @@ def school_detail(urn: int):
             )
             absence = [_serialize(r) for r in cur.fetchall()]
 
-            # Admissions
+            # Admissions (DfE official)
             cur.execute(
                 """
                 SELECT * FROM schools.admissions
@@ -762,6 +790,24 @@ def school_detail(urn: int):
                 {"urn": urn},
             )
             admissions = [_serialize(r) for r in cur.fetchall()]
+
+            # Admissions LA detail (scraped from booklets)
+            cur.execute(
+                """
+                SELECT academic_year, year_group,
+                       last_distance_offered, ldo_unit, ldo_detail,
+                       distance_method, allocation_breakdown,
+                       oversubscription_criteria, sif_required,
+                       open_days, appeals_heard, appeals_upheld,
+                       waiting_list_size, source_la_code,
+                       source_confidence, data_quality_flags
+                FROM schools.admissions_la_detail
+                WHERE urn = %(urn)s
+                ORDER BY academic_year DESC
+                """,
+                {"urn": urn},
+            )
+            admissions_la_detail = [_serialize(r) for r in cur.fetchall()]
 
             # Finances
             cur.execute(
@@ -795,6 +841,7 @@ def school_detail(urn: int):
             result["parent_view"] = parent_view
             result["absence"] = absence
             result["admissions"] = admissions
+            result["admissions_la_detail"] = admissions_la_detail
             result["finances"] = finances
             result["sen_provisions"] = sen_provisions
 
