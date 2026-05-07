@@ -33,7 +33,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v38"  # bumped: la admissions detail (LDO, allocation, SIF) via school API
+AREA_CACHE_VERSION = "v39"  # bumped: audit cleanup (621 empty rows deleted, phase fixes, LDO fixes)
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,

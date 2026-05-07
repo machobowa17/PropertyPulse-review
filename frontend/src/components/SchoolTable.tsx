@@ -1201,9 +1201,16 @@ function getAllocColor(criterion: string): string {
   return 'bg-gray-400';
 }
 
+// Summary/metadata keys that should NOT appear as allocation criteria in the bar
+const ALLOC_SUMMARY_KEYS = new Set([
+  'total', 'total_offered', 'total_allocated', 'places_allocated', 'allocated',
+  'offers_made', 'pan', 'oversubscribed', 'first_preferences', 'second_preferences',
+  'third_preferences', 'all_applicants',
+]);
+
 function AllocationBar({ breakdown }: { breakdown: Record<string, number> }) {
   const entries = Object.entries(breakdown)
-    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .filter(([k, v]) => typeof v === 'number' && v > 0 && !ALLOC_SUMMARY_KEYS.has(k))
     .sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, v]) => sum + v, 0);
   if (total === 0) return null;
