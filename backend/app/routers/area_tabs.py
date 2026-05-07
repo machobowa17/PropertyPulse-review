@@ -33,7 +33,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v37"  # bumped: weighted local multi-LAD queries (council tax, AQ)
+AREA_CACHE_VERSION = "v38"  # bumped: la admissions detail (LDO, allocation, SIF) via school API
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,
