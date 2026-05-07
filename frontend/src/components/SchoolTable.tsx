@@ -1201,16 +1201,23 @@ function getAllocColor(criterion: string): string {
   return 'bg-gray-400';
 }
 
-// Summary/metadata keys that should NOT appear as allocation criteria in the bar
-const ALLOC_SUMMARY_KEYS = new Set([
-  'total', 'total_offered', 'total_allocated', 'places_allocated', 'allocated',
-  'offers_made', 'pan', 'oversubscribed', 'first_preferences', 'second_preferences',
-  'third_preferences', 'all_applicants',
-]);
+// Summary/metadata keywords — if a key contains any of these (case-insensitive), it's not a criterion
+const ALLOC_SUMMARY_PATTERNS = [
+  'total', 'places_allocated', 'places_available', 'places_offered',
+  'offers_made', 'offers', 'offered', 'pan', 'oversubscribed', 'intake',
+  'first_pref', 'second_pref', 'third_pref', 'fourth_pref',
+  'preferences', 'preference_', 'applications', 'apps_considered',
+  'all_applicants', 'vacancies', 'remaining_places', 'refused',
+  'published_admission', 'requests_received',
+];
+function isAllocSummaryKey(key: string): boolean {
+  const lower = key.toLowerCase().replace(/[\s-]/g, '_');
+  return ALLOC_SUMMARY_PATTERNS.some(p => lower.includes(p));
+}
 
 function AllocationBar({ breakdown }: { breakdown: Record<string, number> }) {
   const entries = Object.entries(breakdown)
-    .filter(([k, v]) => typeof v === 'number' && v > 0 && !ALLOC_SUMMARY_KEYS.has(k))
+    .filter(([k, v]) => typeof v === 'number' && v > 0 && !isAllocSummaryKey(k))
     .sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, v]) => sum + v, 0);
   if (total === 0) return null;
