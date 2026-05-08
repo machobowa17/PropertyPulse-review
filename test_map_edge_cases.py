@@ -3,10 +3,10 @@ Edge-case E2E tests — verifies specific failure scenarios identified during re
 Tests: flood zone cleanup on tab switch, cluster zoom interaction, rapid tab switching,
        viewport preservation on resize, stale marker cleanup, cluster expansion/collapse.
 """
-import time
+import time, os
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:5173"
+BASE = os.environ.get("BASE_URL", "https://simusimi.com")
 URL = f"{BASE}/results?q=CR5+1RA"
 
 def count_markers(page):

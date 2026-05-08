@@ -2,10 +2,10 @@
 Comprehensive E2E map test — Playwright browser automation.
 Tests: marker counts, clustering, layer toggles, tab switching, place name search, popup interaction.
 """
-import json, time
+import json, time, os
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:5173"
+BASE = os.environ.get("BASE_URL", "https://simusimi.com")
 RESULTS = {
     "postcode": f"{BASE}/results?q=CR5+1RA",
     "city":     f"{BASE}/results?q=Manchester",

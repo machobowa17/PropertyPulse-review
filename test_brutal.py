@@ -15,8 +15,8 @@ import requests
 import sys
 from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
 
-API = os.environ.get("API_URL", "http://127.0.0.1:8000/api/v1")
-BASE = os.environ.get("BASE_URL", "http://localhost:5173")
+API = os.environ.get("API_URL", "https://simusimi.com/api/v1")
+BASE = os.environ.get("BASE_URL", "https://simusimi.com")
 
 # Rate-limit aware: 60 req/min = 1 req/sec max. We add a small buffer.
 PACE = 1.1

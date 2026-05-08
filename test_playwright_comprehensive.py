@@ -13,8 +13,8 @@ import sys
 import os
 from playwright.sync_api import sync_playwright, expect, TimeoutError as PwTimeout
 
-BASE = os.environ.get("BASE_URL", "http://localhost:5173")
-API = os.environ.get("API_URL", "http://127.0.0.1:8000/api/v1")
+BASE = os.environ.get("BASE_URL", "https://simusimi.com")
+API = os.environ.get("API_URL", "https://simusimi.com/api/v1")
 
 # Tab short names used in the TabBar buttons (sm:hidden shows shortName)
 TAB_NAMES = ["Overview", "Property", "Lifestyle", "Environment", "Community", "Governance"]

@@ -2,10 +2,10 @@
 Test isochrone rings on Lifestyle tab — verify they appear and disappear correctly.
 Also test: sold toggle persistence with viewport changes, cluster expansion zoom, empty data.
 """
-import time
+import time, os
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:5173"
+BASE = os.environ.get("BASE_URL", "https://simusimi.com")
 URL = f"{BASE}/results?q=CR5+1RA"
 
 def count_markers(page):
