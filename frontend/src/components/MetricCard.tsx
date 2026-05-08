@@ -26,6 +26,7 @@ const HpiTrendChart           = lazy(() => import('./HpiTrendChart'));
 const StationTable            = lazy(() => import('./StationTable'));
 const SchoolTable             = lazy(() => import('./SchoolTable'));
 const NurseryTable            = lazy(() => import('./NurseryTable'));
+const SEN2Panel               = lazy(() => import('./SEN2Panel'));
 const TransactionTable        = lazy(() => import('./TransactionTable'));
 const BuildingProfileChart    = lazy(() => import('./BuildingProfileChart'));
 
@@ -109,6 +110,7 @@ const METRIC_SOURCES: Record<string, { label: string; licence: string }> = {
   primary_schools:        { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
   secondary_schools:      { label: 'Ofsted / Get Information About Schools', licence: 'OGL v3' },
   nurseries:              { label: 'Ofsted Childcare Provider Inspections', licence: 'OGL v3' },
+  sen2_ehcp:              { label: 'DfE SEN2 Returns (2024)', licence: 'OGL v3' },
   deprivation:            { label: 'MHCLG English Indices of Deprivation 2025', licence: 'OGL v3' },
   area_persona:           { label: 'Census 2021 / MHCLG IMD', licence: 'OGL v3' },
   nhs_facilities:         { label: 'NHS ODS / CQC', licence: 'OGL v3' },
@@ -594,6 +596,15 @@ function renderDetailsContent(details: Record<string, unknown>, unit: string, pa
         </Suspense>
       );
     }
+  }
+
+  // SEN2 EHCP data
+  if (details.pct_within_20wk != null && details.total_ehcps != null) {
+    return (
+      <Suspense fallback={null}>
+        <SEN2Panel details={details as Record<string, unknown> & { pct_within_20wk: number }} />
+      </Suspense>
+    );
   }
 
   if (Array.isArray(details.stations)) {

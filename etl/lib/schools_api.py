@@ -215,3 +215,16 @@ def league_table(lad_code=None, phase="Secondary", sort_by="progress_8", limit=5
         params.append(f"lad_code={urllib.parse.quote(lad_code)}")
     path = "/schools/league-table?" + "&".join(params)
     return _request("GET", path, timeout=15)
+
+
+def sen2_la_stats(la_code):
+    """Get SEN2 EHCP statistics for a local authority.
+
+    Args:
+        la_code: ONS E-code (e.g. E09000008) or DfE 3-digit code (e.g. 306).
+
+    Returns:
+        Dict with timeliness, refusal rates, tribunal counts, caseload,
+        placement breakdown, primary need breakdown, and national averages.
+    """
+    return _request("GET", f"/schools/sen2/{urllib.parse.quote(str(la_code))}", timeout=15)

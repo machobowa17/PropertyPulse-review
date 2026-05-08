@@ -540,6 +540,80 @@ async def fetch_community_education(db, *, lad_code, ward_code, lsoa_codes, cent
                 },
             ))
 
+    # --- SEND / SEN2 LA-level EHCP statistics ---
+    if schools_api and lad_code:
+        sen2 = schools_api.sen2_la_stats(lad_code)
+        if sen2 and sen2.get("total_ehcps"):
+            pct_20wk = sen2.get("pct_within_20wk")
+            nat_20wk = sen2.get("nat_pct_within_20wk")
+            pct_refused = sen2.get("pct_refused")
+            nat_refused = sen2.get("nat_pct_refused")
+
+            # Headline: timeliness gauge
+            headline_val = pct_20wk
+            headline_label = "EHCP Timeliness"
+            if pct_20wk is not None and nat_20wk is not None:
+                if pct_20wk >= nat_20wk + 10:
+                    quality = "good"
+                elif pct_20wk <= nat_20wk - 10:
+                    quality = "poor"
+                else:
+                    quality = "average"
+            else:
+                quality = None
+
+            metrics.append(metric(
+                "sen2_ehcp", "SEND — EHCP Assessment",
+                headline_val,
+                nat_20wk, "%",
+                details={
+                    "la_name": sen2.get("la_name"),
+                    "year": sen2.get("year"),
+                    "quality": quality,
+                    # Timeliness
+                    "pct_within_20wk": pct_20wk,
+                    "nat_pct_within_20wk": nat_20wk,
+                    "plans_issued_total": sen2.get("plans_issued_total"),
+                    "plans_issued_within_20wk": sen2.get("plans_issued_within_20wk"),
+                    "plans_issued_20wk_to_1yr": sen2.get("plans_issued_20wk_to_1yr"),
+                    "plans_issued_over_1yr": sen2.get("plans_issued_over_1yr"),
+                    # Refusal rate
+                    "requests_received": sen2.get("requests_received"),
+                    "requests_refused": sen2.get("requests_refused"),
+                    "pct_refused": pct_refused,
+                    "nat_pct_refused": nat_refused,
+                    # Tribunal
+                    "tribunal_on_request": sen2.get("tribunal_on_request"),
+                    "tribunal_on_assessment": sen2.get("tribunal_on_assessment"),
+                    "tribunal_other": sen2.get("tribunal_other"),
+                    "mediation_on_request": sen2.get("mediation_on_request"),
+                    # Assessment outcomes
+                    "pct_plan_issued": sen2.get("pct_plan_issued"),
+                    "nat_pct_plan_issued": sen2.get("nat_pct_plan_issued"),
+                    # Caseload
+                    "total_ehcps": sen2.get("total_ehcps"),
+                    "mainstream_pct": sen2.get("mainstream_pct"),
+                    "special_pct": sen2.get("special_pct"),
+                    "nat_mainstream_pct": sen2.get("nat_mainstream_pct"),
+                    "nat_special_pct": sen2.get("nat_special_pct"),
+                    # Primary need breakdown
+                    "need_asd_pct": sen2.get("need_asd_pct"),
+                    "need_slcn_pct": sen2.get("need_slcn_pct"),
+                    "need_semh_pct": sen2.get("need_semh_pct"),
+                    "need_mld_pct": sen2.get("need_mld_pct"),
+                    "need_sld_pct": sen2.get("need_sld_pct"),
+                    "need_pmld_pct": sen2.get("need_pmld_pct"),
+                    "need_spld_pct": sen2.get("need_spld_pct"),
+                    "need_pd_pct": sen2.get("need_pd_pct"),
+                    "need_hi_pct": sen2.get("need_hi_pct"),
+                    "need_vi_pct": sen2.get("need_vi_pct"),
+                    "nat_need_asd_pct": sen2.get("nat_need_asd_pct"),
+                    "nat_need_slcn_pct": sen2.get("nat_need_slcn_pct"),
+                    "nat_need_semh_pct": sen2.get("nat_need_semh_pct"),
+                    "detail_unit": "%",
+                },
+            ))
+
     # --- IMD Deprivation ---
     imd_local = await db.execute(
         text("""
