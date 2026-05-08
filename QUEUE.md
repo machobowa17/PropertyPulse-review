@@ -1,6 +1,6 @@
 # PropertyPulse — Master Work Queue
 
-Last updated: 2026-04-30 (session 71)
+Last updated: 2026-05-08
 
 **This is the SINGLE source of truth for all pending tasks. Completed work is in CHANGELOG.md.**
 
@@ -31,13 +31,13 @@ Last updated: 2026-04-30 (session 71)
 | D30 | Surface INSPIRE + LLC at property level (feeds P53) | Pending | `ST_Contains(geom, property_point)` for parcel boundary, LLC charges. Data already ingested and indexed. |
 | D32 | P53 EPC Lookup: current EPC + EPC at time of sale | Pending | Bypass matching engine, query `bronze.raw_epc_domestic` directly by address. ~92% coverage. |
 | D33 | NPD Workaround: catchment probability model | Pending | Reconstruct ~80% of school catchment insight from LDO + admissions + capacity + geography. `compute_catchment.py` on Hetzner. Depends on D35 (LA scraping for LDO data). |
-| D35 | LA admissions booklet scraping | In Progress | Scrape 150 LA admission booklets. PoC complete (Croydon, session 71). See D35 spec below. |
-| D36 | SEND Intelligence for Parents | Pending | Full spec below. Three tiers of SEND data. "No one caters to SEND families — we will." |
-| D37 | DfE SEN2 returns (LA-level EHCP statistics) | Pending | CSV from DfE. EHCP timeliness, refusal rate, tribunal rate, placement mix, primary need breakdown. Feeds D36. |
+| D35 | LA admissions booklet scraping | In Progress | 151 English LAs in scope. **104 loaded** to Hetzner (~4,720 rows). 16 extraction failures researched (9 have PDFs, 4 HTML-only, 3 Excel). 27 HTML-only LAs not attempted. See D35 spec below. |
+| D36 | SEND Intelligence for Parents | In Progress | Tier 2 (SEN2) DONE — live on site. Tier 1 (booklet data) + Tier 3 (LA local offer) pending. See spec below. |
+| D37 | DfE SEN2 returns (LA-level EHCP statistics) | **DONE** | 153 LAs loaded to `schools.sen2_la_stats`. 5 CSVs (timeliness, requests, outcomes, caseload, primary need). Hetzner API `/schools/sen2/{la_code}`. Frontend SEN2Panel with gauge bars, placement chart, need breakdown. Live on simusimi.com. |
 
 ### D35 Spec — LA Admissions Booklet Scraping
 
-**PoC (session 71):** Croydon secondary — 23 schools, 13 with LDO, full allocation breakdowns. Parser: `pdfplumber` + positional text parsing. Output: `/tmp/croydon_admissions_extracted.json`.
+**PoC (session 71):** Croydon secondary — 23 schools, 13 with LDO, full allocation breakdowns. Parser: `pdfplumber` + positional text parsing.
 
 **Core extraction per LA (scrape ALL of this from every booklet):**
 
@@ -57,11 +57,43 @@ Last updated: 2026-04-30 (session 71)
 | Neighbouring borough schools (name, DfE, address, LA) | Cross-border section |
 | In-year admissions process | Policy section (prose) |
 
+**Schema-forward approach (session 72 decision):**
+- Row = one school × one admissions year (e.g., Riddlesdown Collegiate, 2025/26 entry)
+- Columns = superset of ALL possible fields across all LAs. Missing fields = NULL (not absent).
+- Each ingest records: timestamp, source URL, source file hash, parser version — full provenance.
+- Append-only by year: 2026/27 scrape creates new rows, never overwrites 2025/26 data.
+- Schema only grows (new columns when new field types discovered).
+- Additional fields seen in some LAs: 1st/2nd/3rd preferences received, offers made, % getting 1st choice, waiting list info.
+
+**Coverage: 151 English LAs** in `etl/data/la_admissions_catalogue.csv`. Welsh LAs (22) don't publish PDF admissions booklets — different system, future expansion.
+
+**Current status (May 8 2026):**
+
+| Stage | Count | Notes |
+|-------|-------|-------|
+| LAs in catalogue with PDF URLs | 151 | Isles of Scilly has no booklet (1 school via Cornwall) |
+| OCR'd via Mistral (output_v2) | 124 | |
+| Extraction attempted (output_v3) | 122 | 185 log entries, May 5-7 |
+| Got >0 schools | 88 | |
+| **Loaded to Hetzner DB** | **104** | ~4,720 rows (4 new LAs loaded this session via LA_NAME_GIAS_MAP fix) |
+
+**Remaining work:**
+
+| Task | Count | Approach |
+|------|-------|----------|
+| Re-download + re-extract 9 PDF LAs | 9 | Sandwell, Tameside, Leicestershire, Staffordshire, Blackpool, Nottinghamshire, Nottingham, Norfolk, Essex — correct URLs found, update catalogue |
+| Parse Excel/CSV LAs | 2 | Calderdale (Data Works CSV), East Sussex (.xlsx) — simpler parser |
+| Scrape HTML-only LAs (failed) | 5 | Newcastle, N.Lincs, Brighton, Hampshire, Wakefield — web scraping |
+| Scrape 27 HTML-only LAs (not attempted) | 27 | Different pipeline — Manchester, Leeds, Liverpool, Devon, Cornwall, etc. |
+| Welsh LAs | 22 | Future — completely different admissions format |
+
+**Pipeline:** Mistral OCR (`scrape_v2.py`) → Claude extraction (`extract_e1_e9.py`) → Validation → Batch load (`load_admissions_la_detail.py`) → Hetzner `schools.admissions_la_detail`
+
 **Risks:** Format varies wildly per LA. ~30% clean tables, ~40% semi-structured prose, ~15% image PDFs (OCR needed), ~15% HTML. Confidence scoring needed. Per-LA parsers likely required for non-standard formats.
 
-**Admissions presentation plan:** Admissions Intelligence section per school — horizontal allocation bar chart, LDO comparison ("your distance vs cutoff"), sibling caveat, LDO circle on map with measurement method label, source + year caveat.
+**Admissions presentation plan:** Allocation bar chart in SchoolTable AdmissionsTab (DONE). LDO as text in map popup (DONE — no circle, catchment shape is irregular). "Your distance vs cutoff" comparison (PENDING). Source + year caveat.
 
-**Scale plan:** Tier 1 = top 30-40 LAs (~60% of England's school-age population). Tier 2 = remaining ~110 LAs.
+**Key files:** Catalogue `etl/data/la_admissions_catalogue.csv`, OCR `schools/etl/admissions_scrape/scrape_v2.py`, extraction `schools/etl/admissions_scrape/extract_e1_e9.py`, rules `schools/etl/admissions_scrape/EXTRACTION_RULES.md`, loader `schools/etl/load_admissions_la_detail.py`, log `schools/etl/admissions_scrape/output_v3/extraction_log.jsonl`
 
 ---
 
