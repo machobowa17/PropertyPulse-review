@@ -1348,6 +1348,11 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
             {latestLa.academic_year && (
               <span className="text-[10px] text-ink-faint">{shortYear(latestLa.academic_year)}</span>
             )}
+            {latestLa.year_group && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                {latestLa.year_group}
+              </span>
+            )}
             {latestLa.sif_required && (
               <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
                 SIF Required
@@ -1420,6 +1425,35 @@ function AdmissionsTab({ school, detail }: { school: SchoolRow; detail: SchoolDe
               {latestLa.waiting_list_size != null && (
                 <StatRow label="Waiting List" value={latestLa.waiting_list_size} />
               )}
+            </div>
+          )}
+
+          {/* Open Days / Evenings */}
+          {latestLa.open_days && Array.isArray(latestLa.open_days) && latestLa.open_days.length > 0 && (
+            <div>
+              <p className="text-[10px] text-ink-faint font-medium uppercase tracking-wide mb-0.5">
+                Open days
+              </p>
+              <div className="space-y-0.5">
+                {latestLa.open_days.map((od, i) => (
+                  <div key={i} className="text-[11px] text-ink-muted flex items-center gap-1.5">
+                    {od.date && <span className="font-medium text-ink-base">{od.date}</span>}
+                    {od.time && <span>{od.time}</span>}
+                    {od.type && <span className="text-ink-faint">({od.type})</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Data Quality Flags */}
+          {latestLa.data_quality_flags && Array.isArray(latestLa.data_quality_flags) && latestLa.data_quality_flags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {latestLa.data_quality_flags.map((f, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-yellow-50 text-yellow-700 border border-yellow-200" title={f.detail || f.flag}>
+                  {f.flag.replace(/_/g, ' ')}
+                </span>
+              ))}
             </div>
           )}
         </div>

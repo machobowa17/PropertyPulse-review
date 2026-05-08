@@ -23,7 +23,7 @@ from app.services.session_helpers import (
 
 router = APIRouter()
 
-MAP_CACHE_VERSION = "v6"  # bumped: choropleth scope widened from ward to full LAD for postcode searches
+MAP_CACHE_VERSION = "v7"  # bumped: school popups enriched via Hetzner School API
 
 
 # ---------------------------------------------------------------------------
@@ -209,47 +209,107 @@ async def get_map_pois(
             })
 
     elif tab == "Community & Education":
-        if is_area and area_lsoa_list:
-            res = await db.execute(
-                text("""
-                    SELECT DISTINCT ON (s.school_name) s.school_name, s.phase, s.ofsted_rating, s.latitude, s.longitude
-                    FROM core_schools s
-                    JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
-                    WHERE s.is_open = true AND s.geom IS NOT NULL
-                      AND lb.lsoa_code = ANY(:codes)
-                    ORDER BY s.school_name
-                    LIMIT 100
-                """),
-                {"codes": area_lsoa_list},
-            )
+        # Rich school data from Hetzner School API (same source as SchoolTable)
+        try:
+            from etl_lib import schools_api
+        except ImportError:
+            schools_api = None
+
+        school_list = []
+        if schools_api:
+            area_lads = sess.get("local_lads") or [sess.get("lad_code")]
+            if is_area and area_lads:
+                data = schools_api.schools_by_lsoa(
+                    lad_codes=area_lads, lat=lat, lon=lon, limit=100
+                )
+            else:
+                data = schools_api.nearby_schools(lat, lon, radius_m=5000, limit=100)
+            school_list = (data or {}).get("schools", [])
+
+        if school_list:
+            for s in school_list:
+                s_lat, s_lon = s.get("latitude"), s.get("longitude")
+                if not s_lat or not s_lon:
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [s_lon, s_lat]},
+                    "properties": {
+                        "name": s.get("name", ""),
+                        "category": "school",
+                        "urn": s.get("urn"),
+                        "phase": s.get("phase"),
+                        "ofsted": s.get("ofsted_rating"),
+                        "ofsted_date": s.get("ofsted_date"),
+                        "type_code": s.get("type_code"),
+                        "gender": s.get("gender"),
+                        "religious_char": s.get("religious_char"),
+                        "age_low": s.get("age_low"),
+                        "age_high": s.get("age_high"),
+                        "admissions_policy": s.get("admissions_policy"),
+                        "sixth_form": s.get("sixth_form"),
+                        "nursery_provision": s.get("nursery_provision"),
+                        "capacity": s.get("pupil_count") or s.get("capacity"),
+                        "pct_fsm": s.get("pct_fsm"),
+                        "la_ldo": s.get("la_ldo"),
+                        "la_ldo_unit": s.get("la_ldo_unit"),
+                        "la_sif": s.get("la_sif"),
+                        "velocity": s.get("velocity"),
+                        "progress_8": s.get("progress_8"),
+                        "attainment_8": s.get("attainment_8"),
+                        "ks2_rwm_expected": s.get("ks2_rwm_expected"),
+                        "dist_m": s.get("distance_m"),
+                    },
+                })
         else:
-            res = await db.execute(
-                text("""
-                    SELECT school_name, phase, ofsted_rating, latitude, longitude,
-                           ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m
-                    FROM core_schools
-                    WHERE is_open = true
-                      AND geom IS NOT NULL
-                      AND ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 5000)
-                    ORDER BY dist_m
-                    LIMIT 100
-                """),
-                {"lat": lat, "lon": lon},
-            )
-        for r in res.mappings().all():
-            props = {
-                "name": r["school_name"],
-                "category": "school",
-                "phase": r["phase"],
-                "ofsted": r["ofsted_rating"],
-            }
-            if not is_area and "dist_m" in dict(r):
-                props["dist_m"] = round(float(r["dist_m"]))
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
-                "properties": props,
-            })
+            # Fallback to core_schools if Hetzner unreachable
+            if is_area and area_lsoa_list:
+                res = await db.execute(
+                    text("""
+                        SELECT DISTINCT ON (s.school_name)
+                               s.urn, s.school_name, s.phase, s.ofsted_rating,
+                               s.latitude, s.longitude
+                        FROM core_schools s
+                        JOIN core_lsoa_boundaries lb ON ST_Within(s.geom, lb.geom)
+                        WHERE s.is_open = true AND s.geom IS NOT NULL
+                          AND lb.lsoa_code = ANY(:codes)
+                        ORDER BY s.school_name
+                        LIMIT 100
+                    """),
+                    {"codes": area_lsoa_list},
+                )
+            else:
+                res = await db.execute(
+                    text("""
+                        SELECT urn, school_name, phase, ofsted_rating,
+                               latitude, longitude,
+                               ST_Distance(geom::geography,
+                                   ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
+                               ) AS dist_m
+                        FROM core_schools
+                        WHERE is_open = true AND geom IS NOT NULL
+                          AND ST_DWithin(geom::geography,
+                              ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 5000)
+                        ORDER BY dist_m
+                        LIMIT 100
+                    """),
+                    {"lat": lat, "lon": lon},
+                )
+            for r in res.mappings().all():
+                props = {
+                    "name": r["school_name"],
+                    "category": "school",
+                    "urn": r["urn"],
+                    "phase": r["phase"],
+                    "ofsted": r["ofsted_rating"],
+                }
+                if not is_area and "dist_m" in dict(r):
+                    props["dist_m"] = round(float(r["dist_m"]))
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
+                    "properties": props,
+                })
 
         if is_area and area_lsoa_list:
             nhs_res = await db.execute(

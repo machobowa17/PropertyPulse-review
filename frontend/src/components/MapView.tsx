@@ -232,6 +232,109 @@ function genericPoiPopupHtml(props: Record<string, unknown>): string {
   return `<div style="font-size:12px"><strong>${esc(String(props.name || ''))}</strong>${detailRows.length ? `<br>${detailRows.join('<br>')}` : ''}</div>`;
 }
 
+const OFSTED_PILL_COLOURS: Record<number, string> = {
+  1: '#059669', 2: '#2563eb', 3: '#d97706', 4: '#dc2626',
+};
+const OFSTED_LABELS: Record<number, string> = {
+  1: 'Outstanding', 2: 'Good', 3: 'Requires Improvement', 4: 'Inadequate',
+};
+
+function schoolPopupHtml(props: Record<string, unknown>): string {
+  const name = esc(String(props.name || ''));
+
+  // Line 2: Phase · Gender · Religious char · Age range
+  const infoParts: string[] = [];
+  if (props.phase) infoParts.push(esc(String(props.phase)));
+  const gender = String(props.gender || '');
+  if (gender && gender !== 'Mixed' && gender !== 'Not applicable') infoParts.push(esc(gender));
+  const relig = String(props.religious_char || '');
+  if (relig && relig !== 'Does not apply' && relig !== 'None') infoParts.push(esc(relig));
+  if (props.age_low != null && props.age_high != null) infoParts.push(`${props.age_low}\u2013${props.age_high}`);
+
+  // Line 3: Ofsted pill + date
+  const ofstedNum = Number(props.ofsted);
+  let ofstedHtml = '';
+  if (OFSTED_LABELS[ofstedNum]) {
+    const col = OFSTED_PILL_COLOURS[ofstedNum];
+    const label = OFSTED_LABELS[ofstedNum];
+    const dateStr = props.ofsted_date
+      ? ` (${new Date(String(props.ofsted_date)).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })})`
+      : '';
+    ofstedHtml = `<span style="display:inline-block;background:${col};color:#fff;font-weight:600;font-size:10px;padding:1px 6px;border-radius:3px">${label}</span><span style="color:#888;font-size:10px">${dateStr}</span>`;
+  }
+
+  // Line 4: Admissions policy (only if notable)
+  const policy = String(props.admissions_policy || '');
+  const policyHtml = (policy && policy !== 'Not applicable' && policy !== 'Comprehensive')
+    ? `<span style="display:inline-block;background:#f0f0ff;color:#4338ca;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:500">${esc(policy)}</span>`
+    : '';
+
+  // Line 5: Academic scores (phase-aware) + FSM%
+  const scoreParts: string[] = [];
+  const phase = String(props.phase || '').toLowerCase();
+  if (phase.includes('primary') && props.ks2_rwm_expected != null) {
+    scoreParts.push(`KS2: ${Number(props.ks2_rwm_expected).toFixed(0)}%`);
+  }
+  if ((phase.includes('secondary') || phase.includes('all')) && props.progress_8 != null) {
+    const p8 = Number(props.progress_8);
+    scoreParts.push(`P8: ${p8 >= 0 ? '+' : ''}${p8.toFixed(2)}`);
+  }
+  if ((phase.includes('secondary') || phase.includes('all')) && props.attainment_8 != null) {
+    scoreParts.push(`A8: ${Number(props.attainment_8).toFixed(1)}`);
+  }
+  if (props.pct_fsm != null) {
+    scoreParts.push(`FSM: ${Number(props.pct_fsm).toFixed(0)}%`);
+  }
+
+  // Line 6: LDO + SIF
+  let ldoHtml = '';
+  if (props.la_ldo != null) {
+    const val = Number(props.la_ldo);
+    const unit = String(props.la_ldo_unit || '');
+    let formatted: string;
+    if (unit === 'miles') formatted = `${val.toFixed(2)} mi`;
+    else if (unit === 'metres') formatted = `${Math.round(val)} m`;
+    else if (unit === 'km') formatted = `${val.toFixed(2)} km`;
+    else formatted = val.toFixed(2);
+    ldoHtml = `LDO: <strong>${formatted}</strong>`;
+    if (props.la_sif) {
+      ldoHtml += ` <span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:0 4px;border-radius:2px;font-weight:600">SIF</span>`;
+    }
+  } else if (props.la_sif) {
+    ldoHtml = `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;padding:0 4px;border-radius:2px;font-weight:600">SIF Required</span>`;
+  }
+
+  // Line 7: Velocity + distance + capacity
+  const footerParts: string[] = [];
+  const vel = String(props.velocity || '');
+  if (vel === 'rising') footerParts.push('<span style="color:#059669">&#8599; Rising</span>');
+  else if (vel === 'declining') footerParts.push('<span style="color:#dc2626">&#8600; Declining</span>');
+  if (props.capacity != null) footerParts.push(`${props.capacity} pupils`);
+  if (props.dist_m != null) {
+    const d = Number(props.dist_m);
+    footerParts.push(d < 1000 ? `${d}m away` : `${(d / 1000).toFixed(1)}km away`);
+  }
+  // Sixth form / nursery flags
+  const flags: string[] = [];
+  if (props.sixth_form === 'Has a sixth form') flags.push('6th Form');
+  if (props.nursery_provision === 'Has Nursery Classes') flags.push('Nursery');
+  const flagsHtml = flags.length
+    ? flags.map(f => `<span style="display:inline-block;background:#f0fdf4;color:#166534;font-size:9px;padding:0 4px;border-radius:2px">${f}</span>`).join(' ')
+    : '';
+
+  // Assemble
+  const lines: string[] = [];
+  lines.push(`<strong>${name}</strong>`);
+  if (infoParts.length) lines.push(`<span style="color:#666">${infoParts.join(' · ')}</span>`);
+  if (ofstedHtml) lines.push(ofstedHtml);
+  if (policyHtml || flagsHtml) lines.push([policyHtml, flagsHtml].filter(Boolean).join(' '));
+  if (scoreParts.length) lines.push(`<span style="color:#555">${scoreParts.join(' · ')}</span>`);
+  if (ldoHtml) lines.push(ldoHtml);
+  if (footerParts.length) lines.push(`<span style="color:#888;font-size:10px">${footerParts.join(' · ')}</span>`);
+
+  return `<div style="font-size:11px;line-height:1.5">${lines.join('<br>')}</div>`;
+}
+
 function soldPricePopupHtml(props: Record<string, unknown>): string {
   const bedStr = props.bedrooms != null ? `${props.bedrooms} bed (est.)` : '';
   const floorStr = props.floor_area_sqm != null ? `${Math.round(Number(props.floor_area_sqm))} m²` : '';
@@ -637,12 +740,12 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
         const el = document.createElement('div');
         el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${colour};color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.4);border:2px solid #fff;`;
         el.textContent = icon;
+        const popupHtml = isSchool ? schoolPopupHtml(props) : genericPoiPopupHtml(props);
+        const popupWidth = isSchool ? '280px' : '200px';
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([lng, lt])
           .setPopup(
-            new maplibregl.Popup({ offset: 14, maxWidth: '200px' }).setHTML(
-              genericPoiPopupHtml(props),
-            ),
+            new maplibregl.Popup({ offset: 14, maxWidth: popupWidth }).setHTML(popupHtml),
           )
           .addTo(map);
         poiMarkersRef.current.push(marker);
