@@ -97,7 +97,12 @@ def nearby_schools(
                     ks2_prev.pct_rwm_expected AS ks2_prev_rwm,
                     ks4_prev.progress_8 AS ks4_prev_p8,
                     ks4_prev.attainment_8 AS ks4_prev_a8,
-                    ks4_latest.attainment_8 AS ks4_latest_a8
+                    ks4_latest.attainment_8 AS ks4_latest_a8,
+                    -- SEN provisions (aggregated)
+                    sen_agg.sen_provisions,
+                    -- SEN demographics
+                    dem.pct_sen_support,
+                    dem.pct_sen_ehcp
                 FROM schools.institutions i
                 LEFT JOIN LATERAL (
                     SELECT overall_rating, inspection_date,
@@ -127,7 +132,7 @@ def nearby_schools(
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) ks5 ON true
                 LEFT JOIN LATERAL (
-                    SELECT pct_fsm, pct_eal, total_pupils
+                    SELECT pct_fsm, pct_eal, total_pupils, pct_sen_support, pct_sen_ehcp
                     FROM schools.pupil_demographics
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) dem ON true
@@ -177,6 +182,15 @@ def nearby_schools(
                     WHERE urn = i.urn
                     ORDER BY academic_year DESC LIMIT 1
                 ) ks4_latest ON true
+                LEFT JOIN LATERAL (
+                    SELECT json_agg(json_build_object(
+                        'type', sp.provision_type,
+                        'specialisms', sp.sen_specialisms,
+                        'capacity', sp.capacity
+                    )) AS sen_provisions
+                    FROM schools.sen_provisions sp
+                    WHERE sp.urn = i.urn
+                ) sen_agg ON true
                 WHERE i.is_open = true
                   AND i.geom IS NOT NULL
                   AND ST_DWithin(
@@ -303,7 +317,12 @@ def schools_by_lsoa(req: dict):
                     ks2_prev.pct_rwm_expected AS ks2_prev_rwm,
                     ks4_prev.progress_8 AS ks4_prev_p8,
                     ks4_prev.attainment_8 AS ks4_prev_a8,
-                    ks4_latest.attainment_8 AS ks4_latest_a8
+                    ks4_latest.attainment_8 AS ks4_latest_a8,
+                    -- SEN provisions (aggregated)
+                    sen_agg.sen_provisions,
+                    -- SEN demographics
+                    dem.pct_sen_support,
+                    dem.pct_sen_ehcp
                 FROM schools.institutions i
                 {area_join}
                 LEFT JOIN LATERAL (
@@ -333,7 +352,7 @@ def schools_by_lsoa(req: dict):
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) ks5 ON true
                 LEFT JOIN LATERAL (
-                    SELECT pct_fsm, pct_eal, total_pupils
+                    SELECT pct_fsm, pct_eal, total_pupils, pct_sen_support, pct_sen_ehcp
                     FROM schools.pupil_demographics
                     WHERE urn = i.urn ORDER BY academic_year DESC LIMIT 1
                 ) dem ON true
@@ -383,6 +402,15 @@ def schools_by_lsoa(req: dict):
                     WHERE urn = i.urn
                     ORDER BY academic_year DESC LIMIT 1
                 ) ks4_latest ON true
+                LEFT JOIN LATERAL (
+                    SELECT json_agg(json_build_object(
+                        'type', sp.provision_type,
+                        'specialisms', sp.sen_specialisms,
+                        'capacity', sp.capacity
+                    )) AS sen_provisions
+                    FROM schools.sen_provisions sp
+                    WHERE sp.urn = i.urn
+                ) sen_agg ON true
                 WHERE i.is_open = true
                   {area_filter}
                   {phase_filter}
@@ -1253,3 +1281,4 @@ def feeder_schools(urn: int):
         raise HTTPException(500, f"Query error: {e}")
     finally:
         put_conn(conn)
+

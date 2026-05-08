@@ -23,7 +23,7 @@ from app.services.session_helpers import (
 
 router = APIRouter()
 
-MAP_CACHE_VERSION = "v7"  # bumped: school popups enriched via Hetzner School API
+MAP_CACHE_VERSION = "v8"  # bumped: SEN provisions + demographics in school popups
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +259,10 @@ async def get_map_pois(
                         "attainment_8": s.get("attainment_8"),
                         "ks2_rwm_expected": s.get("ks2_rwm_expected"),
                         "dist_m": s.get("distance_m"),
+                        # SEN/SEND fields
+                        "sen_provisions": s.get("sen_provisions"),
+                        "pct_sen_support": s.get("pct_sen_support"),
+                        "pct_sen_ehcp": s.get("pct_sen_ehcp"),
                     },
                 })
         else:

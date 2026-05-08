@@ -269,7 +269,45 @@ function schoolPopupHtml(props: Record<string, unknown>): string {
     ? `<span style="display:inline-block;background:#f0f0ff;color:#4338ca;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:500">${esc(policy)}</span>`
     : '';
 
-  // Line 5: Academic scores (phase-aware) + FSM%
+  // Line 5: SEN provisions + special school badge
+  const typeCode = String(props.type_code || '').toLowerCase();
+  const isSpecial = typeCode.includes('special');
+  let senHtml = '';
+  const senProvisions = Array.isArray(props.sen_provisions) ? props.sen_provisions as Record<string, unknown>[] : [];
+  if (isSpecial || senProvisions.length > 0) {
+    const badges: string[] = [];
+    if (isSpecial) {
+      badges.push('<span style="display:inline-block;background:#7c3aed;color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600">Special School</span>');
+    }
+    for (const p of senProvisions) {
+      const pType = String(p.type || '');
+      if (pType === 'SEN unit') {
+        badges.push('<span style="display:inline-block;background:#6d28d9;color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:500">SEN Unit</span>');
+      } else if (pType === 'Resourced provision') {
+        badges.push('<span style="display:inline-block;background:#8b5cf6;color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:500">Resourced Prov.</span>');
+      }
+      const specs = Array.isArray(p.specialisms) ? (p.specialisms as string[]) : [];
+      for (const spec of specs) {
+        // Shorten "ASD - Autistic Spectrum Disorder" to "ASD"
+        const short = String(spec).split(' - ')[0].trim();
+        if (short) badges.push(`<span style="display:inline-block;background:#ede9fe;color:#5b21b6;font-size:9px;padding:0 4px;border-radius:2px">${esc(short)}</span>`);
+      }
+      if (p.capacity != null && Number(p.capacity) > 0) {
+        badges.push(`<span style="color:#7c3aed;font-size:9px">${p.capacity} places</span>`);
+      }
+    }
+    if (badges.length) senHtml = badges.join(' ');
+  }
+  // SEN demographics
+  let senDemHtml = '';
+  if (props.pct_sen_ehcp != null && Number(props.pct_sen_ehcp) > 0) {
+    const parts: string[] = [];
+    if (props.pct_sen_support != null) parts.push(`SEN Support: ${Number(props.pct_sen_support).toFixed(0)}%`);
+    parts.push(`EHCP: ${Number(props.pct_sen_ehcp).toFixed(0)}%`);
+    senDemHtml = `<span style="color:#7c3aed;font-size:10px">${parts.join(' · ')}</span>`;
+  }
+
+  // Line 6: Academic scores (phase-aware) + FSM%
   const scoreParts: string[] = [];
   const phase = String(props.phase || '').toLowerCase();
   if (phase.includes('primary') && props.ks2_rwm_expected != null) {
@@ -328,6 +366,8 @@ function schoolPopupHtml(props: Record<string, unknown>): string {
   if (infoParts.length) lines.push(`<span style="color:#666">${infoParts.join(' · ')}</span>`);
   if (ofstedHtml) lines.push(ofstedHtml);
   if (policyHtml || flagsHtml) lines.push([policyHtml, flagsHtml].filter(Boolean).join(' '));
+  if (senHtml) lines.push(senHtml);
+  if (senDemHtml) lines.push(senDemHtml);
   if (scoreParts.length) lines.push(`<span style="color:#555">${scoreParts.join(' · ')}</span>`);
   if (ldoHtml) lines.push(ldoHtml);
   if (footerParts.length) lines.push(`<span style="color:#888;font-size:10px">${footerParts.join(' · ')}</span>`);
@@ -733,12 +773,19 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
 
         const isSchool = props.category === 'school';
         const ofstedNum = isSchool ? Number(props.ofsted) : NaN;
-        const colour = isSchool && OFSTED_MARKER_COLOURS[ofstedNum]
-          ? OFSTED_MARKER_COLOURS[ofstedNum]
-          : POI_COLOURS[props.category] || '#6b7280';
+        const schoolTypeCode = isSchool ? String(props.type_code || '').toLowerCase() : '';
+        const isSpecialSchool = schoolTypeCode.includes('special');
+        const senProvs = Array.isArray(props.sen_provisions) ? props.sen_provisions as Record<string, unknown>[] : [];
+        const hasSenUnit = senProvs.some(p => p.type === 'SEN unit' || p.type === 'Resourced provision');
+        const colour = isSpecialSchool
+          ? '#7c3aed' // purple-600 for special schools
+          : isSchool && OFSTED_MARKER_COLOURS[ofstedNum]
+            ? OFSTED_MARKER_COLOURS[ofstedNum]
+            : POI_COLOURS[props.category] || '#6b7280';
+        const borderColour = hasSenUnit && !isSpecialSchool ? '#7c3aed' : '#fff';
         const icon = POI_ICONS[props.category] || '●';
         const el = document.createElement('div');
-        el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${colour};color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.4);border:2px solid #fff;`;
+        el.style.cssText = `width:24px;height:24px;border-radius:50%;background:${colour};color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.4);border:2px solid ${borderColour};`;
         el.textContent = icon;
         const popupHtml = isSchool ? schoolPopupHtml(props) : genericPoiPopupHtml(props);
         const popupWidth = isSchool ? '280px' : '200px';
