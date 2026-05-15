@@ -6,6 +6,7 @@ Property endpoint returns property-specific data (EPC, transactions, parcel, flo
 """
 import asyncio
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, Query
@@ -131,9 +132,19 @@ def _fetch_hetzner_property(postcode, paon, saon, street, uprn):
             for epc in all_epcs:
                 epc_paon = str(epc.get("paon") or "").upper().strip()
                 epc_saon = str(epc.get("saon") or "").upper().strip()
-                epc_street = str(epc.get("street") or epc.get("address1") or "").upper().strip()
-                # Match on PAON + street (SAON if present)
-                if paon_upper and paon_upper in epc_paon:
+                epc_addr1 = str(epc.get("address1") or "").upper().strip()
+                epc_street = str(epc.get("street") or epc_addr1).upper().strip()
+                # Match PAON: check dedicated paon field first, fall back to
+                # address1 (Hetzner EPC often has paon=null with "14 Fairdene Road" in address1).
+                # Use word-boundary check on address1 to avoid "14" matching "142".
+                paon_match = False
+                if paon_upper:
+                    if epc_paon and paon_upper == epc_paon:
+                        paon_match = True
+                    elif epc_addr1:
+                        # Check if paon appears as a word boundary in address1
+                        paon_match = bool(re.search(r'\b' + re.escape(paon_upper) + r'\b', epc_addr1))
+                if paon_match:
                     if not street_upper or street_upper[:8] in epc_street or epc_street[:8] in street_upper:
                         if not saon_upper or saon_upper in epc_saon:
                             matched.append(epc)
