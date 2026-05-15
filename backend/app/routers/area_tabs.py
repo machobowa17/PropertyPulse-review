@@ -33,7 +33,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v40"  # bumped: SEN2 EHCP metric added to Community tab
+AREA_CACHE_VERSION = "v41"  # bumped: fix EPC PAON matching (was using building_reference_number)
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,
@@ -129,7 +129,7 @@ def _fetch_hetzner_property(postcode, paon, saon, street, uprn):
             street_upper = (street or "").upper().strip()
             matched = []
             for epc in all_epcs:
-                epc_paon = str(epc.get("building_reference_number") or epc.get("paon") or "").upper().strip()
+                epc_paon = str(epc.get("paon") or "").upper().strip()
                 epc_saon = str(epc.get("saon") or "").upper().strip()
                 epc_street = str(epc.get("street") or epc.get("address1") or "").upper().strip()
                 # Match on PAON + street (SAON if present)

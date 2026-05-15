@@ -31,8 +31,11 @@ function ResultsInner() {
 
   // Whether the Property panel is showing (vs area MetricsPanel).
   // Starts true when a property is selected; user can switch to area tabs.
+  // Also active when disambiguation is needed (multiple flats found).
   const [propertyPanelOverride, setPropertyPanelOverride] = useState<boolean | null>(null);
-  const propertyPanelActive = propertyPanelOverride ?? !!selectedProperty;
+  const needsDisambiguation = resolved?.type === 'address' && !selectedProperty
+    && resolved?.alternatives && resolved.alternatives.length > 0;
+  const propertyPanelActive = propertyPanelOverride ?? (!!selectedProperty || !!needsDisambiguation);
 
   // Reset override when selectedProperty changes (new property → show it; cleared → hide)
   useEffect(() => {
@@ -110,13 +113,22 @@ function ResultsInner() {
         <>
           <ResultsHero />
 
+          {/* Address-not-found banner: address search fell back to postcode area results */}
+          {resolved?.address_not_found && (
+            <div className="max-w-[1400px] mx-auto px-4 lg:px-6 mt-2">
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800">
+                We couldn&rsquo;t find &ldquo;{resolved.address_not_found}&rdquo; in our records. Showing area results for the postcode instead.
+              </div>
+            </div>
+          )}
+
           {/* Tabs — sticky below header */}
           <div className="sticky top-[53px] z-40 bg-white/95 backdrop-blur-md border-b border-divider/60">
             <div className="max-w-[1400px] mx-auto px-4 lg:px-6">
               <TabBar
                 active={activeTab}
                 onChange={handleAreaTabChange}
-                showPropertyTab={!!selectedProperty}
+                showPropertyTab={!!selectedProperty || !!needsDisambiguation}
                 propertyActive={propertyPanelActive}
                 onPropertyClick={handlePropertyTabClick}
                 onPropertyDismiss={handlePropertyDismiss}

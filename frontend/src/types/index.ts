@@ -74,6 +74,9 @@ export interface ResolveResponse {
     lon: number | null;
   }>;
   suggestions?: ResolveSuggestion[];
+  /** Set when an address search failed but fell back to postcode area results.
+   *  Contains the original address query string for the info banner. */
+  address_not_found?: string;
 }
 
 // ---------------------------------------------------------------------------

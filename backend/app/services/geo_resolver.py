@@ -90,7 +90,25 @@ async def resolve_search(db: AsyncSession, query: str) -> dict:
             addr_result = await _resolve_address(db, q, addr_match)
             if addr_result:
                 return addr_result
-        # Fall through to place/ward resolution if address not found
+            # Address not found. If query contains a postcode, resolve the postcode
+            # instead of falling through to place-name (which would match street names
+            # as place names, e.g. "42 High Street, CR5 1RA" → "High Street, Tunbridge Wells").
+            trailing = (addr_match.group(4) or "").strip()
+            embedded_pc = re.search(
+                r"[A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2}",
+                addr_match.group(3) + " " + trailing, re.IGNORECASE,
+            )
+            if trailing and POSTCODE_RE.match(trailing):
+                postcode_result = await _resolve_postcode(db, trailing)
+                if postcode_result:
+                    postcode_result["address_not_found"] = q
+                    return postcode_result
+            elif embedded_pc:
+                postcode_result = await _resolve_postcode(db, embedded_pc.group(0))
+                if postcode_result:
+                    postcode_result["address_not_found"] = q
+                    return postcode_result
+        # Fall through to place/ward resolution if address not found and no postcode
 
     # Rule 1c: District/outward-code-only postcode (e.g. E1W, SW9, EC2A)
     if DISTRICT_POSTCODE_RE.match(q):
