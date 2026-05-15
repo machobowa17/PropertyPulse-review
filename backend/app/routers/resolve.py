@@ -390,8 +390,11 @@ async def suggest(
             addr_street_like = addr_street_escaped + "%"
             res = await db.execute(
                 sa_text("""
-                    SELECT DISTINCT ON (a.paon, a.street, a.postcode)
-                           a.paon || ' ' || a.street || ', ' || a.postcode AS label,
+                    SELECT DISTINCT ON (a.saon, a.paon, a.street, a.postcode)
+                           CASE WHEN a.saon IS NOT NULL AND a.saon != 'N' AND a.saon != ''
+                                THEN a.saon || ', ' || a.paon || ' ' || a.street || ', ' || a.postcode
+                                ELSE a.paon || ' ' || a.street || ', ' || a.postcode
+                           END AS label,
                            'address' AS type,
                            COALESCE(lb.lad_name, '') AS area,
                            NULL AS comparison,
@@ -401,7 +404,7 @@ async def suggest(
                     LEFT JOIN core_lad_boundaries lb ON lb.lad_code = lsoa.lad_code
                     WHERE a.paon = :paon
                       AND a.street LIKE :street
-                    ORDER BY a.paon, a.street, a.postcode
+                    ORDER BY a.saon, a.paon, a.street, a.postcode
                     LIMIT :lim
                 """),
                 {"paon": addr_paon, "street": addr_street_like, "lim": 8 - len(results)},
