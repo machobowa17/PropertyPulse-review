@@ -34,7 +34,7 @@ from app.services.tab_overview import fetch_overview
 
 router = APIRouter()
 
-AREA_CACHE_VERSION = "v41"  # bumped: fix EPC PAON matching (was using building_reference_number)
+AREA_CACHE_VERSION = "v42"  # bumped: precise coords from Nominatim geocoding
 
 TAB_HANDLERS = {
     "Overview": fetch_overview,

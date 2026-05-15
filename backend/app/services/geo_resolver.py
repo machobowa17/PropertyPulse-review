@@ -245,7 +245,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
-                       latitude, longitude, lsoa_code
+                       latitude, longitude, lsoa_code,
+                       precise_lat, precise_lon
                 FROM core_addresses
                 WHERE postcode = :postcode
                   AND paon = :paon
@@ -267,7 +268,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
-                       latitude, longitude, lsoa_code
+                       latitude, longitude, lsoa_code,
+                       precise_lat, precise_lon
                 FROM core_addresses
                 WHERE paon = :paon
                   AND street LIKE :street
@@ -304,7 +306,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         result = await db.execute(
             text("""
                 SELECT paon, saon, street, postcode, locality, town,
-                       latitude, longitude, lsoa_code
+                       latitude, longitude, lsoa_code,
+                       precise_lat, precise_lon
                 FROM core_addresses
                 WHERE paon = :paon
                   AND street LIKE :street
@@ -433,6 +436,11 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
         parts.append(prop["postcode"])
     address_display = ", ".join(parts)
 
+    # Use precise coordinates when available (from Nominatim geocoding),
+    # fall back to postcode centroid
+    best_lat = float(prop.get("precise_lat") or prop["latitude"])
+    best_lon = float(prop.get("precise_lon") or prop["longitude"])
+
     return {
         "query": query,
         "type": "address",
@@ -445,8 +453,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             "parent": parent,
         },
         "coordinates": {
-            "lat": float(prop["latitude"]),
-            "lon": float(prop["longitude"]),
+            "lat": best_lat,
+            "lon": best_lon,
         },
         "boundary_source": "ward_lsoa",
         "boundary_id": lsoa_code,
@@ -458,8 +466,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
             "street": prop.get("street"),
             "postcode": prop.get("postcode"),
             "uprn": None,
-            "lat": float(prop["latitude"]),
-            "lon": float(prop["longitude"]),
+            "lat": best_lat,
+            "lon": best_lon,
             "address_display": address_display,
         },
         # Disambiguation: if multiple addresses matched, include alternatives
@@ -469,8 +477,8 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
                 "saon": a.get("saon"),
                 "street": a.get("street"),
                 "postcode": a.get("postcode"),
-                "lat": float(a["latitude"]) if a.get("latitude") else None,
-                "lon": float(a["longitude"]) if a.get("longitude") else None,
+                "lat": float(a.get("precise_lat") or a["latitude"]) if a.get("latitude") else None,
+                "lon": float(a.get("precise_lon") or a["longitude"]) if a.get("longitude") else None,
             }
             for a in unique_addresses[1:5]  # Up to 4 alternatives
         ] if len(unique_addresses) > 1 else [],
