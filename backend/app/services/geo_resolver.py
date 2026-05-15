@@ -362,6 +362,17 @@ async def _resolve_address(db: AsyncSession, query: str, match: re.Match) -> dic
     if len(unique_addresses) == 0:
         return None
 
+    # If user didn't specify a flat/unit (no SAON) but the results contain
+    # sub-addresses (flats), exclude the bare building entry — it's not a real
+    # addressable unit. All flats become alternatives for disambiguation.
+    if not saon_raw and len(unique_addresses) > 1:
+        has_saon = any(a.get("saon") for a in unique_addresses)
+        if has_saon:
+            unique_addresses = [a for a in unique_addresses if a.get("saon")]
+
+    if len(unique_addresses) == 0:
+        return None
+
     # Use the first match
     prop = unique_addresses[0]
 

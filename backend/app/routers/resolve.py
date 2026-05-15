@@ -398,7 +398,8 @@ async def suggest(
                            'address' AS type,
                            COALESCE(lb.lad_name, '') AS area,
                            NULL AS comparison,
-                           'Address' AS secondary
+                           'Address' AS secondary,
+                           a.saon AS _saon
                     FROM core_addresses a
                     LEFT JOIN core_lsoa_boundaries lsoa ON lsoa.lsoa_code = a.lsoa_code
                     LEFT JOIN core_lad_boundaries lb ON lb.lad_code = lsoa.lad_code
@@ -409,7 +410,19 @@ async def suggest(
                 """),
                 {"paon": addr_paon, "street": addr_street_like, "lim": 8 - len(results)},
             )
-            results += [dict(r) for r in res.mappings().all()]
+            addr_rows = [dict(r) for r in res.mappings().all()]
+            # If flats/units exist at this address, drop the bare building entry —
+            # it's not a real addressable unit, just the building shell.
+            has_saon = any(
+                r.get("_saon") and r["_saon"] not in ("N", "")
+                for r in addr_rows
+            )
+            if has_saon:
+                addr_rows = [
+                    r for r in addr_rows
+                    if r.get("_saon") and r["_saon"] not in ("N", "")
+                ]
+            results += addr_rows
 
     AREA_TYPES = ['Town','City','Suburban Area','Village','Other Settlement','Hamlet']
 
@@ -627,7 +640,7 @@ async def suggest(
         if key in seen:
             continue
         seen.add(key)
-        unique.append(_format_suggestion({k: v for k, v in r.items() if k != "_contains"}))
+        unique.append(_format_suggestion({k: v for k, v in r.items() if not k.startswith("_")}))
 
     response = {"suggestions": unique[:8], "coverage": _coverage_metadata()}
     await cache_set(cache_key, response, ttl=3600)
