@@ -508,6 +508,10 @@ export interface PropertyDataResponse {
     gigabit_pct: number | null;
     fttp_pct: number | null;
   } | null;
+  crime: {
+    total_12m: number;
+    categories: Array<{ category: string; count: number }>;
+  } | null;
 }
 
 export async function fetchPropertyData(
@@ -519,6 +523,7 @@ export async function fetchPropertyData(
   saon?: string | null,
   street?: string | null,
   uprn?: number | null,
+  lsoa?: string | null,
 ): Promise<PropertyDataResponse> {
   const qs = new URLSearchParams({
     session_key: sessionKey,
@@ -530,6 +535,7 @@ export async function fetchPropertyData(
   if (saon) qs.set('saon', saon);
   if (street) qs.set('street', street);
   if (uprn) qs.set('uprn', uprn.toString());
+  if (lsoa) qs.set('lsoa', lsoa);
   const res = await fetchWithRetry(`${BASE}/area/property?${qs}`, { cache: 'no-store' });
   if (res.status === 410) throw new SessionExpiredError();
   if (!res.ok) throw new Error(`Property data fetch failed: ${res.status}`);

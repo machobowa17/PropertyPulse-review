@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   X, MapPin, Droplets, Volume2, Wifi, FileText, Landmark,
-  Zap, PoundSterling, ChevronDown,
+  Zap, PoundSterling, ChevronDown, ShieldAlert, ArrowRight,
 } from 'lucide-react';
 import { useResults } from '../../context/ResultsContext';
 import SkeletonCard from '../SkeletonCard';
@@ -497,20 +497,46 @@ export default function PropertyTab() {
           )}
         </PropertySection>
 
-        {/* 6. Land Parcel */}
-        {data?.parcel && (
-          <PropertySection title="Land Parcel (INSPIRE)" icon={Landmark} defaultOpen={false}>
-            <DataRow label="INSPIRE ID" value={data.parcel.inspire_id} />
-            <DataRow label="Authority" value={data.parcel.authority} />
-            <p className="text-xs text-gray-500">
-              Cadastral boundary from HM Land Registry INSPIRE index.
-            </p>
-          </PropertySection>
-        )}
+        {/* 6. Crime in Area */}
+        <PropertySection title="Crime in Area" icon={ShieldAlert} defaultOpen={false}>
+          {data?.crime ? (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-700 font-medium">
+                {data.crime.total_12m.toLocaleString('en-GB')} crimes in the last 12 months
+              </p>
+              <div className="space-y-1">
+                {data.crime.categories.map((c, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-600 capitalize">{c.category.replace(/-/g, ' ')}</span>
+                    <span className="font-medium text-gray-900">{c.count.toLocaleString('en-GB')}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">LSOA-level data from police.uk</p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No crime data available for this area.</p>
+          )}
+        </PropertySection>
 
-        {/* 7. Local Land Charges */}
-        {data?.llc_charges && data.llc_charges.length > 0 && (
-          <PropertySection title="Local Land Charges" icon={FileText} defaultOpen={false}>
+        {/* 7. Land Parcel */}
+        <PropertySection title="Land Parcel (INSPIRE)" icon={Landmark} defaultOpen={false}>
+          {data?.parcel ? (
+            <div>
+              <DataRow label="INSPIRE ID" value={data.parcel.inspire_id} />
+              <DataRow label="Authority" value={data.parcel.authority} />
+              <p className="text-xs text-gray-500 mt-1">
+                Cadastral boundary from HM Land Registry INSPIRE index.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No INSPIRE parcel boundary found at this location.</p>
+          )}
+        </PropertySection>
+
+        {/* 8. Local Land Charges */}
+        <PropertySection title="Local Land Charges" icon={FileText} defaultOpen={false}>
+          {data?.llc_charges && data.llc_charges.length > 0 ? (
             <div className="space-y-1.5">
               {data.llc_charges.map((c, i) => (
                 <div key={i} className="text-sm text-gray-700">
@@ -529,8 +555,19 @@ export default function PropertyTab() {
                 </div>
               ))}
             </div>
-          </PropertySection>
-        )}
+          ) : (
+            <p className="text-sm text-gray-500">No local land charges registered at this location.</p>
+          )}
+        </PropertySection>
+
+        {/* View area data link */}
+        <button
+          onClick={clearProperty}
+          className="w-full flex items-center justify-center gap-2 py-3 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition"
+        >
+          View area data for {selectedProperty?.postcode || 'this location'}
+          <ArrowRight className="w-4 h-4" />
+        </button>
 
         {/* Footer attribution */}
         <div className="text-xs text-gray-400 text-center pt-4 space-y-0.5">

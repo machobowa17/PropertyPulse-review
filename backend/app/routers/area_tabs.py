@@ -163,6 +163,7 @@ async def get_property_data(
     saon: str = Query(None, description="Secondary addressable object name"),
     street: str = Query(None, description="Street name"),
     uprn: int = Query(None, description="Unique Property Reference Number"),
+    lsoa: str = Query(None, description="LSOA code (for crime data)"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return full property data: transactions, EPC, parcel, flood, noise, broadband, LLC."""
@@ -225,6 +226,20 @@ async def get_property_data(
             LIMIT 1
         """), {"pc": pc_clean})
 
+    # Crime data by LSOA (last 12 months)
+    crime_result = None
+    if lsoa:
+        crime_result = await db.execute(sa_text("""
+            WITH latest AS (SELECT MAX(month) AS m FROM core_crime_lsoa)
+            SELECT c.crime_type, SUM(c.crime_count) AS cnt
+            FROM core_crime_lsoa c, latest l
+            WHERE c.lsoa_code = :lsoa
+              AND c.month > l.m - INTERVAL '12 months'
+              AND c.month <= l.m
+            GROUP BY c.crime_type
+            ORDER BY cnt DESC
+        """), {"lsoa": lsoa})
+
     # Parse spatial results
     parcel_row = parcel_result.mappings().first()
     parcel = None
@@ -271,6 +286,19 @@ async def get_property_data(
                 "fttp_pct": float(bb_row["fttp_pct"]) if bb_row["fttp_pct"] is not None else None,
             }
 
+    crime = None
+    if crime_result:
+        crime_rows = crime_result.mappings().all()
+        total = sum(int(r["cnt"]) for r in crime_rows)
+        if total > 0:
+            crime = {
+                "total_12m": total,
+                "categories": [
+                    {"category": r["crime_type"], "count": int(r["cnt"])}
+                    for r in crime_rows[:5]
+                ],
+            }
+
     # Await Hetzner results
     try:
         transactions, epc_records = await hetzner_future
@@ -295,6 +323,7 @@ async def get_property_data(
         "llc_charges": llc_charges,
         "noise": noise,
         "broadband": broadband,
+        "crime": crime,
     }
 
     await cache_set(cache_key, result, ttl=3600)

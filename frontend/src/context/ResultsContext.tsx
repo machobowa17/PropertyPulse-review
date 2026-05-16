@@ -244,6 +244,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
       selectedProperty!.saon,
       selectedProperty!.street,
       selectedProperty!.uprn,
+      codes?.lsoa,
     ),
     enabled: !!sessionKey && !!selectedProperty,
   });
