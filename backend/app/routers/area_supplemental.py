@@ -195,37 +195,40 @@ async def _wiki_search(place: str, client: httpx.AsyncClient) -> dict | None:
     if not results:
         return None
 
-    # Pick the best match — prefer exact title match
-    page_title = results[0]["title"]
-    for r in results:
-        if r["title"].lower() == place.lower():
-            page_title = r["title"]
-            break
+    # Try top 3 results — first one that has a real extract wins.
+    # Wikipedia's search ranking is good; disambiguation pages have short extracts.
+    for candidate_result in results:
+        page_title = candidate_result["title"]
 
-    # Step 2: get extract + page image
-    detail_resp = await client.get(WIKI_API, params={
-        "action": "query",
-        "titles": page_title,
-        "prop": "extracts|pageimages|info",
-        "exintro": "1",
-        "explaintext": "1",
-        "exsectionformat": "plain",
-        "piprop": "original|thumbnail",
-        "pithumbsize": "800",
-        "inprop": "url",
-        "format": "json",
-    }, timeout=5)
-    detail_data = detail_resp.json()
-    pages = detail_data.get("query", {}).get("pages", {})
-    if not pages:
-        return None
+        detail_resp = await client.get(WIKI_API, params={
+            "action": "query",
+            "titles": page_title,
+            "prop": "extracts|pageimages|info",
+            "exintro": "1",
+            "explaintext": "1",
+            "exsectionformat": "plain",
+            "piprop": "original|thumbnail",
+            "pithumbsize": "800",
+            "inprop": "url",
+            "format": "json",
+        }, timeout=5)
+        detail_data = detail_resp.json()
+        pages = detail_data.get("query", {}).get("pages", {})
+        if not pages:
+            continue
 
-    page = next(iter(pages.values()))
-    if page.get("missing") is not None:
-        return None
+        page = next(iter(pages.values()))
+        if page.get("missing") is not None:
+            continue
 
-    extract = page.get("extract", "")
-    if not extract or len(extract) < 50:
+        extract = page.get("extract", "")
+        # Skip disambiguation pages and stubs (short extracts)
+        if not extract or len(extract) < 100:
+            continue
+
+        # Found a good page — break out
+        break
+    else:
         return None
 
     # Truncate to ~3 paragraphs
