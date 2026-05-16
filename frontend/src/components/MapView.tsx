@@ -642,20 +642,14 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           const count = props.point_count as number;
           const el = createClusterElement(count);
           const clusterId = props.cluster_id as number;
-          el.addEventListener('click', () => {
-            const expZoom = index.getClusterExpansionZoom(clusterId);
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
             const leaves = index.getLeaves(clusterId, 30) as Supercluster.PointFeature<Record<string, unknown>>[];
-            if (expZoom > 16 || leaves.length <= 8) {
-              // Spider: fan out for overlapping points OR small clusters (avoids map jumping)
-              clearSpider(map);
-              spiderRef.current.center = coords;
-              spiderRef.current.leaves = leaves;
-              renderSoldPriceMarkersRef.current?.(map);
-            } else {
-              // Large cluster — zoom in instantly (no animation to avoid moveend marker churn)
-              clearSpider(map);
-              map.easeTo({ center: coords, zoom: expZoom, duration: 300 });
-            }
+            // Always spider — no map movement, no jumping
+            clearSpider(map);
+            spiderRef.current.center = coords;
+            spiderRef.current.leaves = leaves;
+            renderSoldPriceMarkersRef.current?.(map);
           });
           const marker = new maplibregl.Marker({ element: el })
             .setLngLat(coords)
