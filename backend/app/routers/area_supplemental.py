@@ -263,16 +263,30 @@ async def get_wiki_summary(
 ):
     """Return a Wikipedia summary for the searched area.
 
-    Fallback chain: place_name → LAD name → parent name.
+    Fallback chain: place_name → LSOA place name → LAD name → parent name.
     Results cached for 7 days (Wikipedia content rarely changes).
     """
     sess = await require_session(session_key)
 
-    # Build search candidates: place_name, LAD name, parent comparison name
+    # Build search candidates: place_name → LSOA place → LAD name → parent name
     candidates = []
     place_name = sess.get("place_name") or sess.get("entity_name")
     if place_name and place_name not in ("_", ""):
         candidates.append(place_name)
+
+    # For postcodes: look up the place name from core_place_lsoa_mapping
+    lsoa_codes = sess.get("lsoa_codes") or []
+    if not candidates and lsoa_codes:
+        place_res = await db.execute(
+            text("""
+                SELECT DISTINCT place_name FROM core_place_lsoa_mapping
+                WHERE lsoa_code = ANY(:codes) LIMIT 1
+            """),
+            {"codes": lsoa_codes},
+        )
+        place_row = place_res.mappings().first()
+        if place_row and place_row["place_name"]:
+            candidates.append(place_row["place_name"])
 
     # LAD name from DB
     lad_code = sess.get("lad_code")
