@@ -271,7 +271,8 @@ async def get_wiki_summary(
     # Build search candidates: place_name → LSOA place → LAD name → parent name
     candidates = []
     place_name = sess.get("place_name") or sess.get("entity_name")
-    if place_name and place_name not in ("_", ""):
+    # Skip codes like E05011466 — not useful for Wikipedia search
+    if place_name and place_name not in ("_", "") and not (place_name[0] in "ENSW" and place_name[1:].isdigit()):
         candidates.append(place_name)
 
     # For postcodes: look up the place name from core_place_lsoa_mapping
