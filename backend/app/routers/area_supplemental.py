@@ -300,7 +300,7 @@ async def get_wiki_summary(
 
     # Try each candidate
     result = {"summary": None}
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(headers={"User-Agent": "PropertyPulse/1.0 (https://simusimi.com; hello@simusimi.com)"}) as client:
         for candidate in candidates:
             try:
                 summary = await _wiki_search(candidate, client)
