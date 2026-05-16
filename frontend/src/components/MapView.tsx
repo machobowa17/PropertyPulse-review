@@ -655,39 +655,17 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
           const clusterId = props.cluster_id as number;
           el.addEventListener('click', () => {
             const expZoom = index.getClusterExpansionZoom(clusterId);
-            if (expZoom > 16) {
-              // All points overlap — fan them out in a spider pattern (cap at 30 to prevent DOM freeze)
+            const leaves = index.getLeaves(clusterId, 30) as Supercluster.PointFeature<Record<string, unknown>>[];
+            if (expZoom > 16 || leaves.length <= 8) {
+              // Spider: fan out for overlapping points OR small clusters (avoids map jumping)
               clearSpider(map);
-              const leaves = index.getLeaves(clusterId, 30) as Supercluster.PointFeature<Record<string, unknown>>[];
               spiderRef.current.center = coords;
               spiderRef.current.leaves = leaves;
               renderSoldPriceMarkersRef.current?.(map);
             } else {
+              // Large cluster — zoom in instantly (no animation to avoid moveend marker churn)
               clearSpider(map);
-              // fitBounds to all children so the map doesn't jump to a misleading centroid
-              const children = index.getLeaves(clusterId, Infinity) as Supercluster.PointFeature<Record<string, unknown>>[];
-              if (children.length > 0) {
-                let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
-                for (const child of children) {
-                  const [lng, lat] = child.geometry.coordinates;
-                  if (lng < minLng) minLng = lng;
-                  if (lng > maxLng) maxLng = lng;
-                  if (lat < minLat) minLat = lat;
-                  if (lat > maxLat) maxLat = lat;
-                }
-                // If all children are at the same point, just zoom to that point
-                if (maxLng - minLng < 1e-6 && maxLat - minLat < 1e-6) {
-                  map.flyTo({ center: [minLng, minLat], zoom: expZoom, duration: 500 });
-                } else {
-                  map.fitBounds([[minLng, minLat], [maxLng, maxLat]], {
-                    padding: 80,
-                    maxZoom: expZoom,
-                    duration: 500,
-                  });
-                }
-              } else {
-                map.flyTo({ center: coords, zoom: expZoom, duration: 500 });
-              }
+              map.easeTo({ center: coords, zoom: expZoom, duration: 300 });
             }
           });
           const marker = new maplibregl.Marker({ element: el })
