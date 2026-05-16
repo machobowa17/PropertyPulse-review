@@ -596,28 +596,17 @@ export default function MapView({ lat, lon, boundary, lsoaBoundary, pois, active
     const index = clusterIndexRef.current;
     if (!index) return;
 
-    // If spider is active, check if we should keep it or close it
+    // If spider is active, re-render it at the current zoom (legs scale with zoom).
+    // Close spider only if its center scrolled out of view.
     let spiderCenter = spiderRef.current.center;
     if (spiderCenter && spiderRef.current.leaves) {
-      // Check if the spider center is still a "stuck" cluster at the current zoom.
-      // If we zoomed out enough that it's now part of a bigger expandable cluster, close spider.
-      const zoom = Math.floor(map.getZoom());
-      const nearClusters = index.getClusters(
-        [spiderCenter[0] - 0.001, spiderCenter[1] - 0.001,
-         spiderCenter[0] + 0.001, spiderCenter[1] + 0.001],
-        zoom,
-      );
-      const matchingCluster = nearClusters.find(
-        (c) => c.properties?.cluster &&
-          Math.abs(c.geometry.coordinates[0] - spiderCenter![0]) < 1e-4 &&
-          Math.abs(c.geometry.coordinates[1] - spiderCenter![1]) < 1e-4,
-      );
-      if (matchingCluster && index.getClusterExpansionZoom(matchingCluster.properties!.cluster_id as number) <= 16) {
-        // Zoomed out — cluster is now expandable normally. Close spider.
+      const bounds = map.getBounds();
+      const inView = spiderCenter[0] >= bounds.getWest() && spiderCenter[0] <= bounds.getEast()
+                  && spiderCenter[1] >= bounds.getSouth() && spiderCenter[1] <= bounds.getNorth();
+      if (!inView) {
         clearSpider(map);
         spiderCenter = null;
       } else {
-        // Still stuck or individual points — re-render spider at new zoom
         removeSpiderVisuals(map);
         renderSpiderVisuals(map);
       }
