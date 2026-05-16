@@ -139,6 +139,35 @@ export async function fetchAqHistory(sessionKey: string): Promise<AqHistoryRespo
   }
 }
 
+export interface WikiImage {
+  url: string;
+  width: number;
+  height: number;
+  original_url?: string;
+}
+
+export interface WikiSummary {
+  title: string;
+  extract: string;
+  url: string;
+  image: WikiImage | null;
+}
+
+export interface WikiSummaryResponse {
+  summary: WikiSummary | null;
+  search_term?: string;
+}
+
+export async function fetchWikiSummary(sessionKey: string): Promise<WikiSummaryResponse | null> {
+  try {
+    const res = await fetchWithRetry(`${BASE}/wiki-summary?session_key=${encodeURIComponent(sessionKey)}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export interface ComparableArea {
   lad_code: string;
   lad_name: string;

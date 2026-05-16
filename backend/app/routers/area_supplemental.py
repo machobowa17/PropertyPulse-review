@@ -1,8 +1,12 @@
 """
 GET /api/v1/aq-history
 GET /api/v1/comparable
-Air quality history and comparable areas endpoints.
+GET /api/v1/wiki-summary
+Air quality history, comparable areas, and Wikipedia summary endpoints.
 """
+import logging
+
+import httpx
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +20,8 @@ from app.services.session_helpers import (
     require_session,
 )
 from app.services.comparable_areas import find_comparable_lads, find_comparable_scopes
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -164,4 +170,146 @@ async def get_comparable_areas(
             result["target"][k] = float(result["target"][k])
 
     await cache_set(cache_key, result, ttl=86400)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Wikipedia area summary
+# ---------------------------------------------------------------------------
+
+WIKI_API = "https://en.wikipedia.org/w/api.php"
+
+
+async def _wiki_search(place: str, client: httpx.AsyncClient) -> dict | None:
+    """Search Wikipedia for a place, return extract + image or None."""
+    # Step 1: search for the page
+    search_resp = await client.get(WIKI_API, params={
+        "action": "query",
+        "list": "search",
+        "srsearch": f"{place} England",
+        "srlimit": "3",
+        "format": "json",
+    }, timeout=5)
+    search_data = search_resp.json()
+    results = search_data.get("query", {}).get("search", [])
+    if not results:
+        return None
+
+    # Pick the best match — prefer exact title match
+    page_title = results[0]["title"]
+    for r in results:
+        if r["title"].lower() == place.lower():
+            page_title = r["title"]
+            break
+
+    # Step 2: get extract + page image
+    detail_resp = await client.get(WIKI_API, params={
+        "action": "query",
+        "titles": page_title,
+        "prop": "extracts|pageimages|info",
+        "exintro": "1",
+        "explaintext": "1",
+        "exsectionformat": "plain",
+        "piprop": "original|thumbnail",
+        "pithumbsize": "800",
+        "inprop": "url",
+        "format": "json",
+    }, timeout=5)
+    detail_data = detail_resp.json()
+    pages = detail_data.get("query", {}).get("pages", {})
+    if not pages:
+        return None
+
+    page = next(iter(pages.values()))
+    if page.get("missing") is not None:
+        return None
+
+    extract = page.get("extract", "")
+    if not extract or len(extract) < 50:
+        return None
+
+    # Truncate to ~3 paragraphs
+    paragraphs = extract.split("\n")
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    extract = "\n\n".join(paragraphs[:3])
+
+    # Image info
+    image = None
+    if page.get("thumbnail"):
+        thumb = page["thumbnail"]
+        original = page.get("original", {})
+        image = {
+            "url": thumb.get("source"),
+            "width": thumb.get("width"),
+            "height": thumb.get("height"),
+            "original_url": original.get("source"),
+        }
+
+    return {
+        "title": page.get("title", page_title),
+        "extract": extract,
+        "url": page.get("fullurl", f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"),
+        "image": image,
+    }
+
+
+@router.get("/wiki-summary")
+async def get_wiki_summary(
+    session_key: str = Query(..., description="LSOA session key from /resolve"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a Wikipedia summary for the searched area.
+
+    Fallback chain: place_name → LAD name → parent name.
+    Results cached for 7 days (Wikipedia content rarely changes).
+    """
+    sess = await require_session(session_key)
+
+    # Build search candidates: place_name, LAD name, parent comparison name
+    candidates = []
+    place_name = sess.get("place_name") or sess.get("entity_name")
+    if place_name and place_name not in ("_", ""):
+        candidates.append(place_name)
+
+    # LAD name from DB
+    lad_code = sess.get("lad_code")
+    if lad_code and lad_code != "_":
+        lad_res = await db.execute(
+            text("SELECT lad_name FROM core_lad_boundaries WHERE lad_code = :lad LIMIT 1"),
+            {"lad": lad_code},
+        )
+        lad_row = lad_res.mappings().first()
+        if lad_row:
+            lad_name = lad_row["lad_name"]
+            if lad_name not in candidates:
+                candidates.append(lad_name)
+
+    # Parent comparison name (e.g. "Greater London", "Reading")
+    parent_name = sess.get("parent_comparison_name") or sess.get("parent_name")
+    if parent_name and parent_name not in candidates:
+        candidates.append(parent_name)
+
+    if not candidates:
+        return {"summary": None}
+
+    # Check cache — keyed on the first candidate (most specific)
+    cache_key = f"wiki:{candidates[0].lower().replace(' ', '_')}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Try each candidate
+    result = {"summary": None}
+    async with httpx.AsyncClient() as client:
+        for candidate in candidates:
+            try:
+                summary = await _wiki_search(candidate, client)
+                if summary:
+                    result = {"summary": summary, "search_term": candidate}
+                    break
+            except Exception:
+                logger.warning("Wikipedia search failed for %s", candidate, exc_info=True)
+                continue
+
+    await cache_set(cache_key, result, ttl=604800)  # 7 days
     return result

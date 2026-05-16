@@ -6,14 +6,14 @@ import { useResultsMap } from '../hooks/useResultsMap';
 import type { MapFocusMode } from '../hooks/useResultsMap';
 import {
   resolveSearch, fetchAreaTab, fetchBoundary,
-  fetchPriceHistory, fetchAqHistory, fetchComparable,
+  fetchPriceHistory, fetchAqHistory, fetchComparable, fetchWikiSummary,
   fetchMapPois, fetchPriceByType, fetchChoropleth, buildChoroplethUrl, SessionExpiredError,
   fetchPropertyData,
 } from '../api/client';
 import type { ResolveResponse, AreaResponse, TabName, PersonaId, Metric } from '../types';
 import type {
   PriceHistoryResponse, AqHistoryResponse, PriceByTypeResponse, ComparableResponse, ChoroplethResponse,
-  MapPoisResponse, PropertyDataResponse,
+  MapPoisResponse, PropertyDataResponse, WikiSummaryResponse,
 } from '../api/client';
 import type { DecisionMode } from '../components/DecisionModeSelector';
 import { saveArea, removeSavedArea, isAreaSaved, buildSavedAreaId } from '../utils/savedAreas';
@@ -75,6 +75,7 @@ export interface ResultsDataContextValue {
   aqHistory: AqHistoryResponse | undefined | null;
   priceByType: PriceByTypeResponse | undefined | null;
   comparable: ComparableResponse | undefined | null;
+  wikiSummary: WikiSummaryResponse | undefined | null;
 
   // ── Map data (fetched, not UI state) ─────────────────────────────────────
   boundaryData: GeoJSON.Feature | GeoJSON.FeatureCollection | null | undefined;
@@ -372,6 +373,13 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     enabled: !!sessionKey && (activeTab === 'Overview' || activeTab === 'Property & Market'),
   });
 
+  // Fetch Wikipedia summary (Overview tab)
+  const { data: wikiSummary } = useQuery({
+    queryKey: ['wikiSummary', sessionKey],
+    queryFn: () => fetchWikiSummary(sessionKey!),
+    enabled: !!sessionKey && activeTab === 'Overview',
+  });
+
   // Fetch map POIs based on active tab
   const { data: mapPois, isFetching: mapPoisLoading } = useQuery({
     queryKey: ['mapPois', sessionKey, activeTab],
@@ -436,6 +444,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
     aqHistory,
     priceByType,
     comparable,
+    wikiSummary,
     boundaryData,
     effectiveBoundary,
     effectiveLsoaBoundary,
@@ -455,7 +464,7 @@ export function ResultsProvider({ children }: { children: React.ReactNode }) {
   }), [
     q, resolved, resolving, resolveError, codes, sessionKey, lsoa, parentName, areaName,
     activeTab, setActiveTab, persona, setPersona, decisionMode, handleDecisionModeChange,
-    tabData, tabLoading, allMetrics, priceHistory, aqHistory, priceByType, comparable,
+    tabData, tabLoading, allMetrics, priceHistory, aqHistory, priceByType, comparable, wikiSummary,
     boundaryData, effectiveBoundary, effectiveLsoaBoundary, mapPois, mapPoisLoading,
     choroplethData, choroplethUrl,
     selectedProperty, selectProperty, clearProperty, propertyData, propertyLoading, propertyError,

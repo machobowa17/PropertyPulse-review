@@ -11,6 +11,7 @@ import SkeletonCard from '../SkeletonCard';
 import OverviewSnapshotGrid from './OverviewSnapshotGrid';
 import TabScoreRow from './TabScoreRow';
 import TabHighlightStrip from './TabHighlightStrip';
+import WikiSummaryCard from './WikiSummaryCard';
 import { TAB_EXPLAINERS } from '../../utils/tabExplainers';
 import { formatValue } from '../../utils/tabs';
 import {
@@ -42,6 +43,7 @@ export function ResultsMetricsPanel() {
     priceHistory,
     priceByType,
     comparable,
+    wikiSummary,
     decisionMode,
     setMetricElementRef,
     activeMapMetricId,
@@ -88,6 +90,11 @@ export function ResultsMetricsPanel() {
               <p className="text-xs font-semibold text-brand-700">{TAB_EXPLAINERS[activeTab].decision}</p>
               <p className="text-[11px] text-brand-600/70 mt-0.5">{TAB_EXPLAINERS[activeTab].summary}</p>
             </div>
+          )}
+
+          {/* Wikipedia area summary */}
+          {wikiSummary?.summary && (
+            <WikiSummaryCard data={wikiSummary} />
           )}
 
           {/* Cross-tab persona score (uses allMetrics from all cached tabs) */}
